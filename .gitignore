@@ -1,6 +1,14 @@
+# Dependencies
 node_modules/
+
+# Per-app build output
+apps/*/dist/
+apps/*/.vite/
+packages/*/dist/
 dist/
 .vite/
+
+# Logs, OS, editor, env
 *.log
 *.tsbuildinfo
 .DS_Store
@@ -12,12 +20,12 @@ dist/
 pb/pb_data/
 
 # Tauri build artifacts
-src-tauri/target/
-src-tauri/gen/
+apps/app/src-tauri/target/
+apps/app/src-tauri/gen/
 # Platform-specific sidecar binaries are copied in at build time; keep the
 # canonical copy under pb/ and ignore the per-target duplicates under
-# src-tauri/binaries/ (each developer rebuilds for their own triple).
-src-tauri/binaries/
+# apps/app/src-tauri/binaries/ (each developer rebuilds for their own triple).
+apps/app/src-tauri/binaries/
 
 # Local Claude harness state (not meant to be committed).
 .claude/
