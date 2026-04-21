@@ -1,0 +1,273 @@
+/* ==========================================================================
+   Responsive overrides + mobile navigation
+   Layered on top of kit.css and App.css — this is where app-level
+   responsiveness lives so the canonical design-system CSS stays pristine.
+   ========================================================================== */
+
+/* ---------- Mobile menu toggle ---------- */
+
+/* Hidden by default; unhides at the navbar collapse breakpoint below. */
+.menu-toggle {
+  display: none;
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-stroke-muted);
+  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.menu-toggle:hover {
+  background: var(--color-background-muted);
+  border-color: var(--color-subtitle-muted);
+}
+
+.menu-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Panel — full-width overlay that drops below the header. */
+.menu-panel {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgb(9 20 19 / 0.28);
+  backdrop-filter: blur(6px);
+  z-index: 9;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.22s ease, visibility 0.22s;
+}
+
+.menu-panel.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.menu-inner {
+  background: var(--color-neutral);
+  padding: 16px 20px 24px;
+  border-bottom: 1px solid var(--color-stroke-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  transform: translateY(-8px);
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
+}
+
+.menu-panel.is-open .menu-inner {
+  transform: none;
+  opacity: 1;
+}
+
+.menu-link {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font: 500 16px/20px var(--font-sans);
+  color: var(--color-text);
+}
+
+.menu-link:hover,
+.menu-link:focus-visible {
+  background: var(--color-background-muted);
+  outline: none;
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--color-stroke-muted);
+  margin: 8px 0;
+}
+
+.menu-inner .btn {
+  margin-top: 8px;
+  justify-content: center;
+}
+
+/* ---------- Navbar collapse ---------- */
+
+@media (max-width: 820px) {
+  .brand-tag {
+    display: none;
+  }
+  .primary-nav {
+    display: none;
+  }
+  .header-actions {
+    display: none;
+  }
+  .menu-toggle {
+    display: inline-flex;
+  }
+  .header-inner {
+    /* Keep the logo + toggle cleanly apart. */
+    gap: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Very narrow — shrink the wordmark so it never wraps against the toggle. */
+  .brand-wordmark {
+    font-size: 20px;
+    line-height: 20px;
+  }
+  .brand-divider {
+    margin: 0 8px;
+  }
+  .site-header .header-inner {
+    height: 64px;
+  }
+  .menu-panel {
+    top: 64px;
+  }
+}
+
+/* ---------- Hero tightening ---------- */
+
+@media (max-width: 820px) {
+  .hero {
+    padding: 72px 0;
+  }
+  .hero-v2-inner {
+    gap: 32px;
+  }
+}
+
+@media (max-width: 460px) {
+  .hero-v2-caveat {
+    font-size: 44px;
+    line-height: 44px;
+  }
+  .hero-v2-strip {
+    height: 320px;
+  }
+}
+
+/* ---------- Why section — smoothly reflow the marquee pill ---------- */
+
+@media (max-width: 520px) {
+  .why-v2-pill {
+    width: 100%;
+    height: auto;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+  }
+  .why-v2-pill-prefix {
+    font-size: 12px;
+  }
+  .why-v2-marquee {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+/* ---------- Waitlist tightening on small screens ---------- */
+
+@media (max-width: 460px) {
+  .wl-title {
+    font-size: 34px;
+    line-height: 40px;
+    letter-spacing: -1px;
+  }
+  .wl-sub {
+    font-size: 15px;
+    line-height: 24px;
+  }
+  .wl-submit {
+    width: 100%;
+  }
+  .wl-row {
+    grid-template-columns: 80px 1fr;
+    gap: 12px;
+  }
+  .wl-spots-num {
+    font-size: 24px;
+    line-height: 28px;
+  }
+}
+
+/* ---------- Footer tightening ---------- */
+
+@media (max-width: 520px) {
+  .site-footer {
+    padding: 56px 0 24px;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .footer-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Canvas HUD + empty state responsiveness
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  .hud-top-left {
+    top: 12px;
+    left: 12px;
+  }
+  .hud-bottom-center {
+    bottom: 12px;
+    width: calc(100% - 24px);
+    flex-direction: column;
+    gap: 6px;
+  }
+  .status-pill {
+    padding: 6px 12px;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .status-value {
+    min-width: 36px;
+  }
+  .status-sep {
+    display: none;
+  }
+  .btn-cluster {
+    width: fit-content;
+  }
+
+  .empty-title {
+    font-size: 28px;
+    line-height: 36px;
+    letter-spacing: -0.8px;
+  }
+  .empty-state-inner {
+    padding: var(--space-6) var(--space-5);
+  }
+}
+
+@media (max-width: 380px) {
+  /* Drop X/Y on very narrow screens — zoom is the signal worth keeping. */
+  .status-pill .status-label:not(:first-child),
+  .status-pill .status-value:not(:nth-of-type(1)) {
+    display: none;
+  }
+}

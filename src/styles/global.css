@@ -1,3 +1,44 @@
+/* ==========================================================================
+   App-level extensions on top of the canonical Kolosal tokens
+   ========================================================================== */
+
+:root {
+  /* Dot grid — matches the brand's "Model collections" panel treatment:
+     1px dots in --color-grey-800 on a 16px grid. The InfiniteCanvas renders
+     this as the base texture behind all world content. */
+  --dot-color: var(--color-grey-800);
+}
+
+/* ==========================================================================
+   Waitlist progress bar — scroll-triggered fill
+   Start collapsed, transition to --fill-width when the parent gains
+   .is-active (toggled by Waitlist's IntersectionObserver). kit.css already
+   defines the width transition; we just override the initial + target.
+   ========================================================================== */
+.wl-progress .wl-progress-fill {
+  width: 0;
+  transition-duration: 1.4s;
+  transition-delay: 200ms;
+}
+.wl-progress.is-active .wl-progress-fill {
+  width: var(--fill-width, 0);
+}
+
+/* ==========================================================================
+   NetraRT wordmark — pinned to Space Mono 700 across every surface.
+   The canonical kit.css declared `font: 500 ...` but Space Mono only ships
+   400 and 700 — 500 silently falls back to Regular, which makes the header
+   and footer logos render visibly lighter than the in-app (canvas) logo.
+   This rule unifies them. Size + letter-spacing still vary by context.
+   ========================================================================== */
+.brand-wordmark,
+.footer-wordmark,
+.wordmark-glyph {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-style: normal;
+}
+
 *,
 *::before,
 *::after {
@@ -5,18 +46,27 @@
 }
 
 html,
-body,
-#root {
+body {
   margin: 0;
   padding: 0;
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* The canvas route locks the viewport; the landing route scrolls. Applied
+   to <body> by the router when the canvas mounts so the scroll lock is
+   scoped rather than global. */
+body.is-canvas {
+  overflow: hidden;
+  height: 100%;
+}
+
+body.is-canvas,
+body.is-canvas #root {
+  height: 100%;
 }
 
 button {

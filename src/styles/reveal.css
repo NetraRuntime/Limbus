@@ -1,0 +1,45 @@
+/* ==========================================================================
+   Reveal-on-scroll — matches the canonical brand pattern:
+   0.6–0.8s ease-out, slight translate, opacity fade. Triggered by the
+   `useRevealOnScroll` hook adding `.is-visible`. Staggers through a CSS
+   var (`--reveal-delay`) that section-level CSS (or inline styles) can set.
+   ========================================================================== */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.reveal.reveal-up      { transform: translateY(24px); }
+.reveal.reveal-down    { transform: translateY(-24px); }
+.reveal.reveal-left    { transform: translateX(-24px); }
+.reveal.reveal-right   { transform: translateX(24px); }
+.reveal.reveal-fade    { transform: none; }
+.reveal.reveal-scale   { transform: scale(0.96); }
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Stagger helpers — spec calls for +0.1s / +0.2s between siblings. */
+.reveal[data-delay="0"]    { --reveal-delay: 0ms; }
+.reveal[data-delay="1"]    { --reveal-delay: 80ms; }
+.reveal[data-delay="2"]    { --reveal-delay: 160ms; }
+.reveal[data-delay="3"]    { --reveal-delay: 240ms; }
+.reveal[data-delay="4"]    { --reveal-delay: 320ms; }
+.reveal[data-delay="5"]    { --reveal-delay: 400ms; }
+.reveal[data-delay="6"]    { --reveal-delay: 480ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

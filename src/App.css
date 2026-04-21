@@ -44,6 +44,17 @@
   color: var(--fg);
 }
 
+.wordmark-link {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.wordmark-link:hover .wordmark-glyph {
+  color: var(--accent);
+}
+
 .wordmark-divider {
   width: 1px;
   height: 16px;
@@ -191,7 +202,10 @@
   position: absolute;
   display: block;
   max-width: none;
-  pointer-events: none;
+  /* Hit-testable so hover + click interactions fire on the image itself.
+     Pan still works because mousedown bubbles up to the canvas root. */
+  pointer-events: auto;
+  cursor: crosshair;
   user-select: none;
   -webkit-user-drag: none;
   background: var(--bg-subtle);
@@ -199,4 +213,106 @@
   box-shadow: var(--shadow-card-md);
   /* Keep edges sharp when zooming far in. */
   image-rendering: -webkit-optimize-contrast;
+  transition: opacity 200ms ease, outline-color 160ms ease, box-shadow 160ms ease;
+  outline: 1.5px solid transparent;
+  outline-offset: 2px;
+}
+
+.world-image.is-active {
+  outline-color: var(--accent);
+  box-shadow:
+    var(--shadow-card-md),
+    0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.world-image.is-pending {
+  opacity: 0.85;
+}
+
+/* ==========================================================================
+   Highlight input — acrylic overlay pinned to the active image
+   ========================================================================== */
+
+.highlight-input {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 14px;
+
+  /* Acrylic — frosted glass tint over whatever's behind, with a soft border. */
+  background: color-mix(in srgb, var(--color-neutral) 72%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 24px -12px rgb(0 0 0 / 0.25),
+    0 0 0 1px color-mix(in srgb, var(--color-text) 4%, transparent);
+
+  animation: highlightInputIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes highlightInputIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.highlight-input-icon {
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.highlight-input-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0;
+  font: 400 14px/20px var(--font-sans);
+  letter-spacing: -0.2px;
+  color: var(--fg);
+  caret-color: var(--accent);
+}
+
+.highlight-input-field::placeholder {
+  color: var(--fg-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .highlight-input {
+    animation: none;
+  }
+}
+
+/* Connection indicator in the wordmark. */
+.conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-subtle);
+  flex: none;
+}
+
+.conn-dot.conn-ready {
+  background: var(--color-success-500);
+}
+
+.conn-dot.conn-connecting {
+  background: var(--color-warning-500);
+}
+
+.conn-dot.conn-offline {
+  background: var(--color-danger-500);
 }
