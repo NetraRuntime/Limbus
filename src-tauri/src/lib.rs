@@ -32,14 +32,32 @@ fn start_pocketbase(app: &AppHandle) -> Result<CommandChild, String> {
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("create pb_data dir {}: {e}", data_dir.display()))?;
 
+    // Bundled migrations ship alongside the app under `Resources/pb_migrations`
+    // (mapped from `../pb/pb_migrations` by tauri.conf.json). Point PB at that
+    // directory so it auto-applies any new migrations on first boot — no
+    // copying into pb_data, no manual setup step.
+    let migrations_dir = app
+        .path()
+        .resolve("pb_migrations", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("resolve pb_migrations resource: {e}"))?;
+
     let http_addr = format!("{PB_HOST}:{PB_PORT}");
     let data_arg = data_dir.to_string_lossy().to_string();
+    let migrations_arg = migrations_dir.to_string_lossy().to_string();
 
     let sidecar = app
         .shell()
         .sidecar("pocketbase")
         .map_err(|e| format!("resolve pocketbase sidecar: {e}"))?
-        .args(["serve", "--http", &http_addr, "--dir", &data_arg]);
+        .args([
+            "serve",
+            "--http",
+            &http_addr,
+            "--dir",
+            &data_arg,
+            "--migrationsDir",
+            &migrations_arg,
+        ]);
 
     let (mut rx, child) = sidecar
         .spawn()
