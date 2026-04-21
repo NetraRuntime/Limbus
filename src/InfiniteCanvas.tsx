@@ -41,6 +41,8 @@ type Props = {
   onChange?: (view: View) => void;
   onPointerWorld?: (p: (WorldPoint & { screenX: number; screenY: number }) | null) => void;
   onFilesDrop?: (files: File[], worldPoint: WorldPoint) => void;
+  /** Fires on a click that wasn't absorbed by a child (i.e. "background" click). */
+  onBackgroundClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   children?: ReactNode;
   dotStyle?: CSSProperties;
 };
@@ -52,7 +54,7 @@ const mod = (a: number, m: number) => ((a % m) + m) % m;
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 
 export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function InfiniteCanvas(
-  { initial, onChange, onPointerWorld, onFilesDrop, children, dotStyle },
+  { initial, onChange, onPointerWorld, onFilesDrop, onBackgroundClick, children, dotStyle },
   ref,
 ) {
   const [view, setView] = useState<View>({
@@ -286,6 +288,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
+      onClick={onBackgroundClick}
       style={{
         backgroundImage: 'radial-gradient(var(--dot-color) 1px, transparent 1.2px)',
         backgroundSize: `${gridPx}px ${gridPx}px`,
