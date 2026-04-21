@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "ai.kolosal.netrart",
   "build": {
-    "beforeDevCommand": "npm run stage:pb && npm run dev",
-    "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run stage:pb && npm run build",
+    "beforeDevCommand": "pnpm stage:pb && pnpm dev",
+    "devUrl": "http://localhost:5174",
+    "beforeBuildCommand": "pnpm stage:pb && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -38,7 +38,7 @@
     ],
     "externalBin": ["binaries/pocketbase"],
     "resources": {
-      "../pb/pb_migrations": "pb_migrations"
+      "../../../pb/pb_migrations": "pb_migrations"
     },
     "category": "Productivity",
     "shortDescription": "NetraRT infinite canvas",
