@@ -25,6 +25,14 @@
   gap: var(--space-2);
 }
 
+.hud-top-right {
+  top: var(--space-5);
+  right: var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* Wordmark pairing — logo + 16px vertical divider + mono tag. */
 .wordmark {
   display: flex;
@@ -327,6 +335,99 @@
 }
 
 /* ==========================================================================
+   Marquee selection rectangle — drawn while left-click-dragging on background.
+   Positioned in screen coordinates; no pointer events so it never gets in the
+   way of the pointer capture driving it.
+   ========================================================================== */
+
+.marquee-rect {
+  position: fixed;
+  z-index: 14;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 2px;
+}
+
+/* Selection bounding box — solid frame around 2+ selected items with Figma-
+   style corner handles and a count badge. Suppressed while a marquee is live
+   so the two overlays don't overlap visually. */
+.selection-bbox {
+  position: fixed;
+  z-index: 13;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--bg) 85%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 10px 28px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: selection-bbox-in 140ms ease-out;
+}
+
+@keyframes selection-bbox-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 8×8 square handles centered on each corner. They sit on top of the border
+   so the corner reads clearly at any zoom level. pointer-events: none is
+   essential — without it, the handles become hit targets and swallow
+   shift+clicks that would otherwise toggle a media item in/out of the
+   selection (`pointer-events` does NOT inherit, so the parent's `none`
+   doesn't cascade to children). */
+.selection-bbox-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--bg);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 40%, transparent);
+  pointer-events: none;
+}
+
+.selection-bbox-handle.tl { top: -5px; left: -5px; }
+.selection-bbox-handle.tr { top: -5px; right: -5px; }
+.selection-bbox-handle.bl { bottom: -5px; left: -5px; }
+.selection-bbox-handle.br { bottom: -5px; right: -5px; }
+
+/* Count badge — anchors to the top-left, floats just above the frame. The
+   transform keeps it from colliding with the TL handle when the selection
+   is small. */
+.selection-bbox-count {
+  position: absolute;
+  top: -26px;
+  left: -2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  height: 20px;
+  background: var(--accent);
+  color: var(--bg);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: -0.2px;
+  border-radius: 999px;
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 32%, transparent);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.selection-bbox-count i {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+/* ==========================================================================
    Highlight input — acrylic overlay pinned to the active image
    ========================================================================== */
 
@@ -395,6 +496,213 @@
   }
 }
 
+/* ==========================================================================
+   Floating sidebar — minimalist vertical stack of media thumbnails.
+   Click a thumb to focus + pin that media on the canvas.
+   ========================================================================== */
+
+.floating-sidebar {
+  top: 50%;
+  left: var(--space-5);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
+
+.floating-sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card-sm);
+  pointer-events: auto;
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  animation: floating-sidebar-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.floating-sidebar-inner::-webkit-scrollbar {
+  display: none;
+}
+
+.floating-sidebar-item {
+  position: relative;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--bg-subtle);
+  outline: 1.5px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 140ms ease, transform 140ms ease, opacity 140ms ease;
+  flex: none;
+}
+
+.floating-sidebar-item:hover {
+  transform: scale(1.06);
+}
+
+.floating-sidebar-item:focus-visible {
+  outline-color: var(--accent);
+}
+
+.floating-sidebar-item.is-active {
+  outline-color: var(--accent);
+}
+
+.floating-sidebar-item.is-pending {
+  opacity: 0.55;
+}
+
+.floating-sidebar-item > img,
+.floating-sidebar-item > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.floating-sidebar-kind {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-text) 70%, transparent);
+  color: var(--color-neutral);
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+@keyframes floating-sidebar-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-sidebar-inner {
+    animation: none;
+  }
+  .floating-sidebar-item:hover {
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   Context menu — right-click menu for media (export, etc.)
+   Positioned in screen space so it's unaffected by canvas pan/zoom.
+   ========================================================================== */
+
+.context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 12px 24px -12px rgb(0 0 0 / 0.28),
+    0 1px 2px rgb(0 0 0 / 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: context-menu-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.context-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-xs);
+  font: 400 13px/1 var(--font-sans);
+  letter-spacing: -0.2px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.context-menu-item:hover:not(:disabled),
+.context-menu-item:focus-visible {
+  background: var(--color-grey-500);
+  outline: none;
+}
+
+.context-menu-item:active:not(:disabled) {
+  background: var(--color-grey-600);
+}
+
+.context-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.context-menu-item.is-danger {
+  color: var(--color-danger-500, #d93a3a);
+}
+
+.context-menu-icon {
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+.context-menu-item.is-danger .context-menu-icon {
+  color: inherit;
+}
+
+.context-menu-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-menu {
+    animation: none;
+  }
+}
+
 /* Connection indicator in the wordmark. */
 .conn-dot {
   width: 6px;
@@ -414,4 +722,206 @@
 
 .conn-dot.conn-offline {
   background: var(--color-danger-500);
+}
+
+/* ==========================================================================
+   Settings modal — backdrop + centered card with sliders. Sits above the
+   HUD (z-index 30+) and captures pointer events so canvas pan/zoom is
+   locked while open.
+   ========================================================================== */
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--fg) 28%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  animation: settings-fade-in 120ms ease-out;
+}
+
+@keyframes settings-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.settings-card {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card-lg, var(--shadow-card-md));
+  overflow: hidden;
+  outline: none;
+  animation: settings-rise 160ms ease-out;
+}
+
+@keyframes settings-rise {
+  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.settings-title {
+  margin: 0;
+  font: 600 14px/1.2 var(--font-display, var(--font-mono));
+  letter-spacing: -0.2px;
+  color: var(--fg);
+}
+
+.settings-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.settings-close:hover {
+  background: var(--color-grey-500);
+  color: var(--fg);
+}
+
+.settings-body {
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  overflow-y: auto;
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settings-label {
+  font: 500 13px/1.2 var(--font-display, system-ui);
+  color: var(--fg);
+}
+
+.settings-value {
+  font: 400 12px/1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.settings-default-tag {
+  color: var(--fg-subtle);
+  margin-left: 4px;
+}
+
+.settings-description {
+  font: 400 12px/1.35 var(--font-display, system-ui);
+  color: var(--fg-subtle);
+}
+
+.settings-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--border-muted);
+  border-radius: 999px;
+}
+
+.settings-slider::-moz-range-track {
+  height: 4px;
+  background: var(--border-muted);
+  border-radius: 999px;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--border-muted);
+  margin-top: -5px;
+  transition: transform 100ms ease;
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--border-muted);
+}
+
+.settings-slider:focus-visible {
+  outline: none;
+}
+
+.settings-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--border-muted), 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-subtle);
+}
+
+.settings-footer .btn-ghost {
+  height: 32px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font: 500 12px/1 var(--font-display, system-ui);
+}
+
+.settings-footer .btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.settings-footer .btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, black);
 }

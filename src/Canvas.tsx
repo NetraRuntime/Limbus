@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   InfiniteCanvas,
+  type BackgroundPointerDown,
   type InfiniteCanvasHandle,
   type View,
   type WorldPoint,
@@ -25,6 +26,10 @@ import {
   HIGHLIGHT_INPUT_GAP,
   HIGHLIGHT_INPUT_HEIGHT,
 } from './components/HighlightInput';
+import { FloatingSidebar } from './components/FloatingSidebar';
+import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
+import { SettingsModal } from './components/SettingsModal';
+import { useSettings } from './hooks/useSettings';
 import { Link } from './router';
 import './App.css';
 
@@ -124,17 +129,35 @@ const HOVER_HIDE_MS = 160;
 // falls through to click / double-click as usual.
 const DRAG_THRESHOLD_PX = 4;
 
+type DragOrig = { x: number; y: number; kind: MediaKind };
+
 type DragState = {
-  id: string;
-  kind: MediaKind;
+  // The media the pointer came down on. Used to gate click semantics so a
+  // shift+click followed by a drag-cancel (moved === false) still toggles
+  // the correct id.
+  anchorId: string;
   pointerId: number;
   startX: number;
   startY: number;
-  origX: number;
-  origY: number;
+  // Every id being moved, mapped to its pre-drag position + kind. Multi-drag
+  // populates this with the entire selection; single-drag has one entry.
+  orig: Map<string, DragOrig>;
   moved: boolean;
-  lastX: number;
-  lastY: number;
+  lastDx: number;
+  lastDy: number;
+};
+
+type MarqueeState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startWorldX: number;
+  startWorldY: number;
+  // Selection BEFORE the marquee started — used to compute additive selection
+  // as (baseSet ∪ insideMarquee) on shift-drag.
+  baseSet: Set<string>;
+  additive: boolean;
+  moved: boolean;
 };
 
 type UploadPhase = 'sending' | 'finalizing' | 'error';
@@ -146,6 +169,13 @@ const VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
 // Debounce window for persisting view changes — pan/zoom emits many frames,
 // so we wait for the motion to settle before writing.
 const VIEW_PERSIST_DEBOUNCE_MS = 200;
+
+// Occlusion culling: render only media whose world-space AABB intersects the
+// viewport plus this margin on each side (expressed as a fraction of the
+// viewport). A larger buffer mounts more off-screen items but makes pan
+// smoother by hiding the mount/unmount boundary — 0.5 keeps ~4x the viewport
+// area in the DOM, which trades a little memory for zero pop-in on brisk pans.
+const CULL_BUFFER_FACTOR = 0.5;
 
 const readStoredView = (): View | null => {
   if (typeof localStorage === 'undefined') return null;
@@ -182,6 +212,89 @@ const writeStoredView = (v: View) => {
 
 type MediaPointerEvent = React.PointerEvent<HTMLImageElement | HTMLVideoElement>;
 
+// Memoized media renderer. Canvas re-renders on every rAF-paced view update
+// (to position marquee/pending/HighlightInput overlays), so each media
+// element would otherwise reconcile ~60×/sec — including for items that
+// haven't moved or been selected/hovered. React.memo + stable handler refs
+// + stable per-item references (see setMedia in pointermove: untouched
+// items preserve their prior reference) keep the per-frame cost near zero
+// for off-selection, non-dragged items.
+type MediaItemProps = {
+  m: CanvasMedia;
+  isActive: boolean;
+  onEnter: (id: string) => void;
+  onLeave: () => void;
+  onClick: (e: React.MouseEvent, id: string) => void;
+  onDoubleClick: (e: React.MouseEvent, m: CanvasMedia) => void;
+  onContextMenu: (e: React.MouseEvent, id: string) => void;
+  onPointerDown: (e: MediaPointerEvent, m: CanvasMedia) => void;
+  onPointerMove: (e: MediaPointerEvent) => void;
+  onPointerUp: (e: MediaPointerEvent) => void;
+};
+
+const MediaItem = memo(function MediaItem({
+  m,
+  isActive,
+  onEnter,
+  onLeave,
+  onClick,
+  onDoubleClick,
+  onContextMenu,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: MediaItemProps) {
+  const cls = `world-image ${m.pending ? 'is-pending' : ''} ${isActive ? 'is-active' : ''}`;
+  const style = { left: m.x, top: m.y, width: m.width, height: m.height };
+  const handleEnter = () => onEnter(m.id);
+  const handleClick = (e: React.MouseEvent) => onClick(e, m.id);
+  const handleDouble = (e: React.MouseEvent) => onDoubleClick(e, m);
+  const handleContext = (e: React.MouseEvent) => onContextMenu(e, m.id);
+  const handleDown = (e: MediaPointerEvent) => onPointerDown(e, m);
+
+  if (m.kind === 'video') {
+    return (
+      <video
+        src={m.src}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        className={cls}
+        style={style}
+        onMouseEnter={handleEnter}
+        onMouseLeave={onLeave}
+        onClick={handleClick}
+        onDoubleClick={handleDouble}
+        onContextMenu={handleContext}
+        onPointerDown={handleDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      />
+    );
+  }
+  return (
+    <img
+      src={m.src}
+      alt={m.name}
+      draggable={false}
+      className={cls}
+      style={style}
+      onMouseEnter={handleEnter}
+      onMouseLeave={onLeave}
+      onClick={handleClick}
+      onDoubleClick={handleDouble}
+      onContextMenu={handleContext}
+      onPointerDown={handleDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    />
+  );
+});
+
 // Compute the starting view once at module load. Pulled out of the component
 // so the useState initializer and the `initial` prop share a single source
 // of truth — prevents a one-frame flicker where the two get out of sync.
@@ -199,6 +312,8 @@ export function Canvas() {
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
   const [conn, setConn] = useState<ConnState>('connecting');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   // Upload status per pending media id. Two-phase state:
   //   phase 'sending'    → body in flight, pct ∈ [0, 1)
   //   phase 'finalizing' → body fully sent, waiting for PB to return record
@@ -213,23 +328,145 @@ export function Canvas() {
 
   // Highlight interaction state.
   const [hoverId, setHoverId] = useState<string | null>(null);
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  // Multi-selection. Shift+click toggles membership; plain click replaces
+  // with a single-element set; marquee commits a rect-intersected set.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  // The id most recently added to the selection. Used to anchor the
+  // HighlightInput when selection.size === 1. When selection is empty we
+  // fall back to hoverId so the current-hover UX still works.
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string>>({});
   const hideTimer = useRef<number | null>(null);
+  // Live marquee — when non-null, a selection rectangle is being dragged out.
+  // Stored as world coords so it stays anchored to content under pan/zoom.
+  const [marqueeRect, setMarqueeRect] = useState<{
+    minX: number; minY: number; maxX: number; maxY: number;
+  } | null>(null);
+  const marqueeRef = useRef<MarqueeState | null>(null);
+
+  // Right-click context menu state. `id` identifies the media under the
+  // cursor; `x`/`y` are viewport coordinates for the menu anchor.
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // Drag-to-move state. Kept in a ref so pointermove handlers don't force a
   // re-render per frame; position updates go through setMedia.
   const dragRef = useRef<DragState | null>(null);
+  // Set when a shift-press toggled selection in pointerdown, so the click
+  // that follows knows not to re-toggle (and so an unreliable "click" event
+  // — browsers sometimes suppress click when the gesture doesn't meet their
+  // threshold — never causes the toggle to be missed in the first place).
+  const shiftToggledRef = useRef(false);
   // Mirror of the live view so pointermove can read the current scale without
   // forcing handler re-creation on every view change.
   const viewRef = useRef<View>(view);
   viewRef.current = view;
 
-  const activeId = pinnedId ?? hoverId;
+  // Items visually rendered with the selection outline ("is-active"). This is
+  // a superset of selectedIds: during a marquee we also preview the items the
+  // rect would select (union with base for shift-drag, just the inside set
+  // for plain drag). Hover falls through only when nothing is selected.
+  const marqueeInside = useMemo(() => {
+    if (!marqueeRect) return null;
+    const inside = new Set<string>();
+    for (const m of media) {
+      if (
+        m.x + m.width >= marqueeRect.minX &&
+        m.x <= marqueeRect.maxX &&
+        m.y + m.height >= marqueeRect.minY &&
+        m.y <= marqueeRect.maxY
+      ) {
+        inside.add(m.id);
+      }
+    }
+    return inside;
+  }, [marqueeRect, media]);
+
+  const activeSet = useMemo<Set<string>>(() => {
+    if (marqueeInside && marqueeRef.current) {
+      const s = new Set(marqueeRef.current.additive ? marqueeRef.current.baseSet : []);
+      for (const id of marqueeInside) s.add(id);
+      return s;
+    }
+    if (selectedIds.size > 0) return selectedIds;
+    if (hoverId) return new Set([hoverId]);
+    return new Set();
+  }, [selectedIds, hoverId, marqueeInside]);
+
+  // HighlightInput anchors to a single item. Show only when exactly one item
+  // is selected (or, when nothing is selected, the hovered item). A multi-
+  // selection suppresses the input to avoid ambiguity about which item it
+  // would operate on.
+  const activeId = useMemo<string | null>(() => {
+    if (marqueeRef.current) return null;
+    if (selectedIds.size === 1) return lastSelectedId ?? Array.from(selectedIds)[0] ?? null;
+    if (selectedIds.size === 0) return hoverId;
+    return null;
+  }, [selectedIds, hoverId, lastSelectedId]);
+
   const activeMedia = useMemo(
     () => (activeId ? media.find((m) => m.id === activeId) ?? null : null),
     [activeId, media],
   );
+
+  // Union AABB of the currently-selected items in world space. Only computed
+  // when 2+ items are selected — a single selection already shows its outline
+  // via the is-active class, so an extra frame around it would be redundant.
+  const selectionBBox = useMemo(() => {
+    if (selectedIds.size < 2) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const m of media) {
+      if (!selectedIds.has(m.id)) continue;
+      if (m.x < minX) minX = m.x;
+      if (m.y < minY) minY = m.y;
+      if (m.x + m.width > maxX) maxX = m.x + m.width;
+      if (m.y + m.height > maxY) maxY = m.y + m.height;
+    }
+    if (!Number.isFinite(minX)) return null;
+    return { minX, minY, maxX, maxY };
+  }, [selectedIds, media]);
+
+  // Track window dimensions for viewport culling. The canvas is
+  // position:fixed; inset:0, so window size === viewport size.
+  const [viewport, setViewport] = useState<{ w: number; h: number }>(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 0,
+    h: typeof window !== 'undefined' ? window.innerHeight : 0,
+  }));
+  useEffect(() => {
+    const onResize = () =>
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Occlusion culling. Drop media whose AABB lies entirely outside the
+  // viewport (plus a generous buffer) so they're removed from the DOM and
+  // don't pay decode/paint cost. Never cull items that are part of an active
+  // interaction — the hovered item, any selected item, or any item currently
+  // being dragged — otherwise the HighlightInput's anchor disappears or the
+  // drag target gets ripped out from under the pointer.
+  const visibleMedia = useMemo(() => {
+    if (!viewport.w || !viewport.h || !media.length) return media;
+    const padX = viewport.w * CULL_BUFFER_FACTOR;
+    const padY = viewport.h * CULL_BUFFER_FACTOR;
+    const minX = (-view.x - padX) / view.scale;
+    const minY = (-view.y - padY) / view.scale;
+    const maxX = (viewport.w - view.x + padX) / view.scale;
+    const maxY = (viewport.h - view.y + padY) / view.scale;
+    const draggingIds = dragRef.current?.orig;
+    return media.filter((m) => {
+      if (selectedIds.has(m.id) || m.id === hoverId) return true;
+      if (draggingIds && draggingIds.has(m.id)) return true;
+      return (
+        m.x + m.width >= minX &&
+        m.y + m.height >= minY &&
+        m.x <= maxX &&
+        m.y <= maxY
+      );
+    });
+  }, [media, view, viewport, selectedIds, hoverId]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -294,23 +531,31 @@ export function Canvas() {
   }, []);
 
   // Keep the delete handler's dependencies in a ref so the listener doesn't
-  // need to re-attach on every media/pinned change.
+  // need to re-attach on every media/selection change.
   const mediaRef = useRef(media);
   mediaRef.current = media;
-  const pinnedRef = useRef(pinnedId);
-  pinnedRef.current = pinnedId;
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
 
-  // Deletes the currently pinned media — shared between the window-level
-  // Delete/Backspace shortcut and the empty-input Delete shortcut inside
-  // the HighlightInput.
-  const deletePinned = useCallback(() => {
-    const id = pinnedRef.current;
-    if (!id) return;
+  const clearSelection = useCallback(() => {
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
+    setLastSelectedId(null);
+  }, []);
+
+  // Deletes a media item by id. Used by delete-selection, the empty-input
+  // Delete shortcut inside HighlightInput, and the context-menu Delete action.
+  const deleteMediaById = useCallback((id: string) => {
     const target = mediaRef.current.find((m) => m.id === id);
     if (!target) return;
     setMedia((prev) => prev.filter((m) => m.id !== id));
-    setPinnedId(null);
-    setHoverId(null);
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setLastSelectedId((cur) => (cur === id ? null : cur));
+    setHoverId((cur) => (cur === id ? null : cur));
     if (target.pending) {
       uploadCtrlsRef.current[id]?.abort();
       URL.revokeObjectURL(target.src);
@@ -325,6 +570,12 @@ export function Canvas() {
         setMedia((prev) => [...prev, target]);
       });
   }, []);
+
+  const deleteSelection = useCallback(() => {
+    const ids = Array.from(selectedIdsRef.current);
+    if (ids.length === 0) return;
+    for (const id of ids) deleteMediaById(id);
+  }, [deleteMediaById]);
 
   // Keyboard shortcuts:
   //   Escape        — release pinned selection
@@ -356,18 +607,18 @@ export function Canvas() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setPinnedId(null);
+        clearSelection();
         return;
       }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (isTypingContext(e)) return;
-      if (!pinnedRef.current) return;
+      if (selectedIdsRef.current.size === 0) return;
       e.preventDefault();
-      deletePinned();
+      deleteSelection();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [clearSelection, deleteSelection]);
 
   const handleChange = useCallback((v: View) => setView(v), []);
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
@@ -469,7 +720,20 @@ export function Canvas() {
             // press Delete/Backspace to clean it up. Previously we removed
             // the media silently, which looked like a random "poof".
             const message = (err as Error | null)?.message ?? 'upload failed';
-            console.warn('[pb] upload failed for', p.file.name, err);
+            const responseBody = (err as Error & { responseBody?: string } | null)
+              ?.responseBody;
+            // Use console.error + structured context so the full server
+            // payload is trivial to copy from devtools — the on-canvas chip
+            // truncates long errors, so this is the reliable source.
+            console.error('[pb] upload failed', {
+              file: p.file.name,
+              kind: p.draft.kind,
+              size: p.file.size,
+              type: p.file.type,
+              message,
+              responseBody,
+              error: err,
+            });
             setConn('offline');
             setUploadStatus((prev) => ({
               ...prev,
@@ -493,9 +757,93 @@ export function Canvas() {
     );
   }, []);
 
-  const handleBackgroundClick = useCallback(() => {
-    setPinnedId(null);
-  }, []);
+  // Left-button press on empty canvas. Starts a marquee drag; on pointer-up
+  // with no movement, treats it as a click-to-deselect (shift held: no-op
+  // so the user can add to the selection by shift-clicking media next).
+  const handleBackgroundPointerDown = useCallback((p: BackgroundPointerDown) => {
+    // Cancel any in-flight marquee before starting a new one (shouldn't
+    // happen, but defensive).
+    marqueeRef.current = {
+      pointerId: p.pointerId,
+      startClientX: p.clientX,
+      startClientY: p.clientY,
+      startWorldX: p.worldX,
+      startWorldY: p.worldY,
+      baseSet: new Set(selectedIdsRef.current),
+      additive: p.shiftKey,
+      moved: false,
+    };
+
+    const onMove = (e: PointerEvent) => {
+      const m = marqueeRef.current;
+      if (!m || e.pointerId !== m.pointerId) return;
+      const dxScreen = e.clientX - m.startClientX;
+      const dyScreen = e.clientY - m.startClientY;
+      if (!m.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) return;
+      m.moved = true;
+      // Container is position:fixed;inset:0 so client coords map directly.
+      const v = viewRef.current;
+      const curWorldX = (e.clientX - v.x) / v.scale;
+      const curWorldY = (e.clientY - v.y) / v.scale;
+      setMarqueeRect({
+        minX: Math.min(m.startWorldX, curWorldX),
+        minY: Math.min(m.startWorldY, curWorldY),
+        maxX: Math.max(m.startWorldX, curWorldX),
+        maxY: Math.max(m.startWorldY, curWorldY),
+      });
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const m = marqueeRef.current;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (!m || e.pointerId !== m.pointerId) return;
+      marqueeRef.current = null;
+      if (!m.moved) {
+        // Click on empty space:
+        //   plain  → clear selection
+        //   shift  → leave selection unchanged (compositional intent)
+        if (!m.additive) clearSelection();
+        setMarqueeRect(null);
+        return;
+      }
+      // Commit the marquee-intersected set to selectedIds.
+      const current = mediaRef.current;
+      const dxScreen = e.clientX - m.startClientX;
+      const dyScreen = e.clientY - m.startClientY;
+      const v = viewRef.current;
+      const endWorldX = m.startWorldX + dxScreen / v.scale;
+      const endWorldY = m.startWorldY + dyScreen / v.scale;
+      const minX = Math.min(m.startWorldX, endWorldX);
+      const minY = Math.min(m.startWorldY, endWorldY);
+      const maxX = Math.max(m.startWorldX, endWorldX);
+      const maxY = Math.max(m.startWorldY, endWorldY);
+      const hit = new Set<string>();
+      for (const item of current) {
+        if (
+          item.x + item.width >= minX &&
+          item.x <= maxX &&
+          item.y + item.height >= minY &&
+          item.y <= maxY
+        ) {
+          hit.add(item.id);
+        }
+      }
+      const next = m.additive ? new Set(m.baseSet) : new Set<string>();
+      for (const id of hit) next.add(id);
+      setSelectedIds(next);
+      // Pick a reasonable last-selected anchor — prefer something newly
+      // added so HighlightInput has a sensible home if size collapses to 1.
+      const newlyAdded = Array.from(hit).find((id) => !m.baseSet.has(id));
+      setLastSelectedId(newlyAdded ?? Array.from(next)[next.size - 1] ?? null);
+      setMarqueeRect(null);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }, [clearSelection]);
 
   const handleMediaEnter = useCallback(
     (id: string) => {
@@ -512,10 +860,18 @@ export function Canvas() {
   const handleMediaClick = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
-      if (dragRef.current?.id === id && dragRef.current.moved) return;
+      // Shift already toggled in pointerdown — don't re-apply here.
+      if (shiftToggledRef.current) {
+        shiftToggledRef.current = false;
+        return;
+      }
+      // Suppress click after a drag-move so moving an item doesn't also
+      // toggle its selection.
+      if (dragRef.current?.anchorId === id && dragRef.current.moved) return;
       clearHideTimer();
-      setPinnedId(id);
       setHoverId(id);
+      setSelectedIds(new Set([id]));
+      setLastSelectedId(id);
     },
     [clearHideTimer],
   );
@@ -533,21 +889,131 @@ export function Canvas() {
     [],
   );
 
+  const handleMediaContextMenu = useCallback((e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearHideTimer();
+    setHoverId(id);
+    // If the right-clicked item isn't already in the selection, replace the
+    // selection with just this id. If it IS in the selection, leave the
+    // multi-selection alone so menu actions (e.g. Delete) apply to the group.
+    setSelectedIds((prev) => {
+      if (prev.has(id)) return prev;
+      return new Set([id]);
+    });
+    setLastSelectedId(id);
+    setContextMenu({ id, x: e.clientX, y: e.clientY });
+  }, [clearHideTimer]);
+
+  // Trigger a browser download for the given media. For already-uploaded
+  // items we fetch-as-blob first — the <a download> attribute is ignored
+  // when the URL is cross-origin (which it is in Tauri, where PB is served
+  // from 127.0.0.1:8090). Pending uploads still have a local blob: URL, so
+  // the anchor works directly.
+  const exportMedia = useCallback(async (m: CanvasMedia) => {
+    // Prefer the original filename; fall back to the id with a reasonable
+    // extension so we never save files with no extension.
+    const extFromName = m.name && /\.[a-z0-9]+$/i.test(m.name)
+      ? m.name.match(/\.[a-z0-9]+$/i)![0]
+      : m.kind === 'video' ? '.mp4' : '.png';
+    const filename = m.name && /\.[a-z0-9]+$/i.test(m.name)
+      ? m.name
+      : `${m.name || m.id}${extFromName}`;
+
+    const triggerDownload = (href: string, revoke: boolean) => {
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke on the next tick so Safari has time to start the download.
+      if (revoke) window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+    };
+
+    try {
+      if (m.pending) {
+        // Local blob: URL — safe to use directly.
+        triggerDownload(m.src, false);
+        return;
+      }
+      const res = await fetch(m.src, { credentials: 'include' });
+      if (!res.ok) throw new Error(`fetch ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      triggerDownload(url, true);
+    } catch (err) {
+      console.warn('[export] download failed for', m.id, err);
+      // Fallback: try a direct anchor click. Works when the file is
+      // same-origin even if fetch was blocked (e.g. adblock / CSP).
+      triggerDownload(m.src, false);
+    }
+  }, []);
+
+  // Sidebar click — focus on the chosen media and pin it, mirroring the
+  // combined behavior of a single-click (pins) and double-click (zooms to)
+  // on the media itself.
+  const handleSidebarSelect = useCallback(
+    (id: string) => {
+      const target = mediaRef.current.find((m) => m.id === id);
+      if (!target) return;
+      clearHideTimer();
+      setSelectedIds(new Set([id]));
+      setLastSelectedId(id);
+      setHoverId(id);
+      const bottomInset = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
+      canvasRef.current?.focusOn(
+        { x: target.x, y: target.y, width: target.width, height: target.height },
+        { padding: 0.12, bottomInset },
+      );
+    },
+    [clearHideTimer],
+  );
+
   const handleMediaPointerDown = useCallback((e: MediaPointerEvent, m: CanvasMedia) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    // Shift+press toggles selection immediately on pointerdown. Previously
+    // this lived in the click handler, but click can be suppressed by the
+    // browser if any micro-movement happens between down and up (common on
+    // a trackpad), which caused additions to silently drop while removals
+    // still worked. Toggling here guarantees the selection change lands.
+    if (e.shiftKey) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(m.id)) next.delete(m.id);
+        else next.add(m.id);
+        return next;
+      });
+      setLastSelectedId(m.id);
+      shiftToggledRef.current = true;
+      // No pointer capture, no drag: treat shift as a selection gesture only.
+      return;
+    }
+    shiftToggledRef.current = false;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    // Pick the set of ids to move. If the pressed item is already part of the
+    // selection, the whole selection moves together (Figma parity). If it's
+    // outside the current selection, we assume the user wants to manipulate
+    // just that one item — no implicit multi-select from a plain drag.
+    const sel = selectedIdsRef.current;
+    const ids = sel.has(m.id) ? sel : new Set<string>([m.id]);
+    const orig = new Map<string, DragOrig>();
+    for (const item of mediaRef.current) {
+      if (ids.has(item.id)) {
+        orig.set(item.id, { x: item.x, y: item.y, kind: item.kind });
+      }
+    }
     dragRef.current = {
-      id: m.id,
-      kind: m.kind,
+      anchorId: m.id,
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      origX: m.x,
-      origY: m.y,
+      orig,
       moved: false,
-      lastX: m.x,
-      lastY: m.y,
+      lastDx: 0,
+      lastDy: 0,
     };
   }, []);
 
@@ -559,12 +1025,16 @@ export function Canvas() {
     if (!d.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) return;
     d.moved = true;
     const scale = viewRef.current.scale;
-    const nextX = d.origX + dxScreen / scale;
-    const nextY = d.origY + dyScreen / scale;
-    d.lastX = nextX;
-    d.lastY = nextY;
+    const dx = dxScreen / scale;
+    const dy = dyScreen / scale;
+    d.lastDx = dx;
+    d.lastDy = dy;
     setMedia((prev) =>
-      prev.map((m) => (m.id === d.id ? { ...m, x: nextX, y: nextY } : m)),
+      prev.map((m) => {
+        const o = d.orig.get(m.id);
+        if (!o) return m;
+        return { ...m, x: o.x + dx, y: o.y + dy };
+      }),
     );
   }, []);
 
@@ -577,28 +1047,33 @@ export function Canvas() {
       } catch {
         /* no-op */
       }
-      const { id, kind, moved, lastX, lastY, origX, origY } = d;
+      const { moved, lastDx, lastDy, orig } = d;
       window.setTimeout(() => {
         if (dragRef.current && dragRef.current.pointerId === d.pointerId) {
           dragRef.current = null;
         }
       }, 0);
       if (!moved) return;
-      const stillPending = media.find((m) => m.id === id)?.pending;
-      if (stillPending) return;
-      const persist =
-        kind === 'video' ? updateVideoPosition : updateImagePosition;
-      persist(id, { x: lastX, y: lastY })
-        .then(() => setConn('ready'))
-        .catch((err) => {
-          console.warn('[pb] move failed for', id, err);
-          setConn('offline');
-          setMedia((prev) =>
-            prev.map((m) => (m.id === id ? { ...m, x: origX, y: origY } : m)),
-          );
-        });
+      const currentMedia = mediaRef.current;
+      for (const [id, o] of orig) {
+        const stillPending = currentMedia.find((m) => m.id === id)?.pending;
+        if (stillPending) continue;
+        const persist =
+          o.kind === 'video' ? updateVideoPosition : updateImagePosition;
+        const nextX = o.x + lastDx;
+        const nextY = o.y + lastDy;
+        persist(id, { x: nextX, y: nextY })
+          .then(() => setConn('ready'))
+          .catch((err) => {
+            console.warn('[pb] move failed for', id, err);
+            setConn('offline');
+            setMedia((prev) =>
+              prev.map((mm) => (mm.id === id ? { ...mm, x: o.x, y: o.y } : mm)),
+            );
+          });
+      }
     },
-    [media],
+    [],
   );
 
   // InfiniteCanvas reads this once on mount. Memoized so React never gets a
@@ -625,56 +1100,28 @@ export function Canvas() {
         onChange={handleChange}
         onPointerWorld={handlePointerWorld}
         onFilesDrop={handleFilesDrop}
-        onBackgroundClick={handleBackgroundClick}
+        onBackgroundPointerDown={handleBackgroundPointerDown}
+        zoomSensitivity={settings.zoomSensitivity}
+        panSpeed={settings.panSpeed}
       >
-        {media.map((m) => {
-          const cls = `world-image ${m.pending ? 'is-pending' : ''} ${m.id === activeId ? 'is-active' : ''}`;
-          const style = { left: m.x, top: m.y, width: m.width, height: m.height };
-          if (m.kind === 'video') {
-            return (
-              <video
-                key={m.id}
-                src={m.src}
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="metadata"
-                className={cls}
-                style={style}
-                onMouseEnter={() => handleMediaEnter(m.id)}
-                onMouseLeave={handleMediaLeave}
-                onClick={(e) => handleMediaClick(e, m.id)}
-                onDoubleClick={(e) => handleMediaDoubleClick(e, m)}
-                onPointerDown={(e) => handleMediaPointerDown(e, m)}
-                onPointerMove={handleMediaPointerMove}
-                onPointerUp={handleMediaPointerUp}
-                onPointerCancel={handleMediaPointerUp}
-              />
-            );
-          }
-          return (
-            <img
-              key={m.id}
-              src={m.src}
-              alt={m.name}
-              draggable={false}
-              className={cls}
-              style={style}
-              onMouseEnter={() => handleMediaEnter(m.id)}
-              onMouseLeave={handleMediaLeave}
-              onClick={(e) => handleMediaClick(e, m.id)}
-              onDoubleClick={(e) => handleMediaDoubleClick(e, m)}
-              onPointerDown={(e) => handleMediaPointerDown(e, m)}
-              onPointerMove={handleMediaPointerMove}
-              onPointerUp={handleMediaPointerUp}
-              onPointerCancel={handleMediaPointerUp}
-            />
-          );
-        })}
+        {visibleMedia.map((m) => (
+          <MediaItem
+            key={m.id}
+            m={m}
+            isActive={activeSet.has(m.id)}
+            onEnter={handleMediaEnter}
+            onLeave={handleMediaLeave}
+            onClick={handleMediaClick}
+            onDoubleClick={handleMediaDoubleClick}
+            onContextMenu={handleMediaContextMenu}
+            onPointerDown={handleMediaPointerDown}
+            onPointerMove={handleMediaPointerMove}
+            onPointerUp={handleMediaPointerUp}
+          />
+        ))}
       </InfiniteCanvas>
 
-      {media
+      {visibleMedia
         .filter((m) => m.pending)
         .map((m) => {
           const rx = m.x * view.scale + view.x;
@@ -710,7 +1157,10 @@ export function Canvas() {
               role="status"
               aria-live="polite"
               aria-label={`${m.kind} ${isError ? 'upload failed' : 'uploading'}, ${label}`}
-              title={isError && !showLabel ? label : undefined}
+              // Always expose the full label as a tooltip on error states —
+              // the chip truncates long messages with ellipsis, so without
+              // this the user can't see the server's reason without devtools.
+              title={isError ? label : undefined}
             >
               <div className={`pending-chip ${isError ? 'is-error' : ''}`}>
                 {isError ? (
@@ -736,20 +1186,56 @@ export function Canvas() {
           onMouseLeave={scheduleHide}
           onFocus={() => {
             clearHideTimer();
-            setPinnedId(activeMedia.id);
+            setSelectedIds(new Set([activeMedia.id]));
+            setLastSelectedId(activeMedia.id);
           }}
           onBlur={() => {
             const v = highlightInputs[activeMedia.id] ?? '';
-            if (!v) setPinnedId(null);
+            if (!v) clearSelection();
             scheduleHide();
           }}
           onEscape={() => {
-            setPinnedId(null);
+            clearSelection();
             scheduleHide();
           }}
-          onDeleteWhenEmpty={deletePinned}
-          autoFocus={pinnedId === activeMedia.id}
+          onDeleteWhenEmpty={deleteSelection}
+          autoFocus={selectedIds.has(activeMedia.id)}
         />
+      )}
+
+      {marqueeRect && (
+        <div
+          className="marquee-rect"
+          aria-hidden
+          style={{
+            left: marqueeRect.minX * view.scale + view.x,
+            top: marqueeRect.minY * view.scale + view.y,
+            width: Math.max(0, (marqueeRect.maxX - marqueeRect.minX) * view.scale),
+            height: Math.max(0, (marqueeRect.maxY - marqueeRect.minY) * view.scale),
+          }}
+        />
+      )}
+
+      {selectionBBox && !marqueeRect && (
+        <div
+          className="selection-bbox"
+          aria-hidden
+          style={{
+            left: selectionBBox.minX * view.scale + view.x,
+            top: selectionBBox.minY * view.scale + view.y,
+            width: Math.max(0, (selectionBBox.maxX - selectionBBox.minX) * view.scale),
+            height: Math.max(0, (selectionBBox.maxY - selectionBBox.minY) * view.scale),
+          }}
+        >
+          <span className="selection-bbox-handle tl" />
+          <span className="selection-bbox-handle tr" />
+          <span className="selection-bbox-handle bl" />
+          <span className="selection-bbox-handle br" />
+          <span className="selection-bbox-count">
+            <i className="ri-checkbox-multiple-blank-line" aria-hidden />
+            {selectedIds.size}
+          </span>
+        </div>
       )}
 
       {isEmpty && (
@@ -763,6 +1249,48 @@ export function Canvas() {
           </div>
         </div>
       )}
+
+      <FloatingSidebar
+        items={media}
+        activeId={activeId}
+        onSelect={handleSidebarSelect}
+      />
+
+      {contextMenu && (() => {
+        const target = media.find((m) => m.id === contextMenu.id);
+        if (!target) return null;
+        const items: ContextMenuItem[] = [
+          {
+            id: 'export',
+            label: 'Export',
+            icon: 'ri-download-2-line',
+            onSelect: () => { void exportMedia(target); },
+          },
+          {
+            id: 'delete',
+            label: selectedIds.size > 1 && selectedIds.has(target.id)
+              ? `Delete ${selectedIds.size} items`
+              : 'Delete',
+            icon: 'ri-delete-bin-line',
+            danger: true,
+            onSelect: () => {
+              if (selectedIds.has(target.id) && selectedIds.size > 1) {
+                deleteSelection();
+              } else {
+                deleteMediaById(target.id);
+              }
+            },
+          },
+        ];
+        return (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            items={items}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
 
       <div className="hud hud-top-left">
         <div className="wordmark" aria-label="NetraRT">
@@ -800,7 +1328,28 @@ export function Canvas() {
           <button
             className="btn-ghost"
             type="button"
-            onClick={() => canvasRef.current?.reset()}
+            aria-label="Fit all to view"
+            onClick={() => {
+              const items = mediaRef.current;
+              if (items.length === 0) {
+                canvasRef.current?.reset();
+                return;
+              }
+              let minX = Infinity;
+              let minY = Infinity;
+              let maxX = -Infinity;
+              let maxY = -Infinity;
+              for (const m of items) {
+                if (m.x < minX) minX = m.x;
+                if (m.y < minY) minY = m.y;
+                if (m.x + m.width > maxX) maxX = m.x + m.width;
+                if (m.y + m.height > maxY) maxY = m.y + m.height;
+              }
+              canvasRef.current?.focusOn(
+                { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+                { padding: 0.12 },
+              );
+            }}
           >
             Reset
           </button>
@@ -814,6 +1363,27 @@ export function Canvas() {
           </button>
         </div>
       </div>
+
+      <div className="hud hud-top-right">
+        <div className="btn-cluster" role="group" aria-label="App controls">
+          <button
+            className="btn-ghost"
+            type="button"
+            aria-label="Open settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <i className="ri-settings-3-line" aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      <SettingsModal
+        open={settingsOpen}
+        settings={settings}
+        onChange={updateSetting}
+        onReset={resetSettings}
+        onClose={() => setSettingsOpen(false)}
+      />
     </>
   );
 }
