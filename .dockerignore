@@ -1,0 +1,20 @@
+node_modules
+dist
+.vite
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+.env.*.local
+.git
+.gitignore
+.claude
+.dockerignore
+Dockerfile
+Dockerfile.*
+docker-compose.yml
+
+# PocketBase host-side binary + runtime state — the image downloads its own.
+pb/pocketbase
+pb/pb_data

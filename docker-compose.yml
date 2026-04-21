@@ -1,0 +1,32 @@
+services:
+  pb:
+    build:
+      context: .
+      dockerfile: Dockerfile.pb
+    container_name: netrart-pb
+    restart: unless-stopped
+    volumes:
+      # Persisted SQLite db + uploaded files live here. Named volume so
+      # `docker compose down` keeps data; use `docker compose down -v` to wipe.
+      - pb_data:/pb/pb_data
+    # Not exposed on the host by default — nginx proxies through. Uncomment
+    # the ports line if you want direct access for e.g. the admin CLI.
+    # ports:
+    #   - "8090:8090"
+    expose:
+      - "8090"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netrart-web
+    restart: unless-stopped
+    depends_on:
+      pb:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+volumes:
+  pb_data:
