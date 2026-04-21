@@ -30,7 +30,6 @@ import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { useSettings } from './hooks/useSettings';
-import { Link } from './router';
 import './App.css';
 
 type CanvasMedia = {
@@ -648,8 +647,10 @@ export function Canvas() {
     );
 
     const gap = 32;
-    let cursorX = point.worldX - loaded[0].width / 2;
-    const baseY = point.worldY - loaded[0].height / 2;
+    const first = loaded[0];
+    if (!first) return;
+    let cursorX = point.worldX - first.width / 2;
+    const baseY = point.worldY - first.height / 2;
 
     type Draft = {
       draft: CanvasMedia;
@@ -1294,9 +1295,9 @@ export function Canvas() {
 
       <div className="hud hud-top-left">
         <div className="wordmark" aria-label="NetraRT">
-          <Link to="/" className="wordmark-link">
+          <a href="/" className="wordmark-link">
             <span className="wordmark-glyph">NetraRT</span>
-          </Link>
+          </a>
           <span className="wordmark-divider" aria-hidden />
           <span className="wordmark-tag">canvas</span>
           <span className="wordmark-divider" aria-hidden />

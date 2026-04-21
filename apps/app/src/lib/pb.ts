@@ -79,7 +79,7 @@ const buildMediaForm = (
 // Thrown when an upload is cancelled via AbortSignal. Callers can use
 // `.name === 'AbortError'` to distinguish cancellation from real failures.
 export class UploadAbortError extends Error {
-  name = 'AbortError';
+  override name = 'AbortError';
   constructor() {
     super('upload aborted');
   }
