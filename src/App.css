@@ -195,27 +195,32 @@
 }
 
 /* ==========================================================================
-   In-canvas images — positioned in world coordinates
+   In-canvas media (images and videos) — positioned in world coordinates
    ========================================================================== */
 
 .world-image {
   position: absolute;
   display: block;
   max-width: none;
-  /* Hit-testable so hover + click interactions fire on the image itself.
-     Pan still works because mousedown bubbles up to the canvas root. */
+  /* Hit-testable so hover + click + drag interactions fire on the element
+     itself; pan still works because the canvas root is below. */
   pointer-events: auto;
-  cursor: crosshair;
+  cursor: grab;
   user-select: none;
   -webkit-user-drag: none;
   background: var(--bg-subtle);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card-md);
-  /* Keep edges sharp when zooming far in. */
+  /* Keep edges sharp when zooming far in. Harmless on <video>. */
   image-rendering: -webkit-optimize-contrast;
+  object-fit: cover;
   transition: opacity 200ms ease, outline-color 160ms ease, box-shadow 160ms ease;
   outline: 1.5px solid transparent;
   outline-offset: 2px;
+}
+
+.world-image:active {
+  cursor: grabbing;
 }
 
 .world-image.is-active {
@@ -226,7 +231,99 @@
 }
 
 .world-image.is-pending {
-  opacity: 0.85;
+  opacity: 0.75;
+  filter: saturate(0.85);
+}
+
+/* ==========================================================================
+   Pending upload overlay — spinner + label while PB upload is in flight.
+   Positioned in screen space so it stays legible at any zoom.
+   ========================================================================== */
+
+.pending-overlay {
+  position: fixed;
+  z-index: 15;
+  /* Don't intercept pointer events — drag/click should still reach the
+     underlying media while it's uploading. */
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  /* Very subtle light wash so the uploading state reads without drowning
+     the media underneath. */
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+}
+
+/* Light chip on a light design system: white surface, dark text, brand
+   accent spinner. Previous revision used fallback dark tokens which
+   rendered dark-on-dark in this theme. */
+.pending-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  box-shadow: 0 1px 2px rgba(9, 20, 19, 0.12);
+  color: var(--fg);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.pending-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  animation: pending-spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+.pending-label {
+  white-space: nowrap;
+}
+
+@keyframes pending-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-spinner {
+    animation-duration: 1400ms;
+  }
+}
+
+/* Error variant — upload failed, chip turns red so it's obvious at a glance.
+   Press Delete/Backspace to dismiss the failed media. */
+.pending-overlay.is-error {
+  background: color-mix(in srgb, #d93a3a 16%, transparent);
+}
+
+.pending-chip.is-error {
+  background: var(--bg);
+  border-color: color-mix(in srgb, #d93a3a 55%, transparent);
+  color: #d93a3a;
+  /* Allow a longer error message to read without overflowing. */
+  max-width: min(70vw, 480px);
+}
+
+.pending-chip.is-error .pending-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-chip-icon {
+  font-size: 14px;
+  line-height: 1;
+  color: #d93a3a;
 }
 
 /* ==========================================================================
@@ -236,6 +333,8 @@
 .highlight-input {
   position: fixed;
   z-index: 20;
+  /* top / left / width / height are set inline per-image by the component —
+     it anchors just below the active image's screen rect. */
   display: flex;
   align-items: center;
   gap: 10px;

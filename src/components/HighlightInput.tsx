@@ -1,42 +1,38 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 
 type ScreenRect = { x: number; y: number; width: number; height: number };
 
 type Props = {
-  /** Image bounding rect in screen (viewport) coords. */
+  /** Image bounding rect in screen coords. Input is pinned to its bottom edge. */
   rect: ScreenRect;
   value: string;
   onChange: (next: string) => void;
-  /** Pin the input (from pointer enter on the input shell). */
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onFocus?: () => void;
   onBlur?: () => void;
   onEscape?: () => void;
   onSubmit?: (value: string) => void;
+  /**
+   * Fires when Delete/Backspace is pressed while the input is empty — an
+   * escape hatch so the canvas's "delete pinned media" shortcut works even
+   * when the autofocused input would otherwise swallow the key.
+   */
+  onDeleteWhenEmpty?: () => void;
   autoFocus?: boolean;
 };
 
-const INPUT_HEIGHT = 40;
-const GAP = 10;
+export const HIGHLIGHT_INPUT_HEIGHT = 44;
+export const HIGHLIGHT_INPUT_GAP = 12;
 const MIN_WIDTH = 240;
-const MAX_WIDTH = 360;
+const MAX_WIDTH = 420;
 const VIEWPORT_MARGIN = 12;
 
-// Choose "above" when there's headroom, otherwise "below". Ties go to the side
-// with more space — if neither has enough room, the one with more space wins.
-const placementFor = (
-  rect: ScreenRect,
-  viewportHeight: number,
-): { placeAbove: boolean } => {
-  const above = rect.y;
-  const below = viewportHeight - (rect.y + rect.height);
-  const needed = INPUT_HEIGHT + GAP;
-  if (above >= needed && below < needed) return { placeAbove: true };
-  if (below >= needed && above < needed) return { placeAbove: false };
-  return { placeAbove: above >= below };
-};
-
+// Always place the input just below the image. Horizontal: centered on the
+// image midpoint, clamped to the viewport so the input never slides off-
+// screen even for images near the left or right edge. Placement intentionally
+// does NOT flip to "above" — it's consistently the bottom, regardless of where
+// the image is on the viewport or where the cursor sits.
 export function HighlightInput({
   rect,
   value,
@@ -47,53 +43,54 @@ export function HighlightInput({
   onBlur,
   onEscape,
   onSubmit,
+  onDeleteWhenEmpty,
   autoFocus,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [viewport, setViewport] = useState(() => ({
-    w: typeof window === 'undefined' ? 1024 : window.innerWidth,
-    h: typeof window === 'undefined' ? 768 : window.innerHeight,
-  }));
 
-  useEffect(() => {
-    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  // Focus the input the moment it becomes autoFocused, without scrolling.
   useLayoutEffect(() => {
     if (autoFocus) inputRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
   const width = Math.max(MIN_WIDTH, Math.min(rect.width, MAX_WIDTH));
-  const { placeAbove } = placementFor(rect, viewport.h);
-  const top = placeAbove
-    ? Math.max(VIEWPORT_MARGIN, rect.y - INPUT_HEIGHT - GAP)
-    : Math.min(viewport.h - INPUT_HEIGHT - VIEWPORT_MARGIN, rect.y + rect.height + GAP);
+  const top = rect.y + rect.height + HIGHLIGHT_INPUT_GAP;
 
   let left = rect.x + rect.width / 2 - width / 2;
-  left = Math.max(VIEWPORT_MARGIN, Math.min(left, viewport.w - width - VIEWPORT_MARGIN));
+  const vw = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  left = Math.max(VIEWPORT_MARGIN, Math.min(left, vw - width - VIEWPORT_MARGIN));
 
   const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Stop the NATIVE event from bubbling to window — React's synthetic
+    // `stopPropagation` only short-circuits React's own event system; the
+    // underlying native event continues past React's root delegate to any
+    // window-level listeners (e.g. the canvas's delete shortcut).
+    e.nativeEvent.stopPropagation();
     if (e.key === 'Escape') {
       e.preventDefault();
       onEscape?.();
     } else if (e.key === 'Enter') {
       e.preventDefault();
       onSubmit?.(value);
+    } else if (
+      (e.key === 'Delete' || e.key === 'Backspace') &&
+      value === '' &&
+      onDeleteWhenEmpty
+    ) {
+      e.preventDefault();
+      onDeleteWhenEmpty();
     }
   };
 
   return (
     <div
       className="highlight-input"
-      style={{ top, left, width, height: INPUT_HEIGHT }}
+      style={{ top, left, width, height: HIGHLIGHT_INPUT_HEIGHT }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      // Stop the background-click from firing when interacting with the input.
       onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
+      // Block pan-start so focusing/typing in the input doesn't grab the
+      // canvas pointer.
+      onPointerDown={(e) => e.stopPropagation()}
       role="search"
     >
       <i className="ri-sparkling-2-line highlight-input-icon" aria-hidden="true" />

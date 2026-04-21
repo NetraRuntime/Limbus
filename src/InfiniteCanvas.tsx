@@ -27,6 +27,11 @@ export type FocusOptions = {
   animate?: boolean;
   duration?: number;
   padding?: number; // fraction of viewport reserved as margin (0..1); default 0.12
+  // Screen-space pixels to reserve below the rect — the image fits into the
+  // viewport minus this band, and is shifted upward so the rect + reserved
+  // area are vertically centered as a group. Useful when a UI element (e.g.
+  // the HighlightInput) sits beneath the focused image.
+  bottomInset?: number;
 };
 
 export type InfiniteCanvasHandle = {
@@ -246,17 +251,22 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
         if (!el) return;
         const { width: vw, height: vh } = el.getBoundingClientRect();
         const padding = opts?.padding ?? 0.12;
+        const bottomInset = Math.max(0, Math.min(opts?.bottomInset ?? 0, vh * 0.8));
+        const availW = Math.max(1, vw * (1 - padding));
+        const availH = Math.max(1, vh * (1 - padding) - bottomInset);
         const fit = Math.min(
-          (vw * (1 - padding)) / Math.max(1, rect.width),
-          (vh * (1 - padding)) / Math.max(1, rect.height),
+          availW / Math.max(1, rect.width),
+          availH / Math.max(1, rect.height),
         );
         const scale = clampScale(fit);
         const cx = rect.x + rect.width / 2;
         const cy = rect.y + rect.height / 2;
+        // Bias the image's on-screen center upward by half the inset so the
+        // rect and the reserved band below it sit centered as one group.
         const target: View = {
           scale,
           x: vw / 2 - cx * scale,
-          y: vh / 2 - cy * scale,
+          y: (vh - bottomInset) / 2 - cy * scale,
         };
         if (opts?.animate === false) {
           cancelTween();

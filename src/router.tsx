@@ -6,10 +6,19 @@ export type Route = '/' | '/app';
 
 const normalize = (path: string): Route => (path === '/app' ? '/app' : '/');
 
+// The Tauri desktop build is canvas-only — landing lives on the web deploy.
+// Detect the webview at runtime and pin the route to /app so the same bundle
+// works for both targets.
+const isTauri = (): boolean =>
+  typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
 export const useRoute = (): { route: Route; navigate: (to: Route) => void } => {
-  const [route, setRoute] = useState<Route>(() =>
-    typeof window === 'undefined' ? '/' : normalize(window.location.pathname),
-  );
+  const [route, setRoute] = useState<Route>(() => {
+    if (typeof window === 'undefined') return '/';
+    if (isTauri()) return '/app';
+    return normalize(window.location.pathname);
+  });
 
   useEffect(() => {
     const onPop = () => setRoute(normalize(window.location.pathname));

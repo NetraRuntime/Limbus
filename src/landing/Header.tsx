@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from '../router';
 
+// Canvas lives in the Tauri desktop build. The landing (web) promotes the
+// download instead of linking into a /app route that web visitors can't use.
+// When a real release binary exists, swap DOWNLOAD_HREF for its URL.
+const DOWNLOAD_HREF = '#waitlist';
+
 export function Header() {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -51,9 +56,6 @@ export function Header() {
           <a className="nav-item" href="#waitlist">
             Waitlist
           </a>
-          <Link className="nav-item" to="/app">
-            Canvas
-          </Link>
         </nav>
 
         <div className="header-actions">
@@ -65,9 +67,9 @@ export function Header() {
           >
             <i className="ri-github-fill" /> GitHub
           </a>
-          <Link className="btn btn-primary btn-sm" to="/app">
-            Open canvas
-          </Link>
+          <a className="btn btn-primary btn-sm" href={DOWNLOAD_HREF}>
+            <i className="ri-download-2-line" /> Download
+          </a>
         </div>
 
         <button
@@ -96,9 +98,6 @@ export function Header() {
           <a className="menu-link" href="#waitlist" onClick={close}>
             Waitlist
           </a>
-          <Link className="menu-link" to="/app" onClick={close}>
-            Canvas
-          </Link>
           <div className="menu-divider" aria-hidden />
           <a
             className="btn btn-outline btn-md"
@@ -109,9 +108,9 @@ export function Header() {
           >
             <i className="ri-github-fill" /> GitHub
           </a>
-          <Link className="btn btn-primary btn-md" to="/app" onClick={close}>
-            Open canvas
-          </Link>
+          <a className="btn btn-primary btn-md" href={DOWNLOAD_HREF} onClick={close}>
+            <i className="ri-download-2-line" /> Download
+          </a>
         </div>
       </div>
     </header>

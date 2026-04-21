@@ -5,13 +5,32 @@ import {
   type View,
   type WorldPoint,
 } from './InfiniteCanvas';
-import { createImage, imageFileUrl, listImages, type ImageRecord } from './lib/pb';
-import { HighlightInput } from './components/HighlightInput';
+import {
+  createImage,
+  createVideo,
+  deleteImage,
+  deleteVideo,
+  imageFileUrl,
+  listImages,
+  listVideos,
+  updateImagePosition,
+  updateVideoPosition,
+  videoFileUrl,
+  type ImageRecord,
+  type MediaKind,
+  type VideoRecord,
+} from './lib/pb';
+import {
+  HighlightInput,
+  HIGHLIGHT_INPUT_GAP,
+  HIGHLIGHT_INPUT_HEIGHT,
+} from './components/HighlightInput';
 import { Link } from './router';
 import './App.css';
 
-type CanvasImage = {
+type CanvasMedia = {
   id: string;
+  kind: MediaKind;
   src: string;
   name: string;
   x: number;
@@ -46,9 +65,43 @@ const loadImage = (file: File): Promise<{ src: string; width: number; height: nu
     img.src = src;
   });
 
-const fromRecord = (r: ImageRecord): CanvasImage => ({
+// Probe a video file for its intrinsic dimensions without decoding a frame.
+// Resolves once `loadedmetadata` fires, which is enough to get videoWidth /
+// videoHeight reliably across browsers.
+const loadVideo = (file: File): Promise<{ src: string; width: number; height: number }> =>
+  new Promise((resolve, reject) => {
+    const src = URL.createObjectURL(file);
+    const vid = document.createElement('video');
+    vid.preload = 'metadata';
+    vid.muted = true;
+    vid.playsInline = true;
+    vid.onloadedmetadata = () => {
+      const w = vid.videoWidth || 640;
+      const h = vid.videoHeight || 360;
+      resolve({ src, width: w, height: h });
+    };
+    vid.onerror = () => {
+      URL.revokeObjectURL(src);
+      reject(new Error(`Failed to load ${file.name}`));
+    };
+    vid.src = src;
+  });
+
+const fromImageRecord = (r: ImageRecord): CanvasMedia => ({
   id: r.id,
+  kind: 'image',
   src: imageFileUrl(r),
+  name: r.name,
+  x: r.x,
+  y: r.y,
+  width: r.width,
+  height: r.height,
+});
+
+const fromVideoRecord = (r: VideoRecord): CanvasMedia => ({
+  id: r.id,
+  kind: 'video',
+  src: videoFileUrl(r),
   name: r.name,
   x: r.x,
   y: r.y,
@@ -64,15 +117,99 @@ const uid = () =>
 type ConnState = 'connecting' | 'ready' | 'offline';
 
 // Delay before the hover input hides — gives the mouse a beat to bridge the
-// gap from the image to the floating input without it disappearing.
+// gap from the media to the floating input without it disappearing.
 const HOVER_HIDE_MS = 160;
+// Pixels of pointer movement (in screen space) before a press-and-drag on a
+// media element is treated as a move. Below the threshold the interaction
+// falls through to click / double-click as usual.
+const DRAG_THRESHOLD_PX = 4;
+
+type DragState = {
+  id: string;
+  kind: MediaKind;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  origX: number;
+  origY: number;
+  moved: boolean;
+  lastX: number;
+  lastY: number;
+};
+
+type UploadPhase = 'sending' | 'finalizing' | 'error';
+type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
+
+// localStorage key for the cached viewport. `:v1` is a schema suffix so we
+// can invalidate old cache payloads if the View shape ever changes.
+const VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
+// Debounce window for persisting view changes — pan/zoom emits many frames,
+// so we wait for the motion to settle before writing.
+const VIEW_PERSIST_DEBOUNCE_MS = 200;
+
+const readStoredView = (): View | null => {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.x === 'number' &&
+      Number.isFinite(parsed.x) &&
+      typeof parsed.y === 'number' &&
+      Number.isFinite(parsed.y) &&
+      typeof parsed.scale === 'number' &&
+      Number.isFinite(parsed.scale) &&
+      parsed.scale > 0
+    ) {
+      return { x: parsed.x, y: parsed.y, scale: parsed.scale };
+    }
+  } catch {
+    /* corrupt payload — fall through to fresh defaults */
+  }
+  return null;
+};
+
+const writeStoredView = (v: View) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(v));
+  } catch {
+    /* storage full / private mode — silently skip */
+  }
+};
+
+type MediaPointerEvent = React.PointerEvent<HTMLImageElement | HTMLVideoElement>;
+
+// Compute the starting view once at module load. Pulled out of the component
+// so the useState initializer and the `initial` prop share a single source
+// of truth — prevents a one-frame flicker where the two get out of sync.
+const getInitialView = (): View => {
+  const stored = readStoredView();
+  if (stored) return stored;
+  const w = typeof window !== 'undefined' ? window.innerWidth : 0;
+  const h = typeof window !== 'undefined' ? window.innerHeight : 0;
+  return { x: w / 2, y: h / 2, scale: 1 };
+};
 
 export function Canvas() {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
-  const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
-  const [images, setImages] = useState<CanvasImage[]>([]);
+  const [media, setMedia] = useState<CanvasMedia[]>([]);
   const [conn, setConn] = useState<ConnState>('connecting');
+  // Upload status per pending media id. Two-phase state:
+  //   phase 'sending'    → body in flight, pct ∈ [0, 1)
+  //   phase 'finalizing' → body fully sent, waiting for PB to return record
+  // Keeping phase + pct in ONE state entry (instead of deriving phase from
+  // pct) avoids a window where progress events race with render such that
+  // the chip briefly falls back to the "Uploading" placeholder.
+  const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
+  // In-flight upload AbortControllers, keyed by draft id. A delete on a
+  // pending media aborts the XHR so the server doesn't end up with a ghost
+  // record referencing a file the user never meant to keep.
+  const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
   // Highlight interaction state.
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -80,10 +217,18 @@ export function Canvas() {
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string>>({});
   const hideTimer = useRef<number | null>(null);
 
+  // Drag-to-move state. Kept in a ref so pointermove handlers don't force a
+  // re-render per frame; position updates go through setMedia.
+  const dragRef = useRef<DragState | null>(null);
+  // Mirror of the live view so pointermove can read the current scale without
+  // forcing handler re-creation on every view change.
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
+
   const activeId = pinnedId ?? hoverId;
-  const activeImage = useMemo(
-    () => (activeId ? images.find((i) => i.id === activeId) ?? null : null),
-    [activeId, images],
+  const activeMedia = useMemo(
+    () => (activeId ? media.find((m) => m.id === activeId) ?? null : null),
+    [activeId, media],
   );
 
   const clearHideTimer = useCallback(() => {
@@ -103,30 +248,122 @@ export function Canvas() {
 
   useEffect(() => () => clearHideTimer(), [clearHideTimer]);
 
+  // Persist the camera (pan + zoom) after motion settles so the next session
+  // starts where the user left off. Debounced so pan/zoom tweens don't spam
+  // localStorage writes on every animation frame.
+  useEffect(() => {
+    const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [view]);
+
   useEffect(() => {
     let cancelled = false;
-    listImages()
-      .then((records) => {
-        if (cancelled) return;
-        setImages(records.map(fromRecord));
-        setConn('ready');
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.warn('[pb] failed to load images:', err);
-        setConn('offline');
-      });
+    // Load each collection independently so a missing `videos` collection
+    // (e.g. migration not yet applied) doesn't block images from rendering.
+    // Preserve the success/failure signal per call to drive conn status.
+    Promise.all([
+      listImages().then(
+        (r) => ({ ok: true as const, records: r }),
+        (err) => {
+          console.warn('[pb] failed to load images:', err);
+          return { ok: false as const, records: [] as ImageRecord[] };
+        },
+      ),
+      listVideos().then(
+        (r) => ({ ok: true as const, records: r }),
+        (err) => {
+          console.warn('[pb] failed to load videos:', err);
+          return { ok: false as const, records: [] as VideoRecord[] };
+        },
+      ),
+    ]).then(([imgRes, vidRes]) => {
+      if (cancelled) return;
+      const merged: CanvasMedia[] = [
+        ...imgRes.records.map(fromImageRecord),
+        ...vidRes.records.map(fromVideoRecord),
+      ];
+      merged.sort((a, b) => a.id.localeCompare(b.id));
+      setMedia(merged);
+      // "ready" if at least one list call succeeded — the videos collection
+      // may legitimately be absent (migration pending) without PB being down.
+      setConn(imgRes.ok || vidRes.ok ? 'ready' : 'offline');
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Escape clears any pinned selection.
+  // Keep the delete handler's dependencies in a ref so the listener doesn't
+  // need to re-attach on every media/pinned change.
+  const mediaRef = useRef(media);
+  mediaRef.current = media;
+  const pinnedRef = useRef(pinnedId);
+  pinnedRef.current = pinnedId;
+
+  // Deletes the currently pinned media — shared between the window-level
+  // Delete/Backspace shortcut and the empty-input Delete shortcut inside
+  // the HighlightInput.
+  const deletePinned = useCallback(() => {
+    const id = pinnedRef.current;
+    if (!id) return;
+    const target = mediaRef.current.find((m) => m.id === id);
+    if (!target) return;
+    setMedia((prev) => prev.filter((m) => m.id !== id));
+    setPinnedId(null);
+    setHoverId(null);
+    if (target.pending) {
+      uploadCtrlsRef.current[id]?.abort();
+      URL.revokeObjectURL(target.src);
+      return;
+    }
+    const fn = target.kind === 'video' ? deleteVideo : deleteImage;
+    fn(id)
+      .then(() => setConn('ready'))
+      .catch((err) => {
+        console.warn('[pb] delete failed for', id, err);
+        setConn('offline');
+        setMedia((prev) => [...prev, target]);
+      });
+  }, []);
+
+  // Keyboard shortcuts:
+  //   Escape        — release pinned selection
+  //   Delete/Backsp — delete the pinned media (skipped while typing)
   useEffect(() => {
+    const isEditable = (el: Element | null): boolean => {
+      if (!el || !(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        el.isContentEditable === true
+      );
+    };
+    // Three-layer defense: `document.activeElement` (source of truth for
+    // where the next keystroke will land), `e.target` (where this event
+    // fired), and a closest() climb up from the target looking for the
+    // highlight-input wrapper. The last one catches cases where React's
+    // root-level delegation plus stopPropagation still lets the event
+    // reach window before focus has resolved.
+    const isTypingContext = (e: KeyboardEvent): boolean => {
+      if (isEditable(document.activeElement)) return true;
+      const target = e.target instanceof Element ? e.target : null;
+      if (isEditable(target)) return true;
+      if (target?.closest('.highlight-input, input, textarea, [contenteditable="true"]'))
+        return true;
+      return false;
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setPinnedId(null);
+        return;
       }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (isTypingContext(e)) return;
+      if (!pinnedRef.current) return;
+      e.preventDefault();
+      deletePinned();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -136,11 +373,17 @@ export function Canvas() {
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
 
   const handleFilesDrop = useCallback(async (files: File[], point: WorldPoint) => {
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
-    if (!imageFiles.length) return;
+    const accepted = files.filter(
+      (f) => f.type.startsWith('image/') || f.type.startsWith('video/'),
+    );
+    if (!accepted.length) return;
 
     const loaded = await Promise.all(
-      imageFiles.map(async (f) => ({ file: f, ...(await loadImage(f)) })),
+      accepted.map(async (f) => {
+        const kind: MediaKind = f.type.startsWith('video/') ? 'video' : 'image';
+        const dims = await (kind === 'video' ? loadVideo(f) : loadImage(f));
+        return { file: f, kind, ...dims };
+      }),
     );
 
     const gap = 32;
@@ -148,7 +391,7 @@ export function Canvas() {
     const baseY = point.worldY - loaded[0].height / 2;
 
     type Draft = {
-      draft: CanvasImage;
+      draft: CanvasMedia;
       file: File;
       meta: { x: number; y: number; width: number; height: number; name: string };
     };
@@ -156,14 +399,14 @@ export function Canvas() {
     for (const l of loaded) {
       const meta = { x: cursorX, y: baseY, width: l.width, height: l.height, name: l.file.name };
       plan.push({
-        draft: { id: uid(), src: l.src, pending: true, ...meta },
+        draft: { id: uid(), kind: l.kind, src: l.src, pending: true, ...meta },
         file: l.file,
         meta,
       });
       cursorX += l.width + gap;
     }
 
-    setImages((prev) => [...prev, ...plan.map((p) => p.draft)]);
+    setMedia((prev) => [...prev, ...plan.map((p) => p.draft)]);
 
     const minX = Math.min(...plan.map((p) => p.draft.x));
     const minY = Math.min(...plan.map((p) => p.draft.y));
@@ -171,30 +414,80 @@ export function Canvas() {
     const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
     canvasRef.current?.focusOn({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
 
+    // Seed the chip with an explicit "sending @ 0%" entry synchronously,
+    // BEFORE any await. This guarantees the chip never renders the default
+    // "Uploading" placeholder — even if the browser never fires a progress
+    // event (common on loopback for small bodies).
+    setUploadStatus((prev) => {
+      const next = { ...prev };
+      for (const p of plan) next[p.draft.id] = { phase: 'sending', pct: 0 };
+      return next;
+    });
+
     await Promise.all(
       plan.map(async (p) => {
+        const onProgress = (pct: number) => {
+          setUploadStatus((prev) => {
+            if (!(p.draft.id in prev)) return prev;
+            return {
+              ...prev,
+              [p.draft.id]: {
+                phase: pct >= 1 ? 'finalizing' : 'sending',
+                pct: Math.min(1, Math.max(0, pct)),
+              },
+            };
+          });
+        };
+        const ctrl = new AbortController();
+        uploadCtrlsRef.current[p.draft.id] = ctrl;
         try {
-          const record = await createImage(p.file, p.meta);
-          setImages((prev) =>
-            prev.map((img) => (img.id === p.draft.id ? fromRecord(record) : img)),
-          );
+          const record =
+            p.draft.kind === 'video'
+              ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
+              : await createImage(p.file, p.meta, onProgress, ctrl.signal);
+          const next =
+            p.draft.kind === 'video'
+              ? fromVideoRecord(record as VideoRecord)
+              : fromImageRecord(record as ImageRecord);
+          setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
           URL.revokeObjectURL(p.draft.src);
           setConn('ready');
         } catch (err) {
-          console.warn('[pb] upload failed for', p.file.name, err);
-          setConn('offline');
+          if ((err as Error | null)?.name !== 'AbortError') {
+            // Surface the failure in-place — keep the pending media visible
+            // with an error chip so the user sees what went wrong and can
+            // press Delete/Backspace to clean it up. Previously we removed
+            // the media silently, which looked like a random "poof".
+            const message = (err as Error | null)?.message ?? 'upload failed';
+            console.warn('[pb] upload failed for', p.file.name, err);
+            setConn('offline');
+            setUploadStatus((prev) => ({
+              ...prev,
+              [p.draft.id]: { phase: 'error', pct: 0, message },
+            }));
+            // Leave media.pending = true so the overlay keeps rendering.
+            return;
+          }
+        } finally {
+          delete uploadCtrlsRef.current[p.draft.id];
         }
+        // Clear status on success or abort. Error path returns early above
+        // so the error chip stays visible until the user deletes the media.
+        setUploadStatus((prev) => {
+          if (!(p.draft.id in prev)) return prev;
+          const next = { ...prev };
+          delete next[p.draft.id];
+          return next;
+        });
       }),
     );
   }, []);
 
-  // Click the empty canvas → release any pinned selection. The image/input
-  // stop propagation of their clicks so only real background clicks reach us.
   const handleBackgroundClick = useCallback(() => {
     setPinnedId(null);
   }, []);
 
-  const handleImageEnter = useCallback(
+  const handleMediaEnter = useCallback(
     (id: string) => {
       clearHideTimer();
       setHoverId(id);
@@ -202,13 +495,14 @@ export function Canvas() {
     [clearHideTimer],
   );
 
-  const handleImageLeave = useCallback(() => {
+  const handleMediaLeave = useCallback(() => {
     scheduleHide();
   }, [scheduleHide]);
 
-  const handleImageClick = useCallback(
+  const handleMediaClick = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
+      if (dragRef.current?.id === id && dragRef.current.moved) return;
       clearHideTimer();
       setPinnedId(id);
       setHoverId(id);
@@ -216,22 +510,100 @@ export function Canvas() {
     [clearHideTimer],
   );
 
-  const initial: Partial<View> = {
-    x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
-    y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
-    scale: 1,
-  };
+  const handleMediaDoubleClick = useCallback(
+    (e: React.MouseEvent, m: CanvasMedia) => {
+      e.stopPropagation();
+      if (dragRef.current?.moved) return;
+      const bottomInset = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
+      canvasRef.current?.focusOn(
+        { x: m.x, y: m.y, width: m.width, height: m.height },
+        { padding: 0.12, bottomInset },
+      );
+    },
+    [],
+  );
 
-  const isEmpty = images.length === 0 && conn !== 'connecting';
+  const handleMediaPointerDown = useCallback((e: MediaPointerEvent, m: CanvasMedia) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    dragRef.current = {
+      id: m.id,
+      kind: m.kind,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: m.x,
+      origY: m.y,
+      moved: false,
+      lastX: m.x,
+      lastY: m.y,
+    };
+  }, []);
 
-  // Active image's screen rect — follows pan/zoom automatically since view
-  // updates re-render this block.
-  const activeRect = activeImage
+  const handleMediaPointerMove = useCallback((e: MediaPointerEvent) => {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const dxScreen = e.clientX - d.startX;
+    const dyScreen = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) return;
+    d.moved = true;
+    const scale = viewRef.current.scale;
+    const nextX = d.origX + dxScreen / scale;
+    const nextY = d.origY + dyScreen / scale;
+    d.lastX = nextX;
+    d.lastY = nextY;
+    setMedia((prev) =>
+      prev.map((m) => (m.id === d.id ? { ...m, x: nextX, y: nextY } : m)),
+    );
+  }, []);
+
+  const handleMediaPointerUp = useCallback(
+    (e: MediaPointerEvent) => {
+      const d = dragRef.current;
+      if (!d || d.pointerId !== e.pointerId) return;
+      try {
+        (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+      } catch {
+        /* no-op */
+      }
+      const { id, kind, moved, lastX, lastY, origX, origY } = d;
+      window.setTimeout(() => {
+        if (dragRef.current && dragRef.current.pointerId === d.pointerId) {
+          dragRef.current = null;
+        }
+      }, 0);
+      if (!moved) return;
+      const stillPending = media.find((m) => m.id === id)?.pending;
+      if (stillPending) return;
+      const persist =
+        kind === 'video' ? updateVideoPosition : updateImagePosition;
+      persist(id, { x: lastX, y: lastY })
+        .then(() => setConn('ready'))
+        .catch((err) => {
+          console.warn('[pb] move failed for', id, err);
+          setConn('offline');
+          setMedia((prev) =>
+            prev.map((m) => (m.id === id ? { ...m, x: origX, y: origY } : m)),
+          );
+        });
+    },
+    [media],
+  );
+
+  // InfiniteCanvas reads this once on mount. Memoized so React never gets a
+  // fresh object on subsequent renders (which would be ignored anyway, but
+  // keeps intent explicit).
+  const initial = useMemo<Partial<View>>(() => getInitialView(), []);
+
+  const isEmpty = media.length === 0 && conn !== 'connecting';
+
+  const activeRect = activeMedia
     ? {
-        x: activeImage.x * view.scale + view.x,
-        y: activeImage.y * view.scale + view.y,
-        width: activeImage.width * view.scale,
-        height: activeImage.height * view.scale,
+        x: activeMedia.x * view.scale + view.x,
+        y: activeMedia.y * view.scale + view.y,
+        width: activeMedia.width * view.scale,
+        height: activeMedia.height * view.scale,
       }
     : null;
 
@@ -245,38 +617,119 @@ export function Canvas() {
         onFilesDrop={handleFilesDrop}
         onBackgroundClick={handleBackgroundClick}
       >
-        {images.map((img) => (
-          <img
-            key={img.id}
-            src={img.src}
-            alt={img.name}
-            draggable={false}
-            className={`world-image ${img.pending ? 'is-pending' : ''} ${img.id === activeId ? 'is-active' : ''}`}
-            style={{ left: img.x, top: img.y, width: img.width, height: img.height }}
-            onMouseEnter={() => handleImageEnter(img.id)}
-            onMouseLeave={handleImageLeave}
-            onClick={(e) => handleImageClick(e, img.id)}
-          />
-        ))}
+        {media.map((m) => {
+          const cls = `world-image ${m.pending ? 'is-pending' : ''} ${m.id === activeId ? 'is-active' : ''}`;
+          const style = { left: m.x, top: m.y, width: m.width, height: m.height };
+          if (m.kind === 'video') {
+            return (
+              <video
+                key={m.id}
+                src={m.src}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                className={cls}
+                style={style}
+                onMouseEnter={() => handleMediaEnter(m.id)}
+                onMouseLeave={handleMediaLeave}
+                onClick={(e) => handleMediaClick(e, m.id)}
+                onDoubleClick={(e) => handleMediaDoubleClick(e, m)}
+                onPointerDown={(e) => handleMediaPointerDown(e, m)}
+                onPointerMove={handleMediaPointerMove}
+                onPointerUp={handleMediaPointerUp}
+                onPointerCancel={handleMediaPointerUp}
+              />
+            );
+          }
+          return (
+            <img
+              key={m.id}
+              src={m.src}
+              alt={m.name}
+              draggable={false}
+              className={cls}
+              style={style}
+              onMouseEnter={() => handleMediaEnter(m.id)}
+              onMouseLeave={handleMediaLeave}
+              onClick={(e) => handleMediaClick(e, m.id)}
+              onDoubleClick={(e) => handleMediaDoubleClick(e, m)}
+              onPointerDown={(e) => handleMediaPointerDown(e, m)}
+              onPointerMove={handleMediaPointerMove}
+              onPointerUp={handleMediaPointerUp}
+              onPointerCancel={handleMediaPointerUp}
+            />
+          );
+        })}
       </InfiniteCanvas>
 
-      {activeImage && activeRect && (
+      {media
+        .filter((m) => m.pending)
+        .map((m) => {
+          const rx = m.x * view.scale + view.x;
+          const ry = m.y * view.scale + view.y;
+          const rw = m.width * view.scale;
+          const rh = m.height * view.scale;
+          // Hide the label for small rects so the pill doesn't overflow.
+          const showLabel = rw > 160 && rh > 72;
+          const status = uploadStatus[m.id];
+          const isError = status?.phase === 'error';
+          // Label priority:
+          //   phase 'error'      → "Failed — <message>"
+          //   phase 'finalizing' → "Finalizing"
+          //   phase 'sending'    → "NN%"
+          //   no status yet      → "Uploading" (pre-seed; should be brief)
+          let label = 'Uploading';
+          if (status) {
+            if (status.phase === 'error') {
+              label = status.message
+                ? `Failed — ${status.message}`
+                : 'Failed';
+            } else if (status.phase === 'finalizing') {
+              label = 'Finalizing';
+            } else {
+              label = `${Math.floor(status.pct * 100)}%`;
+            }
+          }
+          return (
+            <div
+              key={`pending-${m.id}`}
+              className={`pending-overlay ${isError ? 'is-error' : ''}`}
+              style={{ left: rx, top: ry, width: rw, height: rh }}
+              role="status"
+              aria-live="polite"
+              aria-label={`${m.kind} ${isError ? 'upload failed' : 'uploading'}, ${label}`}
+              title={isError && !showLabel ? label : undefined}
+            >
+              <div className={`pending-chip ${isError ? 'is-error' : ''}`}>
+                {isError ? (
+                  <i className="ri-error-warning-line pending-chip-icon" aria-hidden />
+                ) : (
+                  <span className="pending-spinner" aria-hidden />
+                )}
+                {showLabel && <span className="pending-label">{label}</span>}
+              </div>
+            </div>
+          );
+        })}
+
+      {activeMedia && activeRect && (
         <HighlightInput
-          key={activeImage.id}
+          key={activeMedia.id}
           rect={activeRect}
-          value={highlightInputs[activeImage.id] ?? ''}
+          value={highlightInputs[activeMedia.id] ?? ''}
           onChange={(v) =>
-            setHighlightInputs((prev) => ({ ...prev, [activeImage.id]: v }))
+            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: v }))
           }
           onMouseEnter={clearHideTimer}
           onMouseLeave={scheduleHide}
           onFocus={() => {
             clearHideTimer();
-            setPinnedId(activeImage.id);
+            setPinnedId(activeMedia.id);
           }}
           onBlur={() => {
-            // Release the pin only if the user never typed anything.
-            const v = highlightInputs[activeImage.id] ?? '';
+            const v = highlightInputs[activeMedia.id] ?? '';
             if (!v) setPinnedId(null);
             scheduleHide();
           }}
@@ -284,7 +737,8 @@ export function Canvas() {
             setPinnedId(null);
             scheduleHide();
           }}
-          autoFocus={pinnedId === activeImage.id}
+          onDeleteWhenEmpty={deletePinned}
+          autoFocus={pinnedId === activeMedia.id}
         />
       )}
 
@@ -293,7 +747,7 @@ export function Canvas() {
           <div className="empty-state-inner">
             <div className="empty-eyebrow">Drop to begin</div>
             <div className="empty-title">
-              Drop images <span className="accent">anywhere</span>
+              Drop images or videos <span className="accent">anywhere</span>
             </div>
             <div className="empty-sub">They'll land where you drop and zoom into view.</div>
           </div>
