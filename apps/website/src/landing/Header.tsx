@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from '../router';
 
 // Canvas lives in the Tauri desktop build. The landing (web) promotes the
 // download instead of linking into a /app route that web visitors can't use.
@@ -43,11 +42,11 @@ export function Header() {
   return (
     <header className={`site-header ${open ? 'menu-open' : ''}`}>
       <div className="container header-inner">
-        <Link to="/" className="brand" onClick={close}>
+        <a href="/" className="brand" onClick={close}>
           <span className="brand-wordmark">NetraRT</span>
           <span className="brand-divider" />
           <span className="brand-tag">The vision layer for every device</span>
-        </Link>
+        </a>
 
         <nav className="primary-nav">
           <a className="nav-item" href="#why">
