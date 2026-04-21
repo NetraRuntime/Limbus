@@ -127,11 +127,37 @@ const uploadWithProgress = <T>(
           reject(err instanceof Error ? err : new Error(String(err)));
         }
       } else {
-        // PB returns a JSON error body with useful detail — surface the
-        // first chunk so callers can show an actionable message.
-        const snippet = (xhr.responseText || '').slice(0, 400).trim();
-        const detail = snippet ? ` — ${snippet}` : '';
-        reject(new Error(`upload failed: ${xhr.status} ${xhr.statusText}${detail}`));
+        // PB returns { code, message, data: { <field>: { code, message } } }
+        // on validation errors; surface just the human-readable bits so the
+        // chip/console shows an actionable line instead of raw JSON.
+        const body = xhr.responseText || '';
+        let detail = '';
+        try {
+          const parsed = JSON.parse(body) as {
+            message?: string;
+            data?: Record<string, { message?: string } | unknown>;
+          };
+          const parts: string[] = [];
+          if (parsed.message) parts.push(parsed.message);
+          if (parsed.data && typeof parsed.data === 'object') {
+            for (const [field, info] of Object.entries(parsed.data)) {
+              const msg = (info as { message?: string } | null)?.message;
+              if (msg) parts.push(`${field}: ${msg}`);
+            }
+          }
+          detail = parts.join(' · ');
+        } catch {
+          // Not JSON — fall back to a trimmed snippet.
+          detail = body.slice(0, 400).trim();
+        }
+        const suffix = detail ? ` — ${detail}` : '';
+        const err = new Error(
+          `upload failed: ${xhr.status} ${xhr.statusText}${suffix}`,
+        );
+        // Stash the raw body so devtools users can inspect the full payload
+        // even when the UI / error message truncates it.
+        (err as Error & { responseBody?: string }).responseBody = body;
+        reject(err);
       }
     };
     xhr.onerror = () => {
