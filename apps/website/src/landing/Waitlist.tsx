@@ -25,7 +25,7 @@ export function Waitlist() {
     }
     const io = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
+        if (entry?.isIntersecting) {
           setProgressActive(true);
           io.disconnect();
         }
