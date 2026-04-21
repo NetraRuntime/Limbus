@@ -11,16 +11,17 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "stage:pb": "node scripts/stage-pocketbase.mjs",
-    "db:start": "./pb/pocketbase serve --http=127.0.0.1:8090",
-    "db:migrate": "./pb/pocketbase migrate up",
-    "db:superuser": "./pb/pocketbase superuser create"
+    "db:start": "node scripts/dev-pocketbase.mjs",
+    "db:migrate": "node scripts/dev-pocketbase.mjs migrate up",
+    "db:superuser": "node scripts/dev-pocketbase.mjs superuser create"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "pocketbase": "^0.26.8",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "remixicon": "^4.9.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",

@@ -17,12 +17,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
-    <!-- Remix Icon — the brand's first-class icon font, used throughout
-         the landing page (header, hero, use-case cards, waitlist, footer). -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/remixicon@4.7.0/fonts/remixicon.css"
-    />
+    <!-- Remix Icon is imported via main.tsx so Vite bundles the fonts
+         locally — avoids CDN failures in the packaged Tauri webview and
+         makes the app work offline. -->
+
     <link
       rel="preload"
       href="/fonts/SpaceMono-Regular.ttf"

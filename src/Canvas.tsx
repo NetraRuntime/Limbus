@@ -373,16 +373,26 @@ export function Canvas() {
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
 
   const handleFilesDrop = useCallback(async (files: File[], point: WorldPoint) => {
-    const accepted = files.filter(
-      (f) => f.type.startsWith('image/') || f.type.startsWith('video/'),
-    );
+    // The packaged WebKit webview sometimes hands us File objects whose
+    // `type` is empty — fall back to the extension so drops still work.
+    const classify = (f: File): MediaKind | null => {
+      if (f.type.startsWith('video/')) return 'video';
+      if (f.type.startsWith('image/')) return 'image';
+      const name = f.name.toLowerCase();
+      if (/\.(mp4|webm|mov|m4v|mkv|ogv|avi|3gp)$/.test(name)) return 'video';
+      if (/\.(png|jpe?g|gif|webp|svg|avif|bmp|heic|heif)$/.test(name))
+        return 'image';
+      return null;
+    };
+    const accepted = files
+      .map((f) => ({ file: f, kind: classify(f) }))
+      .filter((e): e is { file: File; kind: MediaKind } => e.kind !== null);
     if (!accepted.length) return;
 
     const loaded = await Promise.all(
-      accepted.map(async (f) => {
-        const kind: MediaKind = f.type.startsWith('video/') ? 'video' : 'image';
-        const dims = await (kind === 'video' ? loadVideo(f) : loadImage(f));
-        return { file: f, kind, ...dims };
+      accepted.map(async ({ file, kind }) => {
+        const dims = await (kind === 'video' ? loadVideo(file) : loadImage(file));
+        return { file, kind, ...dims };
       }),
     );
 

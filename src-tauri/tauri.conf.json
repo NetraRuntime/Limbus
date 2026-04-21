@@ -18,11 +18,12 @@
         "minWidth": 900,
         "minHeight": 600,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8090 ws://127.0.0.1:8090 https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob: http://127.0.0.1:8090; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8090 ws://127.0.0.1:8090 https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:8090; media-src 'self' blob: http://127.0.0.1:8090; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self'"
     }
   },
   "bundle": {
