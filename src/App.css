@@ -120,16 +120,16 @@
   border: 0;
   background: transparent;
   color: var(--fg);
-  font: 400 13px/1 var(--font-mono);
+  font: 400 12px/1 var(--font-mono);
   letter-spacing: -0.4px;
   padding: 0 var(--space-3);
-  height: 32px;
-  min-width: 32px;
+  height: 24px;
+  min-width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
