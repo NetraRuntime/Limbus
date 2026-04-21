@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -13,30 +14,45 @@ import './InfiniteCanvas.css';
 
 export type View = { x: number; y: number; scale: number };
 
+export type WorldPoint = { worldX: number; worldY: number };
+
+export type WorldRect = { x: number; y: number; width: number; height: number };
+
 const MIN_SCALE = 1e-4;
 const MAX_SCALE = 1e4;
 const ZOOM_INTENSITY = 0.0015;
+const DEFAULT_TWEEN_MS = 420;
+
+export type FocusOptions = {
+  animate?: boolean;
+  duration?: number;
+  padding?: number; // fraction of viewport reserved as margin (0..1); default 0.12
+};
 
 export type InfiniteCanvasHandle = {
   reset: () => void;
   zoomBy: (factor: number, anchor?: { x: number; y: number }) => void;
   getView: () => View;
+  focusOn: (rect: WorldRect, opts?: FocusOptions) => void;
 };
 
 type Props = {
   initial?: Partial<View>;
   onChange?: (view: View) => void;
-  onPointerWorld?: (p: { worldX: number; worldY: number; screenX: number; screenY: number } | null) => void;
+  onPointerWorld?: (p: (WorldPoint & { screenX: number; screenY: number }) | null) => void;
+  onFilesDrop?: (files: File[], worldPoint: WorldPoint) => void;
   children?: ReactNode;
   dotStyle?: CSSProperties;
 };
 
-// Wrap a value into [0, m) — used so the background pattern wraps seamlessly
-// while the content translation grows without bound at deep zoom.
+// Wrap a value into [0, m) so the tiled background pattern stays aligned to
+// the pan translation modulo one tile.
 const mod = (a: number, m: number) => ((a % m) + m) % m;
 
+const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+
 export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function InfiniteCanvas(
-  { initial, onChange, onPointerWorld, children, dotStyle },
+  { initial, onChange, onPointerWorld, onFilesDrop, children, dotStyle },
   ref,
 ) {
   const [view, setView] = useState<View>({
@@ -44,32 +60,68 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     y: initial?.y ?? 0,
     scale: initial?.scale ?? 1,
   });
+  const [dragOver, setDragOver] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
   const panStart = useRef<{ px: number; py: number; vx: number; vy: number; pointerId: number } | null>(null);
+  const tweenRaf = useRef<number | null>(null);
+  const dragDepth = useRef(0);
 
   useEffect(() => {
     onChange?.(view);
   }, [view, onChange]);
 
-  // Apply a zoom multiplier anchored so the world point under (ax, ay) stays fixed.
-  const applyZoom = useCallback((factor: number, ax: number, ay: number) => {
-    setView((v) => {
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
-      if (next === v.scale) return v;
-      const worldX = (ax - v.x) / v.scale;
-      const worldY = (ay - v.y) / v.scale;
-      return {
-        scale: next,
-        x: ax - worldX * next,
-        y: ay - worldY * next,
-      };
-    });
+  const cancelTween = useCallback(() => {
+    if (tweenRaf.current !== null) {
+      cancelAnimationFrame(tweenRaf.current);
+      tweenRaf.current = null;
+    }
   }, []);
 
-  // Wheel zoom — anchored to cursor. Registered non-passive so we can preventDefault.
+  useEffect(() => cancelTween, [cancelTween]);
+
+  // Ease-out cubic for translation; scale uses log-lerp for perceptual linearity.
+  const tweenTo = useCallback(
+    (target: View, duration: number) => {
+      cancelTween();
+      const from = { ...viewRef.current };
+      const ratio = target.scale / from.scale;
+      const startedAt = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - startedAt) / duration);
+        const e = 1 - Math.pow(1 - t, 3);
+        setView({
+          x: from.x + (target.x - from.x) * e,
+          y: from.y + (target.y - from.y) * e,
+          scale: from.scale * Math.pow(ratio, e),
+        });
+        if (t < 1) {
+          tweenRaf.current = requestAnimationFrame(step);
+        } else {
+          tweenRaf.current = null;
+        }
+      };
+      tweenRaf.current = requestAnimationFrame(step);
+    },
+    [cancelTween],
+  );
+
+  const applyZoom = useCallback(
+    (factor: number, ax: number, ay: number) => {
+      cancelTween();
+      setView((v) => {
+        const next = clampScale(v.scale * factor);
+        if (next === v.scale) return v;
+        const worldX = (ax - v.x) / v.scale;
+        const worldY = (ay - v.y) / v.scale;
+        return { scale: next, x: ax - worldX * next, y: ay - worldY * next };
+      });
+    },
+    [cancelTween],
+  );
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -78,7 +130,6 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
       const rect = el.getBoundingClientRect();
       const ax = e.clientX - rect.left;
       const ay = e.clientY - rect.top;
-      // Trackpad pinch sends ctrlKey; amplify slightly for parity with mouse wheel.
       const intensity = e.ctrlKey ? ZOOM_INTENSITY * 2 : ZOOM_INTENSITY;
       const factor = Math.exp(-e.deltaY * intensity);
       applyZoom(factor, ax, ay);
@@ -88,8 +139,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
   }, [applyZoom]);
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    // Left or middle click begins a pan. Right click reserved for future context menu.
     if (e.button !== 0 && e.button !== 1) return;
+    cancelTween();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     panStart.current = {
       px: e.clientX,
@@ -121,22 +172,66 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
   };
 
   const endPan = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (panStart.current?.pointerId === e.pointerId) {
-      panStart.current = null;
-    }
+    if (panStart.current?.pointerId === e.pointerId) panStart.current = null;
     try {
       (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
     } catch {
-      /* no-op if already released */
+      /* no-op */
     }
   };
 
   const onPointerLeave = () => onPointerWorld?.(null);
 
+  // Drag-and-drop: only respond to OS file drags (not internal drags).
+  const hasFiles = (e: ReactDragEvent<HTMLDivElement>) =>
+    Array.from(e.dataTransfer.types).includes('Files');
+
+  const onDragEnter = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragOver(true);
+  };
+
+  const onDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const onDragLeave = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasFiles(e)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  };
+
+  const onDrop = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length || !onFilesDrop) return;
+    const rect = containerRef.current!.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const v = viewRef.current;
+    onFilesDrop(files, { worldX: (sx - v.x) / v.scale, worldY: (sy - v.y) / v.scale });
+  };
+
   useImperativeHandle(
     ref,
     () => ({
-      reset: () => setView({ x: 0, y: 0, scale: 1 }),
+      reset: () => {
+        cancelTween();
+        const el = containerRef.current;
+        if (el) {
+          const { width, height } = el.getBoundingClientRect();
+          tweenTo({ x: width / 2, y: height / 2, scale: 1 }, DEFAULT_TWEEN_MS);
+        } else {
+          setView({ x: 0, y: 0, scale: 1 });
+        }
+      },
       zoomBy: (factor, anchor) => {
         const rect = containerRef.current?.getBoundingClientRect();
         const ax = anchor?.x ?? (rect ? rect.width / 2 : 0);
@@ -144,13 +239,34 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
         applyZoom(factor, ax, ay);
       },
       getView: () => viewRef.current,
+      focusOn: (rect, opts) => {
+        const el = containerRef.current;
+        if (!el) return;
+        const { width: vw, height: vh } = el.getBoundingClientRect();
+        const padding = opts?.padding ?? 0.12;
+        const fit = Math.min(
+          (vw * (1 - padding)) / Math.max(1, rect.width),
+          (vh * (1 - padding)) / Math.max(1, rect.height),
+        );
+        const scale = clampScale(fit);
+        const cx = rect.x + rect.width / 2;
+        const cy = rect.y + rect.height / 2;
+        const target: View = {
+          scale,
+          x: vw / 2 - cx * scale,
+          y: vh / 2 - cy * scale,
+        };
+        if (opts?.animate === false) {
+          cancelTween();
+          setView(target);
+        } else {
+          tweenTo(target, opts?.duration ?? DEFAULT_TWEEN_MS);
+        }
+      },
     }),
-    [applyZoom],
+    [applyZoom, cancelTween, tweenTo],
   );
 
-  // Dot-grid LOD: keep the effective tile size in [16, 32) px so the texture
-  // remains readable at any zoom. As zoom crosses powers of 2, the grid density
-  // halves/doubles — this is what makes the canvas feel truly infinite.
   const lodPower = Math.floor(Math.log2(view.scale));
   const lodScale = Math.pow(2, lodPower);
   const gridPx = 16 * (view.scale / lodScale);
@@ -160,12 +276,16 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
   return (
     <div
       ref={containerRef}
-      className={`ic-root ${panStart.current ? 'ic-grabbing' : 'ic-grab'}`}
+      className={`ic-root ${panStart.current ? 'ic-grabbing' : 'ic-grab'} ${dragOver ? 'ic-drag-over' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
       onPointerCancel={endPan}
       onPointerLeave={onPointerLeave}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       style={{
         backgroundImage: 'radial-gradient(var(--dot-color) 1px, transparent 1.2px)',
         backgroundSize: `${gridPx}px ${gridPx}px`,
@@ -182,6 +302,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
       >
         {children}
       </div>
+      <div className="ic-drop-outline" aria-hidden />
     </div>
   );
 });

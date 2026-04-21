@@ -1,13 +1,26 @@
-import { useCallback, useRef, useState } from 'react';
-import { InfiniteCanvas, type InfiniteCanvasHandle, type View } from './InfiniteCanvas';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  InfiniteCanvas,
+  type InfiniteCanvasHandle,
+  type View,
+  type WorldPoint,
+} from './InfiniteCanvas';
 import './App.css';
 
-type CursorPos = { worldX: number; worldY: number } | null;
+type CanvasImage = {
+  id: string;
+  src: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 const formatZoom = (scale: number) => {
   if (scale >= 1) return `${(scale * 100).toFixed(0)}%`;
   if (scale >= 0.01) return `${(scale * 100).toFixed(1)}%`;
-  return `${scale.toExponential(1)}`;
+  return scale.toExponential(1);
 };
 
 const formatCoord = (n: number | undefined) => {
@@ -17,23 +30,93 @@ const formatCoord = (n: number | undefined) => {
   return n.toFixed(abs < 10 ? 2 : abs < 1000 ? 1 : 0);
 };
 
+// Load a File as an object URL and resolve with its natural dimensions so we
+// know how big to render it in world space before adding it to the scene.
+const loadImage = (file: File): Promise<{ src: string; width: number; height: number }> =>
+  new Promise((resolve, reject) => {
+    const src = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ src, width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => {
+      URL.revokeObjectURL(src);
+      reject(new Error(`Failed to load ${file.name}`));
+    };
+    img.src = src;
+  });
+
+const uid = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 export function App() {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
-  const [cursor, setCursor] = useState<CursorPos>(null);
+  const [cursor, setCursor] = useState<WorldPoint | null>(null);
+  const [images, setImages] = useState<CanvasImage[]>([]);
 
-  const handleChange = useCallback((v: View) => setView(v), []);
-  const handlePointerWorld = useCallback(
-    (p: { worldX: number; worldY: number } | null) => setCursor(p),
+  // Release object URLs on unmount to avoid leaks.
+  useEffect(
+    () => () => {
+      images.forEach((i) => URL.revokeObjectURL(i.src));
+    },
+    // intentionally empty — only run the cleanup once on unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
-  // Center origin in the viewport on first mount so content at (0,0) is visible.
+  const handleChange = useCallback((v: View) => setView(v), []);
+  const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
+
+  const handleFilesDrop = useCallback(async (files: File[], point: WorldPoint) => {
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
+
+    // Load all in parallel; lay them out horizontally starting from the drop
+    // point so dropping a batch doesn't stack images on top of each other.
+    const loaded = await Promise.all(
+      imageFiles.map(async (f) => ({ file: f, ...(await loadImage(f)) })),
+    );
+
+    const gap = 32;
+    const additions: CanvasImage[] = [];
+    let cursorX = point.worldX - loaded[0].width / 2;
+    const baseY = point.worldY - loaded[0].height / 2;
+    for (const l of loaded) {
+      additions.push({
+        id: uid(),
+        src: l.src,
+        name: l.file.name,
+        x: cursorX,
+        y: baseY,
+        width: l.width,
+        height: l.height,
+      });
+      cursorX += l.width + gap;
+    }
+
+    setImages((prev) => [...prev, ...additions]);
+
+    // Focus on the full bounding box of the newly dropped batch.
+    const minX = Math.min(...additions.map((a) => a.x));
+    const minY = Math.min(...additions.map((a) => a.y));
+    const maxX = Math.max(...additions.map((a) => a.x + a.width));
+    const maxY = Math.max(...additions.map((a) => a.y + a.height));
+    canvasRef.current?.focusOn({
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    });
+  }, []);
+
   const initial: Partial<View> = {
     x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
     y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
     scale: 1,
   };
+
+  const isEmpty = images.length === 0;
 
   return (
     <>
@@ -42,52 +125,36 @@ export function App() {
         initial={initial}
         onChange={handleChange}
         onPointerWorld={handlePointerWorld}
+        onFilesDrop={handleFilesDrop}
       >
-        <div className="world-origin" aria-hidden />
-
-        <div className="world-lockup">
-          <div className="world-eyebrow">Infinite canvas</div>
-          <h1 className="world-display">
-            Pan. Zoom. <span className="accent">Explore.</span>
-          </h1>
-          <p className="world-sub">
-            Drag to pan, scroll or pinch to zoom. The dot grid subdivides as you zoom in and
-            rarefies as you zoom out — the surface keeps going.
-          </p>
-        </div>
-
-        <div className="world-pin" style={{ left: 520, top: -40 }}>
-          <span className="world-pin-dot" data-tone="success" />
-          <span className="world-pin-label">Origin</span>
-          <span className="world-pin-coord">0, 0</span>
-        </div>
-
-        <div className="world-pin" style={{ left: -720, top: 260 }}>
-          <span className="world-pin-dot" />
-          <span className="world-pin-label">Keep panning</span>
-          <span className="world-pin-coord">-720, 260</span>
-        </div>
-
-        <div className="world-pin" style={{ left: 900, top: 420 }}>
-          <span className="world-pin-dot" data-tone="warning" />
-          <span className="world-pin-label">Zoom out to see more</span>
-          <span className="world-pin-coord">900, 420</span>
-        </div>
-
-        <div className="world-pin" style={{ left: -400, top: -360 }}>
-          <span className="world-pin-dot" data-tone="danger" />
-          <span className="world-pin-label">Zoom in to read me</span>
-          <span className="world-pin-coord">-400, -360</span>
-        </div>
-
-        <div
-          className="world-pin"
-          style={{ left: 2400, top: -1200, transform: 'scale(2)', transformOrigin: '0 0' }}
-        >
-          <span className="world-pin-dot" />
-          <span className="world-pin-label">Far afield — 2.4k, -1.2k</span>
-        </div>
+        {images.map((img) => (
+          <img
+            key={img.id}
+            src={img.src}
+            alt={img.name}
+            draggable={false}
+            className="world-image"
+            style={{
+              left: img.x,
+              top: img.y,
+              width: img.width,
+              height: img.height,
+            }}
+          />
+        ))}
       </InfiniteCanvas>
+
+      {isEmpty && (
+        <div className="empty-state" aria-hidden>
+          <div className="empty-state-inner">
+            <div className="empty-eyebrow">Drop to begin</div>
+            <div className="empty-title">
+              Drop images <span className="accent">anywhere</span>
+            </div>
+            <div className="empty-sub">They'll land where you drop and zoom into view.</div>
+          </div>
+        </div>
+      )}
 
       <div className="hud hud-top-left">
         <div className="wordmark" aria-label="Netrart">
@@ -132,24 +199,6 @@ export function App() {
           >
             +
           </button>
-        </div>
-      </div>
-
-      <div className="hud hud-bottom-right">
-        <div className="hint">
-          <div className="hint-eyebrow">Controls</div>
-          <div className="hint-row">
-            <span className="hint-key">Drag</span>
-            <span className="hint-desc">Pan the canvas</span>
-          </div>
-          <div className="hint-row">
-            <span className="hint-key">Scroll / pinch</span>
-            <span className="hint-desc">Zoom at cursor</span>
-          </div>
-          <div className="hint-row">
-            <span className="hint-key">Reset</span>
-            <span className="hint-desc">Return to origin</span>
-          </div>
         </div>
       </div>
     </>

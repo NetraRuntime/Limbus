@@ -24,3 +24,19 @@
 .ic-grab {
   cursor: grab;
 }
+
+/* Drop-target visual feedback — inset dashed ring in the accent color,
+   plus a very faint accent wash to signal the active drop region. */
+.ic-drop-outline {
+  position: absolute;
+  inset: 12px;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-xl);
+  pointer-events: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.ic-drag-over .ic-drop-outline {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
