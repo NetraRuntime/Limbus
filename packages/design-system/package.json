@@ -1,0 +1,26 @@
+{
+  "name": "@netrart/design-system",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "tokens.css",
+    "kit.css",
+    "global.css",
+    "reveal.css",
+    "responsive.css",
+    "colors_and_type.canonical.css",
+    "fonts",
+    "assets"
+  ],
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./kit.css": "./kit.css",
+    "./global.css": "./global.css",
+    "./reveal.css": "./reveal.css",
+    "./responsive.css": "./responsive.css",
+    "./colors_and_type.canonical.css": "./colors_and_type.canonical.css",
+    "./fonts/*": "./fonts/*",
+    "./assets/*": "./assets/*"
+  }
+}
