@@ -43,7 +43,7 @@ const targetExt = triple.includes('windows') ? '.exe' : '';
 const sourceName = isWindowsHost ? 'pocketbase.exe' : 'pocketbase';
 
 const sourcePath = resolve(projectRoot, 'pb', sourceName);
-const destDir = resolve(projectRoot, 'src-tauri', 'binaries');
+const destDir = resolve(projectRoot, 'apps', 'app', 'src-tauri', 'binaries');
 const destPath = resolve(destDir, `pocketbase-${triple}${targetExt}`);
 
 if (!existsSync(sourcePath)) {
