@@ -2,7 +2,7 @@ services:
   pb:
     build:
       context: .
-      dockerfile: Dockerfile.pb
+      dockerfile: docker/pb.Dockerfile
     container_name: netrart-pb
     restart: unless-stopped
     volumes:
@@ -19,7 +19,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/website.Dockerfile
     container_name: netrart-web
     restart: unless-stopped
     depends_on:
