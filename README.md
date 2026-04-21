@@ -1,99 +1,97 @@
 # NetraRT
 
-**Vision AI for anyone.** An infinite-canvas desktop app for running state-of-the-art vision models locally — no cloud, no API bills, no frames leaving your hardware.
+**Vision AI for anyone.** An infinite-canvas desktop app for running
+state-of-the-art vision models locally — no cloud, no API bills, no
+frames leaving your hardware.
 
-NetraRT ships as a cross-platform Tauri desktop app with a web landing page. The canvas is a spatial workspace where you drop in images and media, then run local vision models against them. The same frontend bundle serves both targets: the Tauri webview pins to the canvas, while the web deploy keeps the landing page.
+This monorepo hosts the public website, the canvas app (Tauri desktop
++ web debug build), and shared design-system and tooling packages.
 
----
-
-## Stack
-
-- **Frontend** — React 18 + TypeScript, built with Vite
-- **Desktop shell** — Tauri 2 (Rust)
-- **Backend** — PocketBase (SQLite + file storage), bundled as a sidecar binary in the desktop build and self-hostable via Docker for the web deploy
-- **Design system** — Local `design-system/` tokens, Space Mono + Caveat self-hosted, Inter via Google Fonts, Remix Icon bundled by Vite for offline use
-
-## Repo layout
+## Layout
 
 ```
-src/             React app — landing page, infinite canvas, router
-src-tauri/       Rust crate, Tauri config, bundled PocketBase sidecar
-pb/              PocketBase migrations and canonical binary
-design-system/   Shared design tokens and primitives
-scripts/         Dev helpers (stage PocketBase, run migrations, manage superusers)
-public/          Static assets (fonts, favicons)
-Dockerfile*      Web + PocketBase images
-docker-compose.yml
-nginx.conf       Routes `/api` and `/_/` to PocketBase for the web deploy
+apps/
+  website/      # landing page, future payment/license/release server
+  app/          # infinite canvas — Tauri desktop + web debug build
+packages/
+  design-system/ # tokens, CSS kit, self-hosted fonts, brand assets
+  tsconfig/      # shared TypeScript base config
+pb/             # PocketBase migrations + canonical binary
+scripts/        # dev helpers (start PB, stage PB for Tauri, migrations)
+docker/         # Dockerfiles + nginx.conf for the web deploy
 ```
 
-## Getting started
+## Prerequisites
 
-### Prerequisites
-
-- Node.js 20+
-- Rust toolchain (for the desktop build) — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/)
+- Node.js 20+ (`.nvmrc` pins `20`)
+- pnpm 9 (enabled via `corepack enable`)
+- Rust toolchain (desktop build only) — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/)
 - Docker (optional, for the self-hosted web stack)
 
-### Install
+## Install
 
 ```bash
-npm install
+pnpm install
 cp .env.example .env
 ```
 
-Leave `VITE_PB_URL` empty to use same-origin calls. The Vite dev server proxies `/api` and `/_/` to the local PocketBase, and the Docker deploy does the same through nginx.
-
-### Run the web frontend
+## Run the website
 
 ```bash
-npm run db:start   # boots PocketBase on :8090
-npm run dev        # boots Vite on :5173
+pnpm db:start     # PocketBase on :8090
+pnpm dev:website  # Vite on :5173
 ```
 
-Visit `http://localhost:5173`. `/` is the landing page; `/app` is the canvas.
+Visit `http://localhost:5173/`.
 
-### Run the desktop app
+## Run the app in the browser (debug)
 
 ```bash
-npm run tauri:dev
+pnpm db:start
+pnpm dev:app      # Vite on :5174
 ```
 
-This stages the PocketBase binary into `src-tauri/binaries/` for your target triple, then launches the Tauri webview pinned to the canvas route.
+Visit `http://localhost:5174/`. This is a dev-only web build of the
+canvas; production is the Tauri desktop app.
 
-### Build
+## Run the desktop app
 
 ```bash
-npm run build         # web bundle → dist/
-npm run tauri:build   # native installers per platform
+pnpm tauri:dev
 ```
 
-### Self-hosted web stack
+Stages the PocketBase binary into `apps/app/src-tauri/binaries/`, then
+launches the Tauri webview pinned to the canvas.
+
+## Build
+
+```bash
+pnpm build        # both apps' web bundles → apps/*/dist/
+pnpm tauri:build  # native installer for the current platform
+```
+
+## Self-hosted web stack
 
 ```bash
 docker compose up -d
 ```
 
-Serves the web bundle on `:8080` and keeps PocketBase data in the `pb_data` named volume. Use `docker compose down -v` to wipe state.
+Serves the website on `:8080`. PocketBase data persists in the
+`pb_data` named volume. `docker compose down -v` wipes state.
 
 ## Database
 
-PocketBase migrations live in `pb/pb_migrations/`. Apply them locally with:
+Migrations live in `pb/pb_migrations/`. Apply locally with:
 
 ```bash
-npm run db:migrate
-npm run db:superuser   # create an admin account
+pnpm db:migrate
+pnpm db:superuser  # create an admin account
 ```
 
-The SQLite database, uploaded files, and generated types all sit under `pb/pb_data/` and are gitignored.
-
-## Routes
-
-- `/` — landing page (web only)
-- `/app` — infinite canvas (web + desktop)
-
-The Tauri build detects its webview at runtime and pins to `/app` so the same bundle works across both targets.
+SQLite DB, uploaded files, and generated types sit under `pb/pb_data/`
+(gitignored).
 
 ## License
 
-Proprietary — all rights reserved. Contact the maintainers for usage inquiries.
+Proprietary — all rights reserved. Contact the maintainers for usage
+inquiries.
