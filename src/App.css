@@ -1,0 +1,309 @@
+/* ==========================================================================
+   App shell — HUD + in-canvas sample content
+   ========================================================================== */
+
+.hud {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hud-top-left {
+  top: var(--space-5);
+  left: var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hud-bottom-center {
+  bottom: var(--space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.hud-bottom-right {
+  bottom: var(--space-5);
+  right: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  max-width: 320px;
+}
+
+/* Wordmark pairing — logo + 16px vertical divider + mono tag (Kolosal header motif). */
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-sm);
+  pointer-events: auto;
+}
+
+.wordmark-glyph {
+  font: 700 16px/1 var(--font-display);
+  letter-spacing: -0.6px;
+  color: var(--fg);
+}
+
+.wordmark-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+.wordmark-tag {
+  font: 400 12px/16px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* Status pill — mono readouts for zoom / coords. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  box-shadow: var(--shadow-card-sm);
+  pointer-events: auto;
+}
+
+.status-label {
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: -0.2px;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.status-value {
+  font: 400 12px/16px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: right;
+}
+
+.status-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+
+/* Button cluster for zoom / reset. */
+.btn-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card-sm);
+  pointer-events: auto;
+}
+
+.btn-ghost {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: 400 13px/1 var(--font-mono);
+  letter-spacing: -0.4px;
+  padding: 0 var(--space-3);
+  height: 32px;
+  min-width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.btn-ghost:hover {
+  background: var(--color-grey-500);
+}
+
+.btn-ghost:active {
+  background: var(--color-grey-600);
+}
+
+.btn-ghost[data-variant="primary"] {
+  background: var(--fg);
+  color: var(--fg-on-dark);
+  box-shadow: var(--shadow-inset-highlight);
+}
+
+.btn-ghost[data-variant="primary"]:hover {
+  background: var(--color-text-800);
+}
+
+/* Hint card — instructions, with Kolosal "card-sm" treatment. */
+.hint {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card-sm);
+  pointer-events: auto;
+}
+
+.hint-eyebrow {
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: -0.2px;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  margin-bottom: var(--space-2);
+}
+
+.hint-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 3px 0;
+}
+
+.hint-key {
+  font: 400 12px/16px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg);
+}
+
+.hint-desc {
+  font: 400 12px/16px var(--font-sans);
+  letter-spacing: -0.2px;
+  color: var(--fg-muted);
+}
+
+/* ==========================================================================
+   In-canvas content (placed in world coordinates, scales with zoom)
+   ========================================================================== */
+
+.world-lockup {
+  position: absolute;
+  left: -280px;
+  top: -80px;
+  width: 560px;
+}
+
+.world-eyebrow {
+  font: 400 14px/20px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  margin-bottom: var(--space-3);
+}
+
+.world-display {
+  font: 700 48px/56px var(--font-display);
+  letter-spacing: -2px;
+  color: var(--fg);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.world-display .accent {
+  font-family: var(--font-accent);
+  font-weight: 400;
+  color: var(--accent);
+  line-height: 0.9;
+  font-size: 1.15em;
+  position: relative;
+  padding: 0 4px;
+}
+
+.world-display .accent::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.05em;
+  height: 0.18em;
+  background:
+    radial-gradient(ellipse at 10% 60%, var(--accent) 40%, transparent 60%),
+    radial-gradient(ellipse at 55% 40%, var(--accent) 40%, transparent 60%),
+    radial-gradient(ellipse at 92% 70%, var(--accent) 40%, transparent 60%);
+  background-repeat: no-repeat;
+  background-size: 40% 100%, 45% 100%, 40% 100%;
+  background-position: 0 0, 40% 0, 100% 0;
+  transform: rotate(-1.2deg);
+  opacity: 0.95;
+}
+
+.world-sub {
+  font: 400 16px/24px var(--font-sans);
+  letter-spacing: -0.2px;
+  color: var(--fg-muted);
+  margin: 0;
+  max-width: 480px;
+}
+
+.world-pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-sm);
+  white-space: nowrap;
+}
+
+.world-pin-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.world-pin-dot[data-tone="success"] {
+  background: var(--color-success-500);
+}
+
+.world-pin-dot[data-tone="warning"] {
+  background: var(--color-warning-500);
+}
+
+.world-pin-dot[data-tone="danger"] {
+  background: var(--color-danger-500);
+}
+
+.world-pin-label {
+  font: 400 13px/16px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg);
+}
+
+.world-pin-coord {
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: -0.2px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.world-origin {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  background: var(--bg);
+}

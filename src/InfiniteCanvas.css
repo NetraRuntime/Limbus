@@ -1,0 +1,26 @@
+.ic-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ic-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.ic-grabbing {
+  cursor: grabbing !important;
+}
+
+.ic-grab {
+  cursor: grab;
+}
