@@ -6,9 +6,13 @@ export const SETTINGS_BOUNDS = {
   panSpeed: { min: 0.25, max: 3, step: 0.05 },
 } as const;
 
+export const THEME_OPTIONS = ['light', 'dark', 'system'] as const;
+export type ThemePreference = (typeof THEME_OPTIONS)[number];
+
 export const DEFAULT_SETTINGS = {
   zoomSensitivity: 4,
   panSpeed: 1,
+  theme: 'system' as ThemePreference,
 } as const;
 
 const SettingsSchema = z.object({
@@ -24,6 +28,7 @@ const SettingsSchema = z.object({
     .min(SETTINGS_BOUNDS.panSpeed.min)
     .max(SETTINGS_BOUNDS.panSpeed.max)
     .catch(DEFAULT_SETTINGS.panSpeed),
+  theme: z.enum(THEME_OPTIONS).catch(DEFAULT_SETTINGS.theme),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

@@ -35,6 +35,7 @@ import { Sam3VersionBadge } from './components/Sam3VersionBadge';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
+import { useAppliedTheme } from './hooks/useAppliedTheme';
 import {
   computeLabelPlacements,
   type LabelPlacement,
@@ -396,6 +397,7 @@ export function Canvas() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
+  useAppliedTheme(settings.theme);
   const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 

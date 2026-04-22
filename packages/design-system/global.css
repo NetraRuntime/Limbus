@@ -1,8 +1,12 @@
 
 
 :root {
-  
+
   --dot-color: var(--color-grey-800);
+}
+
+[data-theme="dark"] {
+  --dot-color: #26292D;
 }
 
 
