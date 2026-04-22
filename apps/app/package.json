@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "stage:pb": "node ../../scripts/stage-pocketbase.mjs",
+    "sam3:build": "node ../../scripts/build-sam3.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
