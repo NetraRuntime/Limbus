@@ -40,6 +40,9 @@
     "resources": {
       "../../../pb/pb_migrations": "pb_migrations"
     },
+    "macOS": {
+      "frameworks": ["../../../vendor/sam3.c/build/libsam3.dylib"]
+    },
     "category": "Productivity",
     "shortDescription": "NetraRT infinite canvas",
     "longDescription": "NetraRT — infinite canvas desktop app"
