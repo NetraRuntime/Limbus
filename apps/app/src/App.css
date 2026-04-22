@@ -28,7 +28,9 @@
    Canvas.tsx via the `useAutoLiquidGlassFilter` hook. This rule owns
    the tint + border override needed for the refraction to show. */
 .btn-cluster.is-liquid-glass,
-.status-pill.is-liquid-glass {
+.status-pill.is-liquid-glass,
+.wordmark.is-liquid-glass,
+.floating-sidebar-inner.is-liquid-glass {
   background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
   border-color: color-mix(in srgb, var(--color-neutral) 60%, transparent);
 }

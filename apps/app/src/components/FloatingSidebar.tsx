@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { useAutoLiquidGlassFilter } from './LiquidGlass';
 
 type SidebarItem = {
   id: string;
@@ -15,25 +16,28 @@ type Props = {
 };
 
 export function FloatingSidebar({ items, activeId, onSelect }: Props) {
-  const listRef = useRef<HTMLDivElement>(null);
+  const glass = useAutoLiquidGlassFilter({ radius: 12 });
 
   useEffect(() => {
-    if (!activeId || !listRef.current) return;
-    const el = listRef.current.querySelector<HTMLElement>(
+    const list = glass.ref.current;
+    if (!activeId || !list) return;
+    const el = list.querySelector<HTMLElement>(
       `[data-id="${CSS.escape(activeId)}"]`,
     );
     el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [activeId]);
+  }, [activeId, glass.ref]);
 
   if (items.length === 0) return null;
 
   return (
     <div className="hud floating-sidebar" aria-label="Canvas items">
+      {glass.filterSvg}
       <div
-        className="floating-sidebar-inner"
-        ref={listRef}
+        className="floating-sidebar-inner is-liquid-glass"
+        ref={glass.ref}
         role="toolbar"
         aria-orientation="vertical"
+        style={glass.style}
       >
         {items.map((m) => {
           const isActive = m.id === activeId;
