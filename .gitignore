@@ -29,3 +29,6 @@ apps/app/src-tauri/binaries/
 
 # Local Claude harness state (not meant to be committed).
 .claude/
+
+# Superpowers git worktrees for isolated task workspaces.
+.worktrees/
