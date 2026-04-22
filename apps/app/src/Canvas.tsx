@@ -5,6 +5,7 @@ import {
   type InfiniteCanvasHandle,
   type View,
   type WorldPoint,
+  type WorldRect,
 } from './InfiniteCanvas';
 import {
   createImage,
@@ -209,6 +210,25 @@ const writeStoredView = (v: View) => {
   }
 };
 
+// Bounding rect (world coords) that covers every media item. Null when the
+// collection is empty — callers fall back to whatever default view they had.
+const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
+  if (items.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const m of items) {
+    if (m.x < minX) minX = m.x;
+    if (m.y < minY) minY = m.y;
+    const rx = m.x + m.width;
+    const ry = m.y + m.height;
+    if (rx > maxX) maxX = rx;
+    if (ry > maxY) maxY = ry;
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
 type MediaPointerEvent = React.PointerEvent<HTMLImageElement | HTMLVideoElement>;
 
 // Memoized media renderer. Canvas re-renders on every rAF-paced view update
@@ -307,6 +327,15 @@ const getInitialView = (): View => {
 
 export function Canvas() {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
+  // Captures whether a saved view existed at the moment the canvas mounted.
+  // Used to gate the auto-fit below: when the user already has a deliberate
+  // camera from a prior session, we leave it alone; when they don't (first
+  // visit, or localStorage cleared), we fit all media into the viewport
+  // once loading settles.
+  const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
+  // Latches after the one-shot auto-fit so later media changes (uploads,
+  // deletes) don't keep snapping the view around.
+  const didInitialFitRef = useRef<boolean>(false);
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
@@ -523,6 +552,26 @@ export function Canvas() {
       // "ready" if at least one list call succeeded — the videos collection
       // may legitimately be absent (migration pending) without PB being down.
       setConn(imgRes.ok || vidRes.ok ? 'ready' : 'offline');
+
+      // Fit-all on first visit: when no saved view existed at mount and the
+      // user has media on the canvas, frame everything. Snap (animate:false)
+      // so the blank default view never lingers as a visible flash. Skipped
+      // on subsequent mounts because persistView restored their camera.
+      if (
+        !initialHadStoredView.current &&
+        !didInitialFitRef.current &&
+        merged.length > 0
+      ) {
+        const bounds = mediaBounds(merged);
+        if (bounds) {
+          didInitialFitRef.current = true;
+          // Defer one frame so InfiniteCanvas's container has laid out and
+          // focusOn's getBoundingClientRect returns the real viewport size.
+          requestAnimationFrame(() => {
+            canvasRef.current?.focusOn(bounds, { animate: false });
+          });
+        }
+      }
     });
     return () => {
       cancelled = true;
