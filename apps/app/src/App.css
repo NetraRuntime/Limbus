@@ -285,6 +285,24 @@
   cursor: grabbing;
 }
 
+.media-label[data-placement="tr"] {
+  transform-origin: bottom right;
+  transform: translate(-100%, calc(-100% - var(--inv-view-scale, 1) * 6px))
+    scale(var(--inv-view-scale, 1));
+}
+
+.media-label[data-placement="bl"] {
+  transform-origin: top left;
+  transform: translateY(calc(var(--inv-view-scale, 1) * 6px))
+    scale(var(--inv-view-scale, 1));
+}
+
+.media-label[data-placement="br"] {
+  transform-origin: top right;
+  transform: translate(-100%, calc(var(--inv-view-scale, 1) * 6px))
+    scale(var(--inv-view-scale, 1));
+}
+
 
 
 .pending-overlay {
