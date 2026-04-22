@@ -243,6 +243,32 @@
   filter: saturate(0.85);
 }
 
+/* Filename label anchored to the top-left corner of each media item. Lives
+   inside the world-space transform so it pans with the content, and
+   counter-scales via --inv-view-scale (set by InfiniteCanvas.paintView) so
+   it stays a constant screen size at any zoom. */
+.media-label {
+  position: absolute;
+  z-index: 1;
+  padding: 3px 8px;
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 500 11px/15px var(--font-mono);
+  letter-spacing: -0.2px;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: top left;
+  transform: scale(var(--inv-view-scale, 1));
+}
+
 /* ==========================================================================
    Pending upload overlay — spinner + label while PB upload is in flight.
    Positioned in screen space so it stays legible at any zoom.

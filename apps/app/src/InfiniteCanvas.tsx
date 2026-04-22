@@ -149,6 +149,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     const content = contentRef.current;
     if (content) {
       content.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
+      // Exposed as a CSS variable so world-space overlays (e.g. media labels)
+      // can counter-scale with `transform: scale(var(--inv-view-scale))` and
+      // stay a constant screen size regardless of zoom.
+      content.style.setProperty('--inv-view-scale', String(1 / next.scale));
     }
     const root = containerRef.current;
     if (root) {
