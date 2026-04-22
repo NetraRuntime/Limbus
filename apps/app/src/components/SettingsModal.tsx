@@ -2,8 +2,16 @@ import { useEffect, useRef } from 'react';
 import {
   DEFAULT_SETTINGS,
   SETTINGS_BOUNDS,
+  THEME_OPTIONS,
   type Settings,
+  type ThemePreference,
 } from '../hooks/useSettings';
+
+const THEME_LABELS: Record<ThemePreference, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+};
 
 type Props = {
   open: boolean;
@@ -18,11 +26,13 @@ const formatNumber = (n: number) => {
   return n.toFixed(2).replace(/\.?0+$/, '');
 };
 
+type NumericSettingKey = keyof typeof SETTINGS_BOUNDS;
+
 type Row = {
-  key: keyof Settings;
+  key: NumericSettingKey;
   label: string;
   description: string;
-  bounds: (typeof SETTINGS_BOUNDS)[keyof Settings];
+  bounds: (typeof SETTINGS_BOUNDS)[NumericSettingKey];
 };
 
 const ROWS: Row[] = [
@@ -118,6 +128,43 @@ export function SettingsModal({ open, settings, onChange, onReset, onClose }: Pr
         </div>
 
         <div className="settings-body">
+          <div className="settings-row">
+            <div className="settings-row-head">
+              <span className="settings-label" id="setting-theme-label">
+                Appearance
+              </span>
+              {settings.theme === DEFAULT_SETTINGS.theme && (
+                <span className="settings-value" aria-hidden>
+                  <span className="settings-default-tag">default</span>
+                </span>
+              )}
+            </div>
+            <div
+              className="settings-segmented"
+              role="radiogroup"
+              aria-labelledby="setting-theme-label"
+            >
+              {THEME_OPTIONS.map((option) => {
+                const selected = settings.theme === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={`settings-segmented-option${selected ? ' is-selected' : ''}`}
+                    onClick={() => onChange('theme', option)}
+                  >
+                    {THEME_LABELS[option]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="settings-description">
+              Choose light, dark, or follow the system appearance.
+            </div>
+          </div>
+
           {ROWS.map((row) => {
             const value = settings[row.key];
             const { min, max, step } = row.bounds;

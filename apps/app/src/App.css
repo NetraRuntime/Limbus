@@ -962,6 +962,43 @@
   box-shadow: 0 0 0 1px var(--border-muted), 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
+.settings-segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  align-self: flex-start;
+}
+
+.settings-segmented-option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: 6px 12px;
+  border-radius: calc(var(--radius-md) - 2px);
+  font: 500 12px/1 var(--font-display, system-ui);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.settings-segmented-option:hover {
+  color: var(--fg);
+}
+
+.settings-segmented-option.is-selected {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.settings-segmented-option:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 1px;
+}
+
 .settings-footer {
   display: flex;
   justify-content: space-between;
