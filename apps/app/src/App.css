@@ -265,7 +265,10 @@
   color: var(--text);
   font: 500 9px/13px var(--font-mono);
   letter-spacing: -0.1px;
-  pointer-events: none;
+  /* The label is a drag handle for the media it belongs to — same cursor
+     and same pointer handlers as .world-image. */
+  pointer-events: auto;
+  cursor: grab;
   user-select: none;
   transform-origin: bottom left;
   /* The extra `var(--inv-view-scale) * 6px` makes the gap between label and
@@ -274,6 +277,10 @@
      gap stays 6px; when zoomed out it grows for the same reason. */
   transform: translateY(calc(-100% - var(--inv-view-scale, 1) * 6px))
     scale(var(--inv-view-scale, 1));
+}
+
+.media-label:active {
+  cursor: grabbing;
 }
 
 /* ==========================================================================
