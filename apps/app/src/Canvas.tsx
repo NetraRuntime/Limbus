@@ -734,9 +734,10 @@ export function Canvas() {
     setLastSelectedId(null);
   }, []);
 
-  // Offset duplicates from their originals so the copy is visible rather
-  // than overlapping pixel-perfectly with the source.
-  const DUPLICATE_OFFSET = 24;
+  // Offset duplicates from their originals so the copy is clearly distinct
+  // from the source rather than visually stuck to it. Applied on both axes
+  // so the duplicate drifts down-and-to-the-right.
+  const DUPLICATE_OFFSET = 64;
 
   // Clone every non-pending selected media by fetching its file from PB,
   // re-uploading it as a new record at (x + 24, y + 24), and selecting the
