@@ -860,18 +860,18 @@ export function Canvas() {
         selectAll();
         return;
       }
-      // Cmd/Ctrl+D — duplicate the current selection. Always preempts the
-      // browser's "add bookmark" default while the canvas has focus, even if
-      // there's nothing to duplicate — otherwise the bookmarks dialog would
-      // surface when the user hits the shortcut on an empty selection.
-      // Skipped only when typing so inputs keep their normal behavior.
+      // Cmd/Ctrl+D — duplicate the current selection. Claimed globally,
+      // including inside text inputs: the HighlightInput auto-focuses when
+      // a single media is selected, which is exactly the moment the user
+      // most wants to hit ⌘D to duplicate it. Cmd+D has no useful in-input
+      // behavior to preserve, so we always preventDefault to keep the
+      // browser's "add bookmark" dialog from surfacing.
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.altKey &&
         !e.shiftKey &&
         e.key.toLowerCase() === 'd'
       ) {
-        if (isTypingContext(e)) return;
         e.preventDefault();
         if (selectedIdsRef.current.size === 0) return;
         duplicateSelection();
