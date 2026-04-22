@@ -1,18 +1,35 @@
+# Dependencies — root and per-workspace-package
 node_modules
+apps/*/node_modules
+packages/*/node_modules
+
+# Build output — root (legacy) + per-app + per-package
 dist
 .vite
+apps/*/dist
+apps/*/.vite
+packages/*/dist
+
+# Tauri build artifacts (Rust target is large and OS-specific)
+apps/app/src-tauri/target
+apps/app/src-tauri/gen
+apps/app/src-tauri/binaries
+
+# Logs, TS incremental, OS/editor cruft, envs
 *.log
 *.tsbuildinfo
 .DS_Store
 .env
 .env.local
 .env.*.local
+
+# Git + tool state
 .git
 .gitignore
 .claude
+
+# Docker config itself — copied explicitly by the Dockerfile, not needed in context
 .dockerignore
-Dockerfile
-Dockerfile.*
 docker-compose.yml
 
 # PocketBase host-side binary + runtime state — the image downloads its own.

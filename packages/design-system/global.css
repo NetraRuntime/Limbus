@@ -56,8 +56,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* The canvas route locks the viewport; the landing route scrolls. Applied
-   to <body> by the router when the canvas mounts so the scroll lock is
+/* The canvas locks the viewport; the landing scrolls. The canvas app's
+   <App> toggles this class on <body> at mount so the scroll lock is
    scoped rather than global. */
 body.is-canvas {
   overflow: hidden;
