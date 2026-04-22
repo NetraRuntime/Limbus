@@ -534,6 +534,64 @@
 }
 
 
+.media-toolbar {
+  position: fixed;
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 24px -12px rgb(0 0 0 / 0.25),
+    0 0 0 1px color-mix(in srgb, var(--color-text) 4%, transparent);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  pointer-events: auto;
+  animation: highlightInputIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.media-toolbar-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.media-toolbar-btn:hover {
+  background: var(--color-grey-500);
+}
+
+.media-toolbar-btn:active {
+  background: var(--color-grey-600);
+}
+
+.media-toolbar-btn.is-active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.media-toolbar-btn.is-active:hover {
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-toolbar {
+    animation: none;
+  }
+}
 
 
 .highlight-input-icon {
