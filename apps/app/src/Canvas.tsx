@@ -164,6 +164,15 @@ type MarqueeState = {
 type UploadPhase = 'sending' | 'finalizing' | 'error';
 type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
 
+// Unit of work for runUploadPlan: the pending draft that lives in `media`,
+// the File to upload, and the metadata sent to PocketBase on createImage /
+// createVideo. Same shape used by file drops and Cmd/Ctrl+D duplicates.
+type UploadPlan = {
+  draft: CanvasMedia;
+  file: File;
+  meta: { x: number; y: number; width: number; height: number; name: string };
+};
+
 // localStorage key for the cached viewport. `:v1` is a schema suffix so we
 // can invalidate old cache payloads if the View shape ever changes.
 const VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
@@ -230,7 +239,10 @@ const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
 
-type MediaPointerEvent = React.PointerEvent<HTMLImageElement | HTMLVideoElement>;
+// Widened to HTMLElement so the filename-label <span> can share the same
+// drag handlers as the img / video — grabbing a media item's label moves
+// the item just like grabbing the image itself.
+type MediaPointerEvent = React.PointerEvent<HTMLElement>;
 
 // Memoized media renderer. Canvas re-renders on every rAF-paced view update
 // (to position marquee/pending/HighlightInput overlays), so each media
@@ -275,9 +287,22 @@ const MediaItem = memo(function MediaItem({
   const label = (
     // Anchored at the media's top-left world coord. Counter-scales (via the
     // --inv-view-scale CSS variable set by InfiniteCanvas's paintView) so it
-    // keeps a constant screen-size at any zoom. pointer-events:none so it
-    // never hijacks drag/click — handlers stay on the img/video underneath.
-    <span className="media-label" style={{ left: m.x, top: m.y }}>
+    // keeps a constant screen-size at any zoom. Shares the media's pointer
+    // handlers so dragging the label drags the image, and clicking it still
+    // selects/opens the context menu like clicking the image itself.
+    <span
+      className="media-label"
+      style={{ left: m.x, top: m.y }}
+      onMouseEnter={handleEnter}
+      onMouseLeave={onLeave}
+      onClick={handleClick}
+      onDoubleClick={handleDouble}
+      onContextMenu={handleContext}
+      onPointerDown={handleDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
       {m.name}
     </span>
   );
@@ -603,6 +628,82 @@ export function Canvas() {
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
 
+  // Shared upload pipeline: adds the draft media, seeds the upload-status
+  // chip, and runs createImage/createVideo for each entry with progress and
+  // error handling. Used by file drops and by Cmd/Ctrl+D duplication.
+  const runUploadPlan = useCallback(
+    (plan: UploadPlan[]): Promise<void> => {
+      if (plan.length === 0) return Promise.resolve();
+      setMedia((prev) => [...prev, ...plan.map((p) => p.draft)]);
+      setUploadStatus((prev) => {
+        const next = { ...prev };
+        for (const p of plan) next[p.draft.id] = { phase: 'sending', pct: 0 };
+        return next;
+      });
+      return Promise.all(
+        plan.map(async (p) => {
+          const onProgress = (pct: number) => {
+            setUploadStatus((prev) => {
+              if (!(p.draft.id in prev)) return prev;
+              return {
+                ...prev,
+                [p.draft.id]: {
+                  phase: pct >= 1 ? 'finalizing' : 'sending',
+                  pct: Math.min(1, Math.max(0, pct)),
+                },
+              };
+            });
+          };
+          const ctrl = new AbortController();
+          uploadCtrlsRef.current[p.draft.id] = ctrl;
+          try {
+            const record =
+              p.draft.kind === 'video'
+                ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
+                : await createImage(p.file, p.meta, onProgress, ctrl.signal);
+            const next =
+              p.draft.kind === 'video'
+                ? fromVideoRecord(record as VideoRecord)
+                : fromImageRecord(record as ImageRecord);
+            setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
+            URL.revokeObjectURL(p.draft.src);
+            setConn('ready');
+          } catch (err) {
+            if ((err as Error | null)?.name !== 'AbortError') {
+              const message = (err as Error | null)?.message ?? 'upload failed';
+              const responseBody = (err as Error & { responseBody?: string } | null)
+                ?.responseBody;
+              console.error('[pb] upload failed', {
+                file: p.file.name,
+                kind: p.draft.kind,
+                size: p.file.size,
+                type: p.file.type,
+                message,
+                responseBody,
+                error: err,
+              });
+              setConn('offline');
+              setUploadStatus((prev) => ({
+                ...prev,
+                [p.draft.id]: { phase: 'error', pct: 0, message },
+              }));
+              return;
+            }
+          } finally {
+            delete uploadCtrlsRef.current[p.draft.id];
+          }
+          setUploadStatus((prev) => {
+            if (!(p.draft.id in prev)) return prev;
+            const next = { ...prev };
+            delete next[p.draft.id];
+            return next;
+          });
+        }),
+      ).then(() => {});
+    },
+    [],
+  );
+
   const clearSelection = useCallback(() => {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
@@ -619,6 +720,64 @@ export function Canvas() {
     // anchor null so HighlightInput doesn't latch onto an arbitrary item.
     setLastSelectedId(null);
   }, []);
+
+  // Offset duplicates from their originals so the copy is visible rather
+  // than overlapping pixel-perfectly with the source.
+  const DUPLICATE_OFFSET = 24;
+
+  // Clone every non-pending selected media by fetching its file from PB,
+  // re-uploading it as a new record at (x + 24, y + 24), and selecting the
+  // duplicates once they land. Used by Cmd/Ctrl+D.
+  const duplicateSelection = useCallback(async () => {
+    const ids = selectedIdsRef.current;
+    if (ids.size === 0) return;
+    // Snapshot the source items before any async work so state mutations
+    // mid-flight (e.g. user deletes or drags the source) don't corrupt the
+    // duplicate's shape.
+    const sources = mediaRef.current.filter((m) => ids.has(m.id) && !m.pending);
+    if (sources.length === 0) return;
+
+    // Fetch each source's file concurrently so large selections don't stall
+    // behind a single slow byte stream.
+    const plans = await Promise.all(
+      sources.map(async (m): Promise<UploadPlan | null> => {
+        try {
+          const res = await fetch(m.src);
+          if (!res.ok) throw new Error(`fetch ${m.name}: ${res.status}`);
+          const blob = await res.blob();
+          const type = blob.type || res.headers.get('content-type') || '';
+          const file = new File([blob], m.name, { type });
+          // Local preview URL for the pending draft so the duplicate is
+          // visible immediately; revoked by runUploadPlan on success.
+          const src = URL.createObjectURL(blob);
+          const meta = {
+            x: m.x + DUPLICATE_OFFSET,
+            y: m.y + DUPLICATE_OFFSET,
+            width: m.width,
+            height: m.height,
+            name: m.name,
+          };
+          return {
+            draft: { id: uid(), kind: m.kind, src, pending: true, ...meta },
+            file,
+            meta,
+          };
+        } catch (err) {
+          console.warn('[pb] duplicate source fetch failed for', m.id, err);
+          return null;
+        }
+      }),
+    );
+
+    const plan = plans.filter((p): p is UploadPlan => p !== null);
+    if (plan.length === 0) return;
+
+    // Replace the selection with the duplicates so the next drag/move acts
+    // on the copies — matches Figma / Sketch behavior.
+    setSelectedIds(new Set(plan.map((p) => p.draft.id)));
+    setLastSelectedId(plan.length === 1 ? plan[0]!.draft.id : null);
+    runUploadPlan(plan);
+  }, [runUploadPlan]);
 
   // Deletes a media item by id. Used by delete-selection, the empty-input
   // Delete shortcut inside HighlightInput, and the context-menu Delete action.
@@ -701,6 +860,21 @@ export function Canvas() {
         selectAll();
         return;
       }
+      // Cmd/Ctrl+D — duplicate the current selection. Preempts the browser's
+      // "add bookmark" default. Skipped when typing so the shortcut doesn't
+      // fight a text input.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === 'd'
+      ) {
+        if (isTypingContext(e)) return;
+        if (selectedIdsRef.current.size === 0) return;
+        e.preventDefault();
+        duplicateSelection();
+        return;
+      }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (isTypingContext(e)) return;
       if (selectedIdsRef.current.size === 0) return;
@@ -709,7 +883,7 @@ export function Canvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [clearSelection, deleteSelection, selectAll]);
+  }, [clearSelection, deleteSelection, selectAll, duplicateSelection]);
 
   // Cmd/Ctrl+K toggles the macOS-Spotlight-style search palette. Fires
   // globally so it still works when a text input (HighlightInput, etc.) has
@@ -783,12 +957,7 @@ export function Canvas() {
     let cursorX = point.worldX - first.width / 2;
     const baseY = point.worldY - first.height / 2;
 
-    type Draft = {
-      draft: CanvasMedia;
-      file: File;
-      meta: { x: number; y: number; width: number; height: number; name: string };
-    };
-    const plan: Draft[] = [];
+    const plan: UploadPlan[] = [];
     for (const l of loaded) {
       const meta = { x: cursorX, y: baseY, width: l.width, height: l.height, name: l.file.name };
       plan.push({
@@ -799,95 +968,19 @@ export function Canvas() {
       cursorX += l.width + gap;
     }
 
-    setMedia((prev) => [...prev, ...plan.map((p) => p.draft)]);
-
     const minX = Math.min(...plan.map((p) => p.draft.x));
     const minY = Math.min(...plan.map((p) => p.draft.y));
     const maxX = Math.max(...plan.map((p) => p.draft.x + p.draft.width));
     const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
+
+    // runUploadPlan adds drafts + seeds status synchronously, then returns a
+    // promise tracking the uploads. Kick it off, then focus; awaiting the
+    // returned promise at the end is optional — we do it so any caller
+    // awaiting handleFilesDrop resolves only after uploads settle.
+    const uploading = runUploadPlan(plan);
     canvasRef.current?.focusOn({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
-
-    // Seed the chip with an explicit "sending @ 0%" entry synchronously,
-    // BEFORE any await. This guarantees the chip never renders the default
-    // "Uploading" placeholder — even if the browser never fires a progress
-    // event (common on loopback for small bodies).
-    setUploadStatus((prev) => {
-      const next = { ...prev };
-      for (const p of plan) next[p.draft.id] = { phase: 'sending', pct: 0 };
-      return next;
-    });
-
-    await Promise.all(
-      plan.map(async (p) => {
-        const onProgress = (pct: number) => {
-          setUploadStatus((prev) => {
-            if (!(p.draft.id in prev)) return prev;
-            return {
-              ...prev,
-              [p.draft.id]: {
-                phase: pct >= 1 ? 'finalizing' : 'sending',
-                pct: Math.min(1, Math.max(0, pct)),
-              },
-            };
-          });
-        };
-        const ctrl = new AbortController();
-        uploadCtrlsRef.current[p.draft.id] = ctrl;
-        try {
-          const record =
-            p.draft.kind === 'video'
-              ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
-              : await createImage(p.file, p.meta, onProgress, ctrl.signal);
-          const next =
-            p.draft.kind === 'video'
-              ? fromVideoRecord(record as VideoRecord)
-              : fromImageRecord(record as ImageRecord);
-          setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
-          URL.revokeObjectURL(p.draft.src);
-          setConn('ready');
-        } catch (err) {
-          if ((err as Error | null)?.name !== 'AbortError') {
-            // Surface the failure in-place — keep the pending media visible
-            // with an error chip so the user sees what went wrong and can
-            // press Delete/Backspace to clean it up. Previously we removed
-            // the media silently, which looked like a random "poof".
-            const message = (err as Error | null)?.message ?? 'upload failed';
-            const responseBody = (err as Error & { responseBody?: string } | null)
-              ?.responseBody;
-            // Use console.error + structured context so the full server
-            // payload is trivial to copy from devtools — the on-canvas chip
-            // truncates long errors, so this is the reliable source.
-            console.error('[pb] upload failed', {
-              file: p.file.name,
-              kind: p.draft.kind,
-              size: p.file.size,
-              type: p.file.type,
-              message,
-              responseBody,
-              error: err,
-            });
-            setConn('offline');
-            setUploadStatus((prev) => ({
-              ...prev,
-              [p.draft.id]: { phase: 'error', pct: 0, message },
-            }));
-            // Leave media.pending = true so the overlay keeps rendering.
-            return;
-          }
-        } finally {
-          delete uploadCtrlsRef.current[p.draft.id];
-        }
-        // Clear status on success or abort. Error path returns early above
-        // so the error chip stays visible until the user deletes the media.
-        setUploadStatus((prev) => {
-          if (!(p.draft.id in prev)) return prev;
-          const next = { ...prev };
-          delete next[p.draft.id];
-          return next;
-        });
-      }),
-    );
-  }, []);
+    await uploading;
+  }, [runUploadPlan]);
 
   // Left-button press on empty canvas. Starts a marquee drag; on pointer-up
   // with no movement, treats it as a click-to-deselect (shift held: no-op
