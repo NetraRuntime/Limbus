@@ -5,7 +5,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { useLiquidGlassFilter } from './LiquidGlass';
+import { FALLBACK_BACKDROP_FILTER, useLiquidGlassFilter } from './LiquidGlass';
 
 const readViewportWidth = () => (typeof window === 'undefined' ? 1024 : window.innerWidth);
 
@@ -72,7 +72,7 @@ export function HighlightInput({
     Math.min(desiredLeft, vw - width - VIEWPORT_MARGIN),
   );
 
-  const { filterId, filterSvg } = useLiquidGlassFilter({
+  const { filterId, filterSvg, supported } = useLiquidGlassFilter({
     width,
     height: HIGHLIGHT_INPUT_HEIGHT,
     radius: FILTER_RADIUS,
@@ -81,7 +81,9 @@ export function HighlightInput({
     refractionScale: FILTER_REFRACTION_SCALE,
   });
 
-  const backdropFilter = `url(#${filterId}) saturate(1.5)`;
+  const backdropFilter = supported
+    ? `url(#${filterId}) saturate(1.5)`
+    : FALLBACK_BACKDROP_FILTER;
 
   const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
     e.nativeEvent.stopPropagation();

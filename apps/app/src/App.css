@@ -35,6 +35,7 @@
   border-color: color-mix(in srgb, var(--color-neutral) 60%, transparent);
 }
 
+
 .hud-top-right {
   top: var(--space-5);
   right: var(--space-5);

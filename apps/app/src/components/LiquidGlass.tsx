@@ -13,6 +13,29 @@ import {
   type SurfaceType,
 } from '../lib/liquid-glass';
 
+// WebKit advertises `backdrop-filter: url(#id)` via `CSS.supports` but
+// doesn't actually execute the SVG filter at render time — panels end
+// up transparent instead of refracted. Verified against macOS WKWebView
+// (Tauri desktop build) where the probe returns true but nothing
+// renders. `window.chrome` is the reliable sniff: present on Chromium /
+// Edge / Tauri-on-Windows, absent on Safari / WKWebView / WebKitGTK /
+// Firefox. We still gate on `CSS.supports` as a belt-and-braces check.
+export const SUPPORTS_BACKDROP_FILTER_URL = (() => {
+  if (typeof window === 'undefined') return false;
+  const isChromium = !!(window as Window & { chrome?: unknown }).chrome;
+  if (!isChromium) return false;
+  if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return false;
+  const probe = 'url(#_liquid_glass_probe)';
+  return (
+    CSS.supports('backdrop-filter', probe) ||
+    CSS.supports('-webkit-backdrop-filter', probe)
+  );
+})();
+
+/** Plain frosted-glass fallback applied when the engine can't execute
+ *  SVG URL filters inside `backdrop-filter`. */
+export const FALLBACK_BACKDROP_FILTER = 'blur(16px) saturate(1.4)';
+
 // ─── Hook ───────────────────────────────────────────────────────────────────
 // Returns a stable filter id + the SVG <defs> node to render. Callers are
 // responsible for (a) rendering `filterSvg` somewhere in their tree and
@@ -51,6 +74,11 @@ export type LiquidGlassFilterOptions = {
 export type LiquidGlassFilterResult = {
   filterId: string;
   filterSvg: ReactNode;
+  /** False when the current engine can't render SVG URL filters inside
+   *  backdrop-filter. Callers building their own backdrop-filter string
+   *  should branch on this and fall back to
+   *  `FALLBACK_BACKDROP_FILTER`. */
+  supported: boolean;
 };
 
 export function useLiquidGlassFilter({
@@ -89,6 +117,9 @@ export function useLiquidGlassFilter({
     [w, h, radius, bezel, thickness, refractiveIndex, surfaceType],
   );
 
+  // Always render the SVG filter defs. WebKit can't apply them via
+  // `backdrop-filter: url(#)`, but it *can* apply them via regular
+  // `filter: url(#)` on a clone layer (the clone-fallback path).
   const filterSvg = (
     <svg
       width="0"
@@ -159,7 +190,7 @@ export function useLiquidGlassFilter({
     </svg>
   );
 
-  return { filterId, filterSvg };
+  return { filterId, filterSvg, supported: SUPPORTS_BACKDROP_FILTER_URL };
 }
 
 // ─── Auto-sizing variant ────────────────────────────────────────────────────
@@ -223,16 +254,20 @@ export function useAutoLiquidGlassFilter({
 
   const clampedRadius = Math.min(radius, Math.min(size.width, size.height) / 2);
 
-  const { filterId, filterSvg } = useLiquidGlassFilter({
+  const { filterId, filterSvg, supported } = useLiquidGlassFilter({
     width: size.width,
     height: size.height,
     radius: clampedRadius,
     ...filterOpts,
   });
 
+  const backdropFilter = supported
+    ? `url(#${filterId})`
+    : FALLBACK_BACKDROP_FILTER;
+
   const style: CSSProperties = {
-    WebkitBackdropFilter: `url(#${filterId})`,
-    backdropFilter: `url(#${filterId})`,
+    WebkitBackdropFilter: backdropFilter,
+    backdropFilter,
   };
 
   return { ref, filterId, filterSvg, style };
@@ -286,7 +321,7 @@ export function LiquidGlass({
   preBlur,
   saturate,
 }: LiquidGlassProps) {
-  const { filterId, filterSvg } = useLiquidGlassFilter({
+  const { filterId, filterSvg, supported } = useLiquidGlassFilter({
     width,
     height,
     radius,
@@ -300,13 +335,15 @@ export function LiquidGlass({
     saturate,
   });
 
-  const backdropFilter = [
-    `url(#${filterId})`,
-    postBlur > 0 ? `blur(${postBlur}px)` : '',
-    `saturate(${saturation})`,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const backdropFilter = supported
+    ? [
+        `url(#${filterId})`,
+        postBlur > 0 ? `blur(${postBlur}px)` : '',
+        `saturate(${saturation})`,
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : `blur(16px) saturate(${saturation})`;
 
   const tintPct = Math.max(0, Math.min(100, Math.round(tintOpacity * 100)));
 
