@@ -34,6 +34,11 @@ import { SettingsModal } from './components/SettingsModal';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
+import {
+  computeLabelPlacements,
+  type LabelPlacement,
+} from './lib/labelPlacement';
+import { labelOuterWidth } from './lib/labelMetrics';
 import './App.css';
 
 type CanvasMedia = {
@@ -240,6 +245,7 @@ type MediaPointerEvent = React.PointerEvent<HTMLElement>;
 type MediaItemProps = {
   m: CanvasMedia;
   isActive: boolean;
+  placement: LabelPlacement;
   onEnter: (id: string) => void;
   onLeave: () => void;
   onClick: (e: React.MouseEvent, id: string) => void;
@@ -253,6 +259,7 @@ type MediaItemProps = {
 const MediaItem = memo(function MediaItem({
   m,
   isActive,
+  placement,
   onEnter,
   onLeave,
   onClick,
@@ -270,6 +277,11 @@ const MediaItem = memo(function MediaItem({
   const handleContext = (e: React.MouseEvent) => onContextMenu(e, m.id);
   const handleDown = (e: MediaPointerEvent) => onPointerDown(e, m);
 
+  const labelLeft =
+    placement === 'tr' || placement === 'br' ? m.x + m.width : m.x;
+  const labelTop =
+    placement === 'bl' || placement === 'br' ? m.y + m.height : m.y;
+
   const labelCls = `media-label ${isActive ? 'is-active' : ''}`;
   const label = (
     // Canvas items are pointer-driven; keyboard access to individual items
@@ -278,7 +290,8 @@ const MediaItem = memo(function MediaItem({
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <span
       className={labelCls}
-      style={{ left: m.x, top: m.y }}
+      data-placement={placement}
+      style={{ left: labelLeft, top: labelTop }}
       onMouseEnter={handleEnter}
       onMouseLeave={onLeave}
       onClick={handleClick}
@@ -520,6 +533,23 @@ export function Canvas() {
     });
     return items;
   }, [visibleMedia, stackOrder, media]);
+
+  // Label placement: per-item corner (tl/tr/bl/br) chosen so the filename
+  // badge doesn't land over a strictly-higher-stacked neighbor. Rank comes
+  // from `stackOrder` (canvas paint order) with a fallback index in
+  // `media` for items not yet synced into it.
+  const labelPlacements = useMemo(() => {
+    const rankMap = new Map<string, number>();
+    const baseOffset = media.length;
+    media.forEach((m, i) => rankMap.set(m.id, i));
+    stackOrder.forEach((id, i) => rankMap.set(id, baseOffset + i));
+    return computeLabelPlacements({
+      items: paintMedia,
+      rank: (id) => rankMap.get(id) ?? -1,
+      scale: view.scale,
+      labelWidth: labelOuterWidth,
+    });
+  }, [paintMedia, media, stackOrder, view.scale]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -1284,6 +1314,7 @@ export function Canvas() {
             key={m.id}
             m={m}
             isActive={activeSet.has(m.id)}
+            placement={labelPlacements.get(m.id) ?? 'tl'}
             onEnter={handleMediaEnter}
             onLeave={handleMediaLeave}
             onClick={handleMediaClick}
