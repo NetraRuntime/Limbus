@@ -1,11 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
+import { useLiquidGlassFilter } from './LiquidGlass';
 
 const readViewportWidth = () => (typeof window === 'undefined' ? 1024 : window.innerWidth);
 
 type ScreenRect = { x: number; y: number; width: number; height: number };
 
 type Props = {
-  
   rect: ScreenRect;
   value: string;
   onChange: (next: string) => void;
@@ -15,7 +21,6 @@ type Props = {
   onBlur?: () => void;
   onEscape?: () => void;
   onSubmit?: (value: string) => void;
-  
   onDeleteWhenEmpty?: () => void;
   autoFocus?: boolean;
 };
@@ -25,6 +30,13 @@ export const HIGHLIGHT_INPUT_GAP = 12;
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 420;
 const VIEWPORT_MARGIN = 12;
+
+// Liquid-glass tuning for a compact text input: a tight bezel and a
+// thicker-than-default glass so the refraction reads at 44px tall.
+const FILTER_RADIUS = 12;
+const FILTER_BEZEL = 8;
+const FILTER_GLASS_THICKNESS = 120;
+const FILTER_REFRACTION_SCALE = 2.5;
 
 export function HighlightInput({
   rect,
@@ -60,6 +72,17 @@ export function HighlightInput({
     Math.min(desiredLeft, vw - width - VIEWPORT_MARGIN),
   );
 
+  const { filterId, filterSvg } = useLiquidGlassFilter({
+    width,
+    height: HIGHLIGHT_INPUT_HEIGHT,
+    radius: FILTER_RADIUS,
+    bezelWidth: FILTER_BEZEL,
+    glassThickness: FILTER_GLASS_THICKNESS,
+    refractionScale: FILTER_REFRACTION_SCALE,
+  });
+
+  const backdropFilter = `url(#${filterId}) saturate(1.5)`;
+
   const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
     e.nativeEvent.stopPropagation();
     if (e.key === 'Escape') {
@@ -84,7 +107,14 @@ export function HighlightInput({
     <form
       className="highlight-input"
       role="search"
-      style={{ top, left, width, height: HIGHLIGHT_INPUT_HEIGHT }}
+      style={{
+        top,
+        left,
+        width,
+        height: HIGHLIGHT_INPUT_HEIGHT,
+        WebkitBackdropFilter: backdropFilter,
+        backdropFilter,
+      }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={(e) => e.stopPropagation()}
@@ -94,6 +124,7 @@ export function HighlightInput({
         onSubmit?.(value);
       }}
     >
+      {filterSvg}
       <i className="ri-sparkling-2-line highlight-input-icon" aria-hidden="true" />
       <input
         ref={inputRef}

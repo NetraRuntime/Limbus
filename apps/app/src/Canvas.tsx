@@ -32,6 +32,7 @@ import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
+import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
 import './App.css';
 
@@ -324,6 +325,13 @@ const getInitialView = (): View => {
 };
 
 export function Canvas() {
+  // Bottom HUD pills — each gets its own liquid-glass filter sized to
+  // the element it's attached to via ResizeObserver. Pills fully rounded
+  // (radius 999 → clamped to height/2 inside the hook).
+  const searchPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
+  const statusPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
+  const controlsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
+
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
   const didInitialFitRef = useRef<boolean>(false);
@@ -1356,7 +1364,16 @@ export function Canvas() {
       </div>
 
       <div className="hud hud-bottom-center">
-        <div className="btn-cluster" role="group" aria-label="Search">
+        {searchPillGlass.filterSvg}
+        {statusPillGlass.filterSvg}
+        {controlsPillGlass.filterSvg}
+        <div
+          ref={searchPillGlass.ref}
+          className="btn-cluster is-liquid-glass"
+          role="group"
+          aria-label="Search"
+          style={searchPillGlass.style}
+        >
           <button
             className="btn-ghost"
             type="button"
@@ -1368,7 +1385,11 @@ export function Canvas() {
           </button>
         </div>
 
-        <div className="status-pill">
+        <div
+          ref={statusPillGlass.ref}
+          className="status-pill is-liquid-glass"
+          style={statusPillGlass.style}
+        >
           <span className="status-label">Zoom</span>
           <span className="status-value">{formatZoom(view.scale)}</span>
           <span className="status-sep" aria-hidden />
@@ -1378,7 +1399,13 @@ export function Canvas() {
           <span className="status-value">{formatCoord(cursor?.worldY)}</span>
         </div>
 
-        <div className="btn-cluster" role="group" aria-label="Canvas controls">
+        <div
+          ref={controlsPillGlass.ref}
+          className="btn-cluster is-liquid-glass"
+          role="group"
+          aria-label="Canvas controls"
+          style={controlsPillGlass.style}
+        >
           <button
             className="btn-ghost"
             type="button"
