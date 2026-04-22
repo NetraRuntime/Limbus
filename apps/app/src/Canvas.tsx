@@ -33,6 +33,7 @@ import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { Sam3VersionBadge } from './components/Sam3VersionBadge';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
+import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
@@ -414,6 +415,7 @@ export function Canvas() {
   const marqueeRef = useRef<MarqueeState | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [tool, setTool] = useState<CanvasTool>('drag');
 
   const dragRef = useRef<DragState | null>(null);
   const shiftToggledRef = useRef(false);
@@ -1374,6 +1376,16 @@ export function Canvas() {
             </div>
           );
         })}
+
+      {activeMedia && activeRect && (
+        <MediaToolbar
+          rect={activeRect}
+          tool={tool}
+          onToolChange={setTool}
+          onMouseEnter={clearHideTimer}
+          onMouseLeave={scheduleHide}
+        />
+      )}
 
       {activeMedia && activeRect && (
         <HighlightInput
