@@ -11,7 +11,7 @@ Bundle the SAM3 Rust binding into the Tauri desktop app (`apps/app/`) such that 
 ## Success criteria
 
 1. Fresh clone + `pnpm install && pnpm --filter app tauri dev` succeeds with no manual CMake step.
-2. The app window opens and a small "SAM3 v{x}" badge renders in the existing settings-pill area.
+2. The app window opens and a small "SAM3 v{x}" badge renders inside the top-left wordmark HUD (alongside the existing `canvas` and `conn` tags).
 3. `cargo clippy` in `apps/app/src-tauri/` produces no new warnings.
 4. (Stretch, optional for this milestone) `pnpm tauri build` produces a `.app` bundle on macOS that opens and shows the badge.
 
@@ -23,7 +23,7 @@ Four surfaces touched:
 - **`apps/app/src-tauri/src/lib.rs`** — add one `#[tauri::command] fn sam3_version() -> String` that calls the safe wrapper. Register it in `invoke_handler`.
 - **`apps/app/src-tauri/build.rs`** — extend beyond the current `tauri_build::build()` to copy `libsam3.dylib` from the CMake build directory into `target/<profile>/` so the `@loader_path` rpath baked by `sam3-sys` resolves at runtime.
 - **`apps/app/package.json` + `apps/app/src-tauri/tauri.conf.json`** — add a `pnpm sam3:build` script that invokes CMake, and chain it into `beforeDevCommand` and `beforeBuildCommand`.
-- **`apps/app/src/Sam3VersionBadge.tsx`** (new) — a ~30-line React component that calls `invoke<string>("sam3_version")` on mount and renders the result. Mounted in the existing settings-pill area.
+- **`apps/app/src/components/Sam3VersionBadge.tsx`** (new) — a ~30-line React component that calls `invoke<string>("sam3_version")` on mount and renders the result as a `wordmark-tag` span. Mounted in the existing top-left wordmark HUD (after the `conn` tag).
 
 No changes to `Canvas.tsx`, routing, or other feature code.
 
@@ -74,23 +74,25 @@ One synchronous command. No state, no context, no async. The `sam3::version()` c
 ## Frontend surface
 
 ```tsx
-// apps/app/src/Sam3VersionBadge.tsx
+// apps/app/src/components/Sam3VersionBadge.tsx
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 export function Sam3VersionBadge() {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
     invoke<string>("sam3_version")
-      .then(setVersion)
-      .catch(() => setVersion(null));
+      .then((v) => { if (!cancelled) setVersion(v); })
+      .catch(() => { if (!cancelled) setVersion(null); });
+    return () => { cancelled = true; };
   }, []);
   if (!version) return null;
-  return <span className="sam3-version-badge">SAM3 {version}</span>;
+  return <span className="wordmark-tag">SAM3 {version}</span>;
 }
 ```
 
-Mounted once inside the settings-pill area of the existing UI. CSS reuses the liquid-glass pill styling already in place (per recent commits `87ae21c`, `e9284f1`). If the invoke fails (e.g. dylib failed to load), the component renders nothing — a failed smoke test should not wedge the UI.
+Mounted once inside the top-left wordmark HUD, reusing the existing `wordmark-tag` className so no new styles are needed. The wordmark already hosts the `canvas` label and `conn` connection indicator, making it the natural place for a third "dev info" tag. If the invoke fails (e.g. dylib failed to load), the component renders nothing — a failed smoke test should not wedge the UI.
 
 ## Error handling
 
