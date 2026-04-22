@@ -162,6 +162,9 @@ type UploadPlan = {
 const VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
 const VIEW_PERSIST_DEBOUNCE_MS = 200;
 
+const STACK_ORDER_STORAGE_KEY = 'netrart:canvas:stack-order:v1';
+const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
+
 const CULL_BUFFER_FACTOR = 0.5;
 
 const StoredViewSchema = z.object({
@@ -188,7 +191,30 @@ const writeStoredView = (v: View) => {
   try {
     localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(v));
   } catch {
-    
+
+  }
+};
+
+const StoredStackOrderSchema = z.array(z.string());
+
+const readStoredStackOrder = (): string[] => {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STACK_ORDER_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = StoredStackOrderSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeStoredStackOrder = (order: string[]) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STACK_ORDER_STORAGE_KEY, JSON.stringify(order));
+  } catch {
+
   }
 };
 
@@ -339,9 +365,19 @@ export function Canvas() {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
   const didInitialFitRef = useRef<boolean>(false);
+  // Flipped once the PocketBase list fetch has resolved. Guards the
+  // media→stackOrder sync effect from running against the empty initial
+  // `media` and wiping the hydrated order before data arrives.
+  const initialMediaLoadedRef = useRef<boolean>(false);
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
+  // Parallel to `media`, in canvas paint order (bottom → top). Kept separate
+  // so raising an item to the top doesn't reshuffle the sidebar, which
+  // renders `media` in its canonical (load/insertion) order. Hydrated from
+  // localStorage so prior raises persist across reloads; the media-sync
+  // effect below reconciles ids against what's actually on the canvas.
+  const [stackOrder, setStackOrder] = useState<string[]>(readStoredStackOrder);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -464,6 +500,27 @@ export function Canvas() {
     });
   }, [media, view, viewport, selectedIds, hoverId]);
 
+  // Canvas paint order: apply `stackOrder` on top of `visibleMedia`. Items not
+  // yet ranked (freshly loaded or uploaded before the sync effect runs) sort
+  // below ranked ones, breaking ties by their media-array position.
+  const paintMedia = useMemo(() => {
+    if (visibleMedia.length <= 1) return visibleMedia;
+    const rank = new Map<string, number>();
+    stackOrder.forEach((id, i) => rank.set(id, i));
+    const fallback = new Map<string, number>();
+    media.forEach((m, i) => fallback.set(m.id, i));
+    const items = [...visibleMedia];
+    items.sort((a, b) => {
+      const ra = rank.get(a.id);
+      const rb = rank.get(b.id);
+      if (ra !== undefined && rb !== undefined) return ra - rb;
+      if (ra !== undefined) return 1;
+      if (rb !== undefined) return -1;
+      return (fallback.get(a.id) ?? 0) - (fallback.get(b.id) ?? 0);
+    });
+    return items;
+  }, [visibleMedia, stackOrder, media]);
+
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
       window.clearTimeout(hideTimer.current);
@@ -485,6 +542,14 @@ export function Canvas() {
     const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [view]);
+
+  useEffect(() => {
+    const t = window.setTimeout(
+      () => writeStoredStackOrder(stackOrder),
+      STACK_ORDER_PERSIST_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(t);
+  }, [stackOrder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -511,6 +576,10 @@ export function Canvas() {
       ];
       merged.sort((a, b) => a.id.localeCompare(b.id));
       setMedia(merged);
+      // Only flip the "loaded" gate when we actually heard back from PB; if
+      // both collections errored out we don't know the true membership, so
+      // leaving stackOrder alone is safer than reconciling against `[]`.
+      if (imgRes.ok || vidRes.ok) initialMediaLoadedRef.current = true;
       setConn(imgRes.ok || vidRes.ok ? 'ready' : 'offline');
 
       if (
@@ -540,23 +609,45 @@ export function Canvas() {
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
 
-  // Raise the given ids to the top of the media stacking order by moving them
-  // to the end of the array. DOM sibling order drives paint order for absolute
-  // positioned siblings, so this makes the raise persist after deselection.
+  // Keep `stackOrder` in step with `media` membership: new items get appended
+  // to the top of the stack, deleted items fall out. The relative order of
+  // already-tracked items is preserved so prior raises persist.
+  //
+  // Gated on initialMediaLoadedRef because `media` starts as `[]` while the
+  // PocketBase list call is in flight — running the sync against that empty
+  // transient would drop every hydrated id and wipe persisted stacking order.
+  useEffect(() => {
+    if (!initialMediaLoadedRef.current) return;
+    setStackOrder((prev) => {
+      const currentIds = new Set(media.map((m) => m.id));
+      const kept = prev.filter((id) => currentIds.has(id));
+      const keptSet = new Set(kept);
+      const added: string[] = [];
+      for (const m of media) {
+        if (!keptSet.has(m.id)) added.push(m.id);
+      }
+      if (added.length === 0 && kept.length === prev.length) return prev;
+      return [...kept, ...added];
+    });
+  }, [media]);
+
+  // Raise the given ids to the top of the canvas stacking order by moving
+  // them to the end of `stackOrder`. `media` itself is left untouched, so
+  // the sidebar (which renders `media` directly) does not reshuffle.
   const bringToFront = useCallback((ids: Set<string>) => {
     if (ids.size === 0) return;
-    setMedia((prev) => {
+    setStackOrder((prev) => {
       if (prev.length <= 1) return prev;
-      const below: CanvasMedia[] = [];
-      const raised: CanvasMedia[] = [];
-      for (const m of prev) {
-        if (ids.has(m.id)) raised.push(m);
-        else below.push(m);
+      const below: string[] = [];
+      const raised: string[] = [];
+      for (const id of prev) {
+        if (ids.has(id)) raised.push(id);
+        else below.push(id);
       }
       if (raised.length === 0 || raised.length === prev.length) return prev;
       let alreadyAtEnd = true;
       for (let i = 0; i < raised.length; i++) {
-        if (prev[below.length + i]?.id !== raised[i]!.id) {
+        if (prev[below.length + i] !== raised[i]) {
           alreadyAtEnd = false;
           break;
         }
@@ -1188,7 +1279,7 @@ export function Canvas() {
         zoomSensitivity={settings.zoomSensitivity}
         panSpeed={settings.panSpeed}
       >
-        {visibleMedia.map((m) => (
+        {paintMedia.map((m) => (
           <MediaItem
             key={m.id}
             m={m}
