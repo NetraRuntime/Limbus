@@ -414,6 +414,11 @@ export function Canvas() {
   // fall back to hoverId so the current-hover UX still works.
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string>>({});
+  // Shared highlight input for the multi-select case (2+ items selected).
+  // Lives only for the lifetime of the current selection — a different set
+  // of selected ids resets it (see effect below). Intentionally separate
+  // from `highlightInputs` so multi-edit doesn't write to per-item state.
+  const [multiHighlightInput, setMultiHighlightInput] = useState('');
   const hideTimer = useRef<number | null>(null);
   // Live marquee — when non-null, a selection rectangle is being dragged out.
   // Stored as world coords so it stays anchored to content under pan/zoom.
@@ -505,6 +510,18 @@ export function Canvas() {
     if (!Number.isFinite(minX)) return null;
     return { minX, minY, maxX, maxY };
   }, [selectedIds, media]);
+
+  // Order-independent signature of the current multi-selection — drives the
+  // reset effect below. The shared input must be scoped to one selection's
+  // lifetime, so any change in *which* ids are selected (or dropping below
+  // 2) wipes the value.
+  const multiSelectKey = useMemo(() => {
+    if (selectedIds.size < 2) return '';
+    return Array.from(selectedIds).sort().join(' ');
+  }, [selectedIds]);
+  useEffect(() => {
+    setMultiHighlightInput('');
+  }, [multiSelectKey]);
 
   // Track window dimensions for viewport culling. The canvas is
   // position:fixed; inset:0, so window size === viewport size.
@@ -1497,6 +1514,21 @@ export function Canvas() {
         </div>
         );
       })()}
+
+      {selectionBBox && !marqueeRect && (
+        <HighlightInput
+          rect={{
+            x: selectionBBox.minX * view.scale + view.x,
+            y: selectionBBox.minY * view.scale + view.y,
+            width: Math.max(0, (selectionBBox.maxX - selectionBBox.minX) * view.scale),
+            height: Math.max(0, (selectionBBox.maxY - selectionBBox.minY) * view.scale),
+          }}
+          value={multiHighlightInput}
+          onChange={setMultiHighlightInput}
+          onEscape={clearSelection}
+          onDeleteWhenEmpty={deleteSelection}
+        />
+      )}
 
       {isEmpty && (
         <div className="empty-state" aria-hidden>
