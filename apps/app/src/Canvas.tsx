@@ -271,15 +271,48 @@ const MediaItem = memo(function MediaItem({
   const handleContext = (e: React.MouseEvent) => onContextMenu(e, m.id);
   const handleDown = (e: MediaPointerEvent) => onPointerDown(e, m);
 
+  const label = (
+    // Anchored at the media's top-left world coord. Counter-scales (via the
+    // --inv-view-scale CSS variable set by InfiniteCanvas's paintView) so it
+    // keeps a constant screen-size at any zoom. pointer-events:none so it
+    // never hijacks drag/click — handlers stay on the img/video underneath.
+    <span className="media-label" style={{ left: m.x, top: m.y }}>
+      {m.name}
+    </span>
+  );
+
   if (m.kind === 'video') {
     return (
-      <video
+      <>
+        <video
+          src={m.src}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          className={cls}
+          style={style}
+          onMouseEnter={handleEnter}
+          onMouseLeave={onLeave}
+          onClick={handleClick}
+          onDoubleClick={handleDouble}
+          onContextMenu={handleContext}
+          onPointerDown={handleDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        />
+        {label}
+      </>
+    );
+  }
+  return (
+    <>
+      <img
         src={m.src}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="metadata"
+        alt={m.name}
+        draggable={false}
         className={cls}
         style={style}
         onMouseEnter={handleEnter}
@@ -292,25 +325,8 @@ const MediaItem = memo(function MediaItem({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       />
-    );
-  }
-  return (
-    <img
-      src={m.src}
-      alt={m.name}
-      draggable={false}
-      className={cls}
-      style={style}
-      onMouseEnter={handleEnter}
-      onMouseLeave={onLeave}
-      onClick={handleClick}
-      onDoubleClick={handleDouble}
-      onContextMenu={handleContext}
-      onPointerDown={handleDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    />
+      {label}
+    </>
   );
 });
 
