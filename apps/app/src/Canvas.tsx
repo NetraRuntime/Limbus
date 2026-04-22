@@ -244,13 +244,14 @@ const MediaItem = memo(function MediaItem({
   const handleContext = (e: React.MouseEvent) => onContextMenu(e, m.id);
   const handleDown = (e: MediaPointerEvent) => onPointerDown(e, m);
 
+  const labelCls = `media-label ${isActive ? 'is-active' : ''}`;
   const label = (
     // Canvas items are pointer-driven; keyboard access to individual items
     // happens through the SearchPalette (Cmd+K) which lists every media by
     // name and focuses the picked one.
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <span
-      className="media-label"
+      className={labelCls}
       style={{ left: m.x, top: m.y }}
       onMouseEnter={handleEnter}
       onMouseLeave={onLeave}
@@ -538,6 +539,37 @@ export function Canvas() {
   mediaRef.current = media;
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
+
+  // Raise the given ids to the top of the media stacking order by moving them
+  // to the end of the array. DOM sibling order drives paint order for absolute
+  // positioned siblings, so this makes the raise persist after deselection.
+  const bringToFront = useCallback((ids: Set<string>) => {
+    if (ids.size === 0) return;
+    setMedia((prev) => {
+      if (prev.length <= 1) return prev;
+      const below: CanvasMedia[] = [];
+      const raised: CanvasMedia[] = [];
+      for (const m of prev) {
+        if (ids.has(m.id)) raised.push(m);
+        else below.push(m);
+      }
+      if (raised.length === 0 || raised.length === prev.length) return prev;
+      let alreadyAtEnd = true;
+      for (let i = 0; i < raised.length; i++) {
+        if (prev[below.length + i]?.id !== raised[i]!.id) {
+          alreadyAtEnd = false;
+          break;
+        }
+      }
+      if (alreadyAtEnd) return prev;
+      return [...below, ...raised];
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    bringToFront(selectedIds);
+  }, [selectedIds, bringToFront]);
 
   const runUploadPlan = useCallback(
     (plan: UploadPlan[]): Promise<void> => {
@@ -1066,7 +1098,11 @@ export function Canvas() {
       lastDx: 0,
       lastDy: 0,
     };
-  }, []);
+    // Covers the drag-without-selection case: clicking and dragging an
+    // unselected item won't fire click (moved=true suppresses it), so the
+    // selectedIds-driven raise effect wouldn't run. Raise here too.
+    bringToFront(ids);
+  }, [bringToFront]);
 
   const handleMediaPointerMove = useCallback((e: MediaPointerEvent) => {
     const d = dragRef.current;
