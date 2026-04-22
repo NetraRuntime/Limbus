@@ -243,14 +243,16 @@
   filter: saturate(0.85);
 }
 
-/* Filename label anchored to the top-left corner of each media item. Lives
+/* Filename label sitting just above each media item's top edge. Lives
    inside the world-space transform so it pans with the content, and
    counter-scales via --inv-view-scale (set by InfiniteCanvas.paintView) so
-   it stays a constant screen size at any zoom. */
+   it stays a constant screen size at any zoom. transform-origin is
+   bottom-left so that with translateY(-100%) the label's bottom edge
+   anchors at (m.x, m.y) — the image's top-left corner — at every scale. */
 .media-label {
   position: absolute;
   z-index: 1;
-  padding: 3px 8px;
+  padding: 2px 7px;
   max-width: 320px;
   overflow: hidden;
   white-space: nowrap;
@@ -261,12 +263,12 @@
   border: 1px solid var(--border-muted);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font: 500 11px/15px var(--font-mono);
-  letter-spacing: -0.2px;
+  font: 500 9px/13px var(--font-mono);
+  letter-spacing: -0.1px;
   pointer-events: none;
   user-select: none;
-  transform-origin: top left;
-  transform: scale(var(--inv-view-scale, 1));
+  transform-origin: bottom left;
+  transform: translateY(-100%) scale(var(--inv-view-scale, 1));
 }
 
 /* ==========================================================================
