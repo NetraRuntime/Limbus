@@ -28,5 +28,17 @@ services:
     ports:
       - "8080:80"
 
+  app:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: netrart-app
+    restart: unless-stopped
+    depends_on:
+      pb:
+        condition: service_healthy
+    ports:
+      - "8081:80"
+
 volumes:
   pb_data:
