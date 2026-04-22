@@ -608,6 +608,18 @@ export function Canvas() {
     setLastSelectedId(null);
   }, []);
 
+  // Select every media item on the canvas. Used by the Cmd/Ctrl+A shortcut.
+  // Pending uploads are included so the selection matches what the user
+  // visually sees — they can still be moved or deleted as part of the set.
+  const selectAll = useCallback(() => {
+    const all = mediaRef.current;
+    if (all.length === 0) return;
+    setSelectedIds(new Set(all.map((m) => m.id)));
+    // Multi-select anchors on the bounding box; leave the single-select
+    // anchor null so HighlightInput doesn't latch onto an arbitrary item.
+    setLastSelectedId(null);
+  }, []);
+
   // Deletes a media item by id. Used by delete-selection, the empty-input
   // Delete shortcut inside HighlightInput, and the context-menu Delete action.
   const deleteMediaById = useCallback((id: string) => {
@@ -676,6 +688,19 @@ export function Canvas() {
         clearSelection();
         return;
       }
+      // Cmd/Ctrl+A — select every media on the canvas. Skipped when a text
+      // input has focus so the browser's "select all text" still works there.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === 'a'
+      ) {
+        if (isTypingContext(e)) return;
+        e.preventDefault();
+        selectAll();
+        return;
+      }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (isTypingContext(e)) return;
       if (selectedIdsRef.current.size === 0) return;
@@ -684,7 +709,7 @@ export function Canvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [clearSelection, deleteSelection]);
+  }, [clearSelection, deleteSelection, selectAll]);
 
   // Cmd/Ctrl+K toggles the macOS-Spotlight-style search palette. Fires
   // globally so it still works when a text input (HighlightInput, etc.) has
@@ -1424,6 +1449,15 @@ export function Canvas() {
         </div>
 
         <div className="btn-cluster" role="group" aria-label="Canvas controls">
+          <button
+            className="btn-ghost"
+            type="button"
+            aria-label="Search media (⌘K / Ctrl+K)"
+            title="Search media (⌘K)"
+            onClick={() => setSearchOpen(true)}
+          >
+            <i className="ri-search-line" aria-hidden />
+          </button>
           <button
             className="btn-ghost"
             type="button"
