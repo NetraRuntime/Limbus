@@ -1531,6 +1531,18 @@ export function Canvas() {
       </div>
 
       <div className="hud hud-bottom-center">
+        <div className="btn-cluster" role="group" aria-label="Search">
+          <button
+            className="btn-ghost"
+            type="button"
+            aria-label="Search media (⌘K / Ctrl+K)"
+            title="Search media (⌘K)"
+            onClick={() => setSearchOpen(true)}
+          >
+            <i className="ri-search-line" aria-hidden />
+          </button>
+        </div>
+
         <div className="status-pill">
           <span className="status-label">Zoom</span>
           <span className="status-value">{formatZoom(view.scale)}</span>
@@ -1542,15 +1554,6 @@ export function Canvas() {
         </div>
 
         <div className="btn-cluster" role="group" aria-label="Canvas controls">
-          <button
-            className="btn-ghost"
-            type="button"
-            aria-label="Search media (⌘K / Ctrl+K)"
-            title="Search media (⌘K)"
-            onClick={() => setSearchOpen(true)}
-          >
-            <i className="ri-search-line" aria-hidden />
-          </button>
           <button
             className="btn-ghost"
             type="button"
