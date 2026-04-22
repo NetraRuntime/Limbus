@@ -1,0 +1,4 @@
+[submodule "vendor/sam3.c"]
+	path = vendor/sam3.c
+	url = https://github.com/rifkybujana/sam3.c
+	branch = main
