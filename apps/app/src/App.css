@@ -23,6 +23,16 @@
   gap: var(--space-2);
 }
 
+/* Liquid-glass variant for the HUD pills. The `backdrop-filter:
+   url(#...)` reference is applied inline per-instance by
+   Canvas.tsx via the `useAutoLiquidGlassFilter` hook. This rule owns
+   the tint + border override needed for the refraction to show. */
+.btn-cluster.is-liquid-glass,
+.status-pill.is-liquid-glass {
+  background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-neutral) 60%, transparent);
+}
+
 .hud-top-right {
   top: var(--space-5);
   right: var(--space-5);
@@ -435,16 +445,17 @@
 .highlight-input {
   position: fixed;
   z-index: 20;
-  
+
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 12px 0 14px;
 
-  
-  background: color-mix(in srgb, var(--color-neutral) 72%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  backdrop-filter: blur(16px) saturate(1.4);
+  /* Liquid-glass tint + border. The `backdrop-filter: url(#...)`
+     reference is applied inline by HighlightInput.tsx since the
+     `useLiquidGlassFilter` hook generates a unique filter id per
+     instance / width bucket. */
+  background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
   border-radius: var(--radius-lg);
   box-shadow:
@@ -464,6 +475,40 @@
     transform: none;
   }
 }
+
+.highlight-input-icon {
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.highlight-input-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0;
+  font: 400 14px/20px var(--font-sans);
+  letter-spacing: -0.2px;
+  color: var(--fg);
+  caret-color: var(--accent);
+}
+
+.highlight-input-field::placeholder {
+  color: var(--fg-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .highlight-input {
+    animation: none;
+  }
+}
+
+
+
 
 .highlight-input-icon {
   color: var(--accent);
