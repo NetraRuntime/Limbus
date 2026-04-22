@@ -164,6 +164,13 @@ type MarqueeState = {
 type UploadPhase = 'sending' | 'finalizing' | 'error';
 type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
 
+// Screen-space band reserved below any focus target so the HighlightInput
+// (which renders HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT below the
+// active media) plus a little breathing room never crowds the viewport's
+// bottom edge. Fit-all, double-click-to-focus, and search-pick all reuse
+// this so the "bottom image's input" is always visible when selected.
+const HIGHLIGHT_BOTTOM_INSET_PX = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
+
 // Unit of work for runUploadPlan: the pending draft that lives in `media`,
 // the File to upload, and the metadata sent to PocketBase on createImage /
 // createVideo. Same shape used by file drops and Cmd/Ctrl+D duplicates.
@@ -610,8 +617,14 @@ export function Canvas() {
           didInitialFitRef.current = true;
           // Defer one frame so InfiniteCanvas's container has laid out and
           // focusOn's getBoundingClientRect returns the real viewport size.
+          // bottomInset leaves room for the HighlightInput that appears
+          // below the active media — so the bottommost items after fit
+          // have space for their input instead of being clipped.
           requestAnimationFrame(() => {
-            canvasRef.current?.focusOn(bounds, { animate: false });
+            canvasRef.current?.focusOn(bounds, {
+              animate: false,
+              bottomInset: HIGHLIGHT_BOTTOM_INSET_PX,
+            });
           });
         }
       }
@@ -883,8 +896,13 @@ export function Canvas() {
       e.preventDefault();
       deleteSelection();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Capture phase so these shortcuts fire BEFORE any child's React
+    // handler — specifically HighlightInput.handleKey, which calls
+    // e.nativeEvent.stopPropagation() on every keystroke. Without capture,
+    // the input's stopPropagation would keep Cmd+D from ever reaching us
+    // and the browser's "add bookmark" dialog would fire instead.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [clearSelection, deleteSelection, selectAll, duplicateSelection]);
 
   // Cmd/Ctrl+K toggles the macOS-Spotlight-style search palette. Fires
@@ -898,8 +916,10 @@ export function Canvas() {
       e.preventDefault();
       setSearchOpen((o) => !o);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Same reason as the primary keyboard effect: capture phase so the
+    // shortcut survives child stopPropagation calls.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   const searchItems = useMemo<SearchItem[]>(
@@ -922,7 +942,7 @@ export function Canvas() {
     setSearchOpen(false);
     canvasRef.current?.focusOn(
       { x: item.x, y: item.y, width: item.width, height: item.height },
-      { animate: true },
+      { animate: true, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
     );
   }, []);
 
@@ -980,7 +1000,10 @@ export function Canvas() {
     // returned promise at the end is optional — we do it so any caller
     // awaiting handleFilesDrop resolves only after uploads settle.
     const uploading = runUploadPlan(plan);
-    canvasRef.current?.focusOn({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
+    canvasRef.current?.focusOn(
+      { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+      { bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
+    );
     await uploading;
   }, [runUploadPlan]);
 
@@ -1107,10 +1130,9 @@ export function Canvas() {
     (e: React.MouseEvent, m: CanvasMedia) => {
       e.stopPropagation();
       if (dragRef.current?.moved) return;
-      const bottomInset = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
       canvasRef.current?.focusOn(
         { x: m.x, y: m.y, width: m.width, height: m.height },
-        { padding: 0.12, bottomInset },
+        { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
       );
     },
     [],
@@ -1189,10 +1211,9 @@ export function Canvas() {
       setSelectedIds(new Set([id]));
       setLastSelectedId(id);
       setHoverId(id);
-      const bottomInset = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
       canvasRef.current?.focusOn(
         { x: target.x, y: target.y, width: target.width, height: target.height },
-        { padding: 0.12, bottomInset },
+        { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
       );
     },
     [clearHideTimer],
@@ -1597,7 +1618,7 @@ export function Canvas() {
               }
               canvasRef.current?.focusOn(
                 { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-                { padding: 0.12 },
+                { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
               );
             }}
           >
