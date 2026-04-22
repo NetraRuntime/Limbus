@@ -325,12 +325,15 @@ const getInitialView = (): View => {
 };
 
 export function Canvas() {
-  // Bottom HUD pills — each gets its own liquid-glass filter sized to
-  // the element it's attached to via ResizeObserver. Pills fully rounded
-  // (radius 999 → clamped to height/2 inside the hook).
+  // HUD liquid-glass filters. Each one measures its own element via
+  // ResizeObserver; pill surfaces use radius 999 (auto-clamped to
+  // height/2 in the hook), the wordmark uses the design-system md
+  // corner.
   const searchPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
   const statusPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
   const controlsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
+  const wordmarkGlass = useAutoLiquidGlassFilter({ radius: 10 });
+  const settingsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
 
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
@@ -1351,7 +1354,13 @@ export function Canvas() {
       })()}
 
       <div className="hud hud-top-left">
-        <div className="wordmark" aria-label="NetraRT">
+        {wordmarkGlass.filterSvg}
+        <div
+          ref={wordmarkGlass.ref}
+          className="wordmark is-liquid-glass"
+          aria-label="NetraRT"
+          style={wordmarkGlass.style}
+        >
           <a href="/" className="wordmark-link">
             <span className="wordmark-glyph">NetraRT</span>
           </a>
@@ -1454,7 +1463,14 @@ export function Canvas() {
       </div>
 
       <div className="hud hud-top-right">
-        <div className="btn-cluster" role="group" aria-label="App controls">
+        {settingsPillGlass.filterSvg}
+        <div
+          ref={settingsPillGlass.ref}
+          className="btn-cluster is-liquid-glass"
+          role="group"
+          aria-label="App controls"
+          style={settingsPillGlass.style}
+        >
           <button
             className="btn-ghost"
             type="button"
