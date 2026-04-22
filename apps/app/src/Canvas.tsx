@@ -860,9 +860,11 @@ export function Canvas() {
         selectAll();
         return;
       }
-      // Cmd/Ctrl+D — duplicate the current selection. Preempts the browser's
-      // "add bookmark" default. Skipped when typing so the shortcut doesn't
-      // fight a text input.
+      // Cmd/Ctrl+D — duplicate the current selection. Always preempts the
+      // browser's "add bookmark" default while the canvas has focus, even if
+      // there's nothing to duplicate — otherwise the bookmarks dialog would
+      // surface when the user hits the shortcut on an empty selection.
+      // Skipped only when typing so inputs keep their normal behavior.
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.altKey &&
@@ -870,8 +872,8 @@ export function Canvas() {
         e.key.toLowerCase() === 'd'
       ) {
         if (isTypingContext(e)) return;
-        if (selectedIdsRef.current.size === 0) return;
         e.preventDefault();
+        if (selectedIdsRef.current.size === 0) return;
         duplicateSelection();
         return;
       }
