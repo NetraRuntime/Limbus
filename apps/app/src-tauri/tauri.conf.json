@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "ai.kolosal.netrart",
   "build": {
-    "beforeDevCommand": "pnpm stage:pb && pnpm dev",
+    "beforeDevCommand": "pnpm stage:pb && pnpm sam3:build && pnpm dev",
     "devUrl": "http://localhost:5174",
-    "beforeBuildCommand": "pnpm stage:pb && pnpm build",
+    "beforeBuildCommand": "pnpm stage:pb && pnpm sam3:build && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
