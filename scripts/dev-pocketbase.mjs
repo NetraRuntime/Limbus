@@ -39,7 +39,7 @@ const pbBinary = resolve(
   platform() === 'win32' ? 'pocketbase.exe' : 'pocketbase',
 );
 
-// Default to `serve` when invoked with no args (`npm run db:start`).
+// Default to `serve` when invoked with no args (`pnpm db:start`).
 // Otherwise forward whatever subcommand the caller asked for
 // (`migrate up`, `superuser create`, etc.) — but always append the shared
 // `--dir` and `--migrationsDir` so every entrypoint touches the SAME

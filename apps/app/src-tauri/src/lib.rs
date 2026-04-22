@@ -15,7 +15,7 @@ struct PocketBaseProcess(Mutex<Option<CommandChild>>);
 fn port_in_use() -> bool {
     // If something is already serving on 8090, reuse it rather than fighting
     // over the port — common during dev when the user already has
-    // `npm run db:start` running in another shell.
+    // `pnpm db:start` running in another shell.
     TcpStream::connect_timeout(
         &format!("{PB_HOST}:{PB_PORT}").parse().unwrap(),
         Duration::from_millis(200),
