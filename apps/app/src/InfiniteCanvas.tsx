@@ -13,6 +13,22 @@ import {
 } from 'react';
 import './InfiniteCanvas.css';
 
+const clientToWorld = (
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+  view: View,
+): WorldPoint & { screenX: number; screenY: number } => {
+  const screenX = clientX - rect.left;
+  const screenY = clientY - rect.top;
+  return {
+    screenX,
+    screenY,
+    worldX: (screenX - view.x) / view.scale,
+    worldY: (screenY - view.y) / view.scale,
+  };
+};
+
 export type View = { x: number; y: number; scale: number };
 
 export type WorldPoint = { worldX: number; worldY: number };
@@ -22,14 +38,7 @@ export type WorldRect = { x: number; y: number; width: number; height: number };
 const MIN_SCALE = 1e-4;
 const MAX_SCALE = 1e4;
 const ZOOM_INTENSITY = 0.0015;
-// Multiplier applied to ZOOM_INTENSITY when a pinch / ctrl-wheel zoom fires.
-// Pinch deltas are tiny (~1–5 per event); bumping this scales the per-event
-// factor so a full pinch gesture covers a meaningful zoom range without
-// feeling sluggish. Higher = more sensitive zoom.
 const PINCH_ZOOM_MULTIPLIER = 4;
-// Line-mode and page-mode wheel events (rare — some Firefox configs, some
-// older mice) report deltas in lines/pages. Convert to approximate pixels so
-// the pan speed matches pixel-mode wheel events.
 const LINE_TO_PX = 16;
 const PAGE_TO_PX = 400;
 const DEFAULT_TWEEN_MS = 420;
@@ -38,10 +47,6 @@ export type FocusOptions = {
   animate?: boolean;
   duration?: number;
   padding?: number; // fraction of viewport reserved as margin (0..1); default 0.12
-  // Screen-space pixels to reserve below the rect — the image fits into the
-  // viewport minus this band, and is shifted upward so the rect + reserved
-  // area are vertically centered as a group. Useful when a UI element (e.g.
-  // the HighlightInput) sits beneath the focused image.
   bottomInset?: number;
 };
 
@@ -52,10 +57,7 @@ export type InfiniteCanvasHandle = {
   focusOn: (rect: WorldRect, opts?: FocusOptions) => void;
 };
 
-/** Info handed to parents when a left-button press lands on the canvas
- *  background (i.e. not absorbed by a media child that stops propagation).
- *  The parent decides whether the press becomes a click-to-deselect, a
- *  marquee, a drag, etc — this component doesn't own selection. */
+
 export type BackgroundPointerDown = {
   worldX: number;
   worldY: number;
@@ -73,21 +75,16 @@ type Props = {
   onChange?: (view: View) => void;
   onPointerWorld?: (p: (WorldPoint & { screenX: number; screenY: number }) | null) => void;
   onFilesDrop?: (files: File[], worldPoint: WorldPoint) => void;
-  /** Fires when left button presses on the canvas background. Parent manages
-   *  any follow-up (marquee, click-to-deselect) with window-level listeners. */
+  
   onBackgroundPointerDown?: (p: BackgroundPointerDown) => void;
-  /** Pinch / ctrl-wheel zoom sensitivity multiplier (default 4). Applied as
-   *  `ZOOM_INTENSITY * zoomSensitivity`. Read via a live ref inside the wheel
-   *  handler so tuning the value doesn't re-attach the listener mid-gesture. */
+  
   zoomSensitivity?: number;
-  /** Pan speed multiplier for plain wheel / two-finger swipe (default 1). */
+  
   panSpeed?: number;
   children?: ReactNode;
   dotStyle?: CSSProperties;
 };
 
-// Wrap a value into [0, m) so the tiled background pattern stays aligned to
-// the pan translation modulo one tile.
 const mod = (a: number, m: number) => ((a % m) + m) % m;
 
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
@@ -115,43 +112,24 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  // Mirror settings in refs so the wheel listener's closure always reads the
-  // latest values without needing to re-attach.
   const zoomSensRef = useRef(zoomSensitivity);
   zoomSensRef.current = zoomSensitivity;
   const panSpeedRef = useRef(panSpeed);
   panSpeedRef.current = panSpeed;
-  // The imperative path (paintView below) is authoritative for the DOM's
-  // transform + grid background. React state (`view`) is only read by
-  // consumers (onChange + any render-time reads here); it's rAF-throttled
-  // so re-renders don't gate visual responsiveness on pan/zoom.
   const viewRef = useRef(view);
   const panStart = useRef<{ px: number; py: number; vx: number; vy: number; pointerId: number } | null>(null);
   const tweenRaf = useRef<number | null>(null);
   const dragDepth = useRef(0);
-  // rAF-batched state publisher. Wheel / drag events can fire faster than
-  // frame rate (especially on 120Hz trackpads); if every one triggered a
-  // React render through the whole subtree (Canvas + media elements), pan
-  // and pinch would feel sticky. We apply the new view to the DOM
-  // synchronously and coalesce the React update to at most one per frame.
   const rafHandle = useRef<number | null>(null);
   const pendingView = useRef<View | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-  useEffect(() => {
-    onChange?.(view);
-  }, [view, onChange]);
-
-  // Writes the given view to the DOM: the content transform and the tiled
-  // dot grid. Called on every pointer/wheel event — must be cheap and
-  // allocation-free.
   const paintView = useCallback((next: View) => {
     viewRef.current = next;
     const content = contentRef.current;
     if (content) {
       content.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
-      // Exposed as a CSS variable so world-space overlays (e.g. media labels)
-      // can counter-scale with `transform: scale(var(--inv-view-scale))` and
-      // stay a constant screen size regardless of zoom.
       content.style.setProperty('--inv-view-scale', String(1 / next.scale));
     }
     const root = containerRef.current;
@@ -166,24 +144,25 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     }
   }, []);
 
-  // Paint immediately; schedule a coalesced state update so consumers of
-  // `view` (onChange, HUD, overlays) catch up next frame.
-  const applyView = useCallback((next: View) => {
-    paintView(next);
-    pendingView.current = next;
-    if (rafHandle.current === null) {
-      rafHandle.current = requestAnimationFrame(() => {
-        rafHandle.current = null;
-        const v = pendingView.current;
-        pendingView.current = null;
-        if (v) setView(v);
-      });
-    }
-  }, [paintView]);
+  const applyView = useCallback(
+    (next: View) => {
+      paintView(next);
+      pendingView.current = next;
+      if (rafHandle.current === null) {
+        rafHandle.current = requestAnimationFrame(() => {
+          rafHandle.current = null;
+          const v = pendingView.current;
+          pendingView.current = null;
+          if (v) {
+            setView(v);
+            onChangeRef.current?.(v);
+          }
+        });
+      }
+    },
+    [paintView],
+  );
 
-  // First paint: inline styles omit transform/background-pos (because those
-  // are imperative), so we must set them before the browser's first paint
-  // or there'd be a one-frame flash at the identity transform.
   useLayoutEffect(() => {
     paintView(viewRef.current);
   }, [paintView]);
@@ -246,12 +225,6 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     [cancelTween, applyView],
   );
 
-  // Figma-style wheel:
-  //   • ctrlKey (trackpad pinch — browser synthesizes this) → zoom at cursor
-  //   • plain wheel / trackpad two-finger swipe            → pan
-  // Zoom intensity and anchor math are unchanged from the pre-pan-capable
-  // version — only the gating is new. A mouse user zooms by pinching the
-  // trackpad OR holding Ctrl while scrolling (which also sets ctrlKey).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -283,13 +256,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
   }, [applyZoom, applyView, cancelTween]);
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    // Middle-click drag always pans (Figma parity) — even if it lands on a
-    // media child, the button check short-circuits the child's left-button
-    // handler and the pan takes over.
     if (e.button === 1) {
       e.preventDefault();
       cancelTween();
-      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      e.currentTarget.setPointerCapture(e.pointerId);
       panStart.current = {
         px: e.clientX,
         py: e.clientY,
@@ -299,18 +269,15 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
       };
       return;
     }
-    // Left-click on background: hand control to the parent so it can drive
-    // selection (click-to-deselect, shift-click, marquee). Do NOT setPointerCapture
-    // here — the parent uses window-level listeners for move/up so events
-    // keep firing if the pointer leaves the viewport.
     if (e.button === 0 && onBackgroundPointerDown) {
       const rect = containerRef.current?.getBoundingClientRect();
       const v = viewRef.current;
-      const sx = rect ? e.clientX - rect.left : e.clientX;
-      const sy = rect ? e.clientY - rect.top : e.clientY;
+      const wp = rect
+        ? clientToWorld(e.clientX, e.clientY, rect, v)
+        : { worldX: e.clientX, worldY: e.clientY };
       onBackgroundPointerDown({
-        worldX: (sx - v.x) / v.scale,
-        worldY: (sy - v.y) / v.scale,
+        worldX: wp.worldX,
+        worldY: wp.worldY,
         clientX: e.clientX,
         clientY: e.clientY,
         shiftKey: e.shiftKey,
@@ -325,15 +292,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect && onPointerWorld) {
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const v = viewRef.current;
-      onPointerWorld({
-        screenX: sx,
-        screenY: sy,
-        worldX: (sx - v.x) / v.scale,
-        worldY: (sy - v.y) / v.scale,
-      });
+      onPointerWorld(clientToWorld(e.clientX, e.clientY, rect, viewRef.current));
     }
     const start = panStart.current;
     if (!start || start.pointerId !== e.pointerId) return;
@@ -346,9 +305,9 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
   const endPan = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (panStart.current?.pointerId === e.pointerId) panStart.current = null;
     try {
-      (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+      e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      /* no-op */
+      
     }
   };
 
@@ -384,11 +343,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     setDragOver(false);
     const files = Array.from(e.dataTransfer.files);
     if (!files.length || !onFilesDrop) return;
-    const rect = containerRef.current!.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-    const v = viewRef.current;
-    onFilesDrop(files, { worldX: (sx - v.x) / v.scale, worldY: (sy - v.y) / v.scale });
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const wp = clientToWorld(e.clientX, e.clientY, rect, viewRef.current);
+    onFilesDrop(files, { worldX: wp.worldX, worldY: wp.worldY });
   };
 
   useImperativeHandle(
@@ -426,8 +384,6 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
         const scale = clampScale(fit);
         const cx = rect.x + rect.width / 2;
         const cy = rect.y + rect.height / 2;
-        // Bias the image's on-screen center upward by half the inset so the
-        // rect and the reserved band below it sit centered as one group.
         const target: View = {
           scale,
           x: vw / 2 - cx * scale,
@@ -444,10 +400,6 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     [applyZoom, applyView, cancelTween, tweenTo],
   );
 
-  // `view` is intentionally NOT read in the render body for transform/bg —
-  // those are applied imperatively by paintView to sidestep React's render
-  // cycle during pan/zoom. React still re-renders (rAF-throttled) to feed
-  // consumers via onChange, but the visible transform never waits for it.
   return (
     <div
       ref={containerRef}

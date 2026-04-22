@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Starts PocketBase pointed at the SAME pb_data directory the packaged
-// Tauri app uses (per-platform app-data dir), so dropping images/videos in
-// the dev webview at :5173 and in the installed NetraRT.app writes to one
-// shared database — no more duplicate / unsynced state.
-//
-// Mirrors Tauri v2's `path().app_data_dir()` resolution for identifier
-// `ai.kolosal.netrart`.
 
 import { spawn } from 'node:child_process';
 import { homedir, platform } from 'node:os';
@@ -39,11 +32,6 @@ const pbBinary = resolve(
   platform() === 'win32' ? 'pocketbase.exe' : 'pocketbase',
 );
 
-// Default to `serve` when invoked with no args (`pnpm db:start`).
-// Otherwise forward whatever subcommand the caller asked for
-// (`migrate up`, `superuser create`, etc.) — but always append the shared
-// `--dir` and `--migrationsDir` so every entrypoint touches the SAME
-// database the packaged Tauri app reads from.
 const userArgs = process.argv.slice(2);
 const base = userArgs.length > 0 ? userArgs : ['serve', '--http=127.0.0.1:8090'];
 const args = [...base];

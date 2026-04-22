@@ -2,6 +2,7 @@
   "name": "netrart",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20"
@@ -10,11 +11,28 @@
     "dev:website": "pnpm --filter @netrart/website dev",
     "dev:app": "pnpm --filter @netrart/app dev",
     "build": "pnpm -r build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
     "tauri:dev": "pnpm --filter @netrart/app tauri:dev",
     "tauri:build": "pnpm --filter @netrart/app tauri:build",
     "stage:pb": "node scripts/stage-pocketbase.mjs",
     "db:start": "node scripts/dev-pocketbase.mjs",
     "db:migrate": "node scripts/dev-pocketbase.mjs migrate up",
     "db:superuser": "node scripts/dev-pocketbase.mjs superuser create"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript-eslint": "^8.19.1"
   }
 }

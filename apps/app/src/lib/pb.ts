@@ -1,13 +1,12 @@
-import PocketBase, { type RecordModel } from 'pocketbase';
+import PocketBase from 'pocketbase';
+import { z } from 'zod';
 
-// Default to same-origin relative calls. nginx (or vite dev proxy) routes
-// /api and /_/ to the PocketBase container, so the frontend doesn't need
-// to know PB's real URL at runtime. Override with VITE_PB_URL to point at
-// a remote PB (e.g. for staging or when running without a proxy).
-const rawUrl = (import.meta.env.VITE_PB_URL as string | undefined) ?? '';
-// Inside the Tauri webview the app is served from tauri://localhost, so
-// relative /api calls can't reach the PocketBase sidecar. Detect Tauri and
-// point directly at the sidecar's loopback address.
+const EnvSchema = z.object({
+  VITE_PB_URL: z.string().optional(),
+});
+const env = EnvSchema.parse(import.meta.env);
+
+const rawUrl = env.VITE_PB_URL ?? '';
 const isTauri =
   typeof window !== 'undefined' &&
   ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
@@ -16,51 +15,74 @@ export const PB_URL = (rawUrl || (isTauri ? 'http://127.0.0.1:8090' : '')).repla
 // new PocketBase('') rejects empty — pass '/' so it issues relative paths.
 export const pb = new PocketBase(PB_URL || '/');
 
-// Disable automatic request cancellation — StrictMode's double-effect in dev
-// would otherwise cancel the very first fetch before it resolves.
 pb.autoCancellation(false);
 
-// Images and videos share an identical placement shape; only the collection
-// and MIME types differ. Keep the layout fields consolidated so the Canvas
-// can treat both records uniformly.
-type PlacementFields = {
-  file: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+const PlacementRecordSchema = z.object({
+  id: z.string(),
+  collectionId: z.string(),
+  collectionName: z.string(),
+  created: z.string(),
+  updated: z.string(),
+  file: z.string(),
+  name: z.string(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
 
-export type ImageRecord = RecordModel & PlacementFields;
-export type VideoRecord = RecordModel & PlacementFields;
+export type ImageRecord = z.infer<typeof PlacementRecordSchema>;
+export type VideoRecord = z.infer<typeof PlacementRecordSchema>;
 export type MediaKind = 'image' | 'video';
 
-// Build the public file URL directly so we don't depend on the SDK's URL
-// helper (its casing has drifted between versions — getUrl vs getURL).
-// Empty PB_URL yields a same-origin path ('/api/files/…'), which the browser
-// resolves against the page origin.
-const fileUrl = (record: RecordModel & { file: string }): string =>
+const fileUrl = (record: { collectionId: string; id: string; file: string }): string =>
   `${PB_URL}/api/files/${record.collectionId}/${record.id}/${encodeURIComponent(record.file)}`;
 
-export const imageFileUrl = fileUrl as (r: ImageRecord) => string;
-export const videoFileUrl = fileUrl as (r: VideoRecord) => string;
+export const imageFileUrl = (r: ImageRecord): string => fileUrl(r);
+export const videoFileUrl = (r: VideoRecord): string => fileUrl(r);
 
-export const listImages = (): Promise<ImageRecord[]> =>
-  pb.collection('images').getFullList<ImageRecord>({ sort: 'created' });
+const parseList = <T>(schema: z.ZodType<T>, raw: unknown): T[] => {
+  const arr = z.array(schema).safeParse(raw);
+  if (!arr.success) {
+    console.warn('[pb] discarding malformed records', arr.error.issues);
+    if (Array.isArray(raw)) {
+      const out: T[] = [];
+      for (const item of raw) {
+        const one = schema.safeParse(item);
+        if (one.success) out.push(one.data);
+      }
+      return out;
+    }
+    return [];
+  }
+  return arr.data;
+};
 
-export const listVideos = (): Promise<VideoRecord[]> =>
-  pb.collection('videos').getFullList<VideoRecord>({ sort: 'created' });
+export const listImages = async (): Promise<ImageRecord[]> => {
+  const raw = await pb.collection('images').getFullList({ sort: 'created' });
+  return parseList(PlacementRecordSchema, raw);
+};
 
-export const updateImagePosition = (
+export const listVideos = async (): Promise<VideoRecord[]> => {
+  const raw = await pb.collection('videos').getFullList({ sort: 'created' });
+  return parseList(PlacementRecordSchema, raw);
+};
+
+export const updateImagePosition = async (
   id: string,
   pos: { x: number; y: number },
-): Promise<ImageRecord> => pb.collection('images').update<ImageRecord>(id, pos);
+): Promise<ImageRecord> => {
+  const raw = await pb.collection('images').update(id, pos);
+  return PlacementRecordSchema.parse(raw);
+};
 
-export const updateVideoPosition = (
+export const updateVideoPosition = async (
   id: string,
   pos: { x: number; y: number },
-): Promise<VideoRecord> => pb.collection('videos').update<VideoRecord>(id, pos);
+): Promise<VideoRecord> => {
+  const raw = await pb.collection('videos').update(id, pos);
+  return PlacementRecordSchema.parse(raw);
+};
 
 const buildMediaForm = (
   file: File,
@@ -76,8 +98,6 @@ const buildMediaForm = (
   return form;
 };
 
-// Thrown when an upload is cancelled via AbortSignal. Callers can use
-// `.name === 'AbortError'` to distinguish cancellation from real failures.
 export class UploadAbortError extends Error {
   override name = 'AbortError';
   constructor() {
@@ -85,17 +105,42 @@ export class UploadAbortError extends Error {
   }
 }
 
-// Uploads via XMLHttpRequest so the caller can observe byte-level progress —
-// fetch() (what the SDK uses) can't report upload progress in browsers.
-// An optional AbortSignal aborts the in-flight request (rejects with
-// UploadAbortError).
-const uploadWithProgress = <T>(
+const PbErrorSchema = z.object({
+  message: z.string().optional(),
+  data: z.record(z.object({ message: z.string().optional() }).passthrough()).optional(),
+});
+
+const buildUploadError = (status: number, statusText: string, body: string): Error => {
+  let detail = '';
+  try {
+    const parsed = PbErrorSchema.safeParse(JSON.parse(body));
+    if (parsed.success) {
+      const parts: string[] = [];
+      if (parsed.data.message) parts.push(parsed.data.message);
+      if (parsed.data.data) {
+        for (const [field, info] of Object.entries(parsed.data.data)) {
+          if (info.message) parts.push(`${field}: ${info.message}`);
+        }
+      }
+      detail = parts.join(' · ');
+    }
+  } catch {
+    
+  }
+  if (!detail) detail = body.slice(0, 400).trim();
+  const suffix = detail ? ` — ${detail}` : '';
+  const err = new Error(`upload failed: ${status} ${statusText}${suffix}`);
+  Object.assign(err, { responseBody: body });
+  return err;
+};
+
+const uploadWithProgress = (
   collection: string,
   file: File,
   meta: { x: number; y: number; width: number; height: number; name: string },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
-): Promise<T> =>
+): Promise<unknown> =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new UploadAbortError());
@@ -107,12 +152,6 @@ const uploadWithProgress = <T>(
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(e.loaded / e.total);
       };
-      // On loopback (localhost / 127.0.0.1) the upload body is handed to the
-      // OS in one shot; some browsers fire a single early `progress` event
-      // and then jump straight to `load` without reporting 100%. Hooking
-      // `upload.onload` gives us a deterministic signal that the body is
-      // fully sent so the UI can transition to a "finalizing" state instead
-      // of looking stuck at the last reported percentage.
       xhr.upload.onload = () => onProgress(1);
     }
     const onAbort = () => xhr.abort();
@@ -122,42 +161,12 @@ const uploadWithProgress = <T>(
       cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(JSON.parse(xhr.responseText) as T);
+          resolve(JSON.parse(xhr.responseText));
         } catch (err) {
           reject(err instanceof Error ? err : new Error(String(err)));
         }
       } else {
-        // PB returns { code, message, data: { <field>: { code, message } } }
-        // on validation errors; surface just the human-readable bits so the
-        // chip/console shows an actionable line instead of raw JSON.
-        const body = xhr.responseText || '';
-        let detail = '';
-        try {
-          const parsed = JSON.parse(body) as {
-            message?: string;
-            data?: Record<string, { message?: string } | unknown>;
-          };
-          const parts: string[] = [];
-          if (parsed.message) parts.push(parsed.message);
-          if (parsed.data && typeof parsed.data === 'object') {
-            for (const [field, info] of Object.entries(parsed.data)) {
-              const msg = (info as { message?: string } | null)?.message;
-              if (msg) parts.push(`${field}: ${msg}`);
-            }
-          }
-          detail = parts.join(' · ');
-        } catch {
-          // Not JSON — fall back to a trimmed snippet.
-          detail = body.slice(0, 400).trim();
-        }
-        const suffix = detail ? ` — ${detail}` : '';
-        const err = new Error(
-          `upload failed: ${xhr.status} ${xhr.statusText}${suffix}`,
-        );
-        // Stash the raw body so devtools users can inspect the full payload
-        // even when the UI / error message truncates it.
-        (err as Error & { responseBody?: string }).responseBody = body;
-        reject(err);
+        reject(buildUploadError(xhr.status, xhr.statusText, xhr.responseText || ''));
       }
     };
     xhr.onerror = () => {
@@ -171,21 +180,25 @@ const uploadWithProgress = <T>(
     xhr.send(buildMediaForm(file, meta));
   });
 
-export const createImage = (
+export const createImage = async (
   file: File,
   meta: { x: number; y: number; width: number; height: number; name: string },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
-): Promise<ImageRecord> =>
-  uploadWithProgress<ImageRecord>('images', file, meta, onProgress, signal);
+): Promise<ImageRecord> => {
+  const raw = await uploadWithProgress('images', file, meta, onProgress, signal);
+  return PlacementRecordSchema.parse(raw);
+};
 
-export const createVideo = (
+export const createVideo = async (
   file: File,
   meta: { x: number; y: number; width: number; height: number; name: string },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
-): Promise<VideoRecord> =>
-  uploadWithProgress<VideoRecord>('videos', file, meta, onProgress, signal);
+): Promise<VideoRecord> => {
+  const raw = await uploadWithProgress('videos', file, meta, onProgress, signal);
+  return PlacementRecordSchema.parse(raw);
+};
 
 export const deleteImage = (id: string): Promise<boolean> =>
   pb.collection('images').delete(id);

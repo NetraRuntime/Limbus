@@ -1,17 +1,25 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { z } from 'zod';
 import { CountUp } from '../components/CountUp';
 
 const TOTAL_SPOTS = 500;
 const CLAIMED = 312;
 const FILL_PCT = (CLAIMED / TOTAL_SPOTS) * 100;
 
+const EmailSchema = z.string().trim().email();
+
+type Status =
+  | { kind: 'idle' }
+  | { kind: 'submitting' }
+  | { kind: 'success' }
+  | { kind: 'error'; message: string };
+
 export function Waitlist() {
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const emailId = useId();
+  const errorId = useId();
 
-  // Progress bar animates its width off a dedicated IO so it starts at the
-  // same time as the CountUp numbers. CSS transition (see kit.css) handles
-  // the ease — we just toggle the final width as a CSS custom property.
   const progressRef = useRef<HTMLDivElement>(null);
   const [progressActive, setProgressActive] = useState(false);
 
@@ -38,15 +46,23 @@ export function Waitlist() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!email.includes('@')) return;
-    setSent(true);
+    if (status.kind === 'submitting') return;
+    const parsed = EmailSchema.safeParse(email);
+    if (!parsed.success) {
+      setStatus({ kind: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
+    setStatus({ kind: 'submitting' });
+    setStatus({ kind: 'success' });
   };
+
+  const fillStyle = { '--fill-width': `${FILL_PCT}%` } as React.CSSProperties;
+  const isError = status.kind === 'error';
 
   return (
     <section className="section section-waitlist" id="waitlist">
       <div className="container">
         <div className="wl-grid">
-          {/* LEFT — headline + form */}
           <div className="wl-main reveal reveal-left" data-delay="0">
             <div className="wl-eyebrow">
               <span className="wl-dot" aria-hidden="true" />
@@ -64,27 +80,45 @@ export function Waitlist() {
               email — we'll send an invite when your slot is ready.
             </p>
 
-            {!sent ? (
-              <form className="wl-form" onSubmit={submit}>
+            {status.kind !== 'success' ? (
+              <form className="wl-form" onSubmit={submit} noValidate>
                 <div className="wl-field">
+                  <label htmlFor={emailId} className="visually-hidden">
+                    Email address
+                  </label>
                   <i className="ri-mail-line wl-field-icon" aria-hidden="true" />
                   <input
+                    id={emailId}
                     type="email"
                     className="wl-input"
                     placeholder="you@company.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (status.kind === 'error') setStatus({ kind: 'idle' });
+                    }}
+                    aria-invalid={isError || undefined}
+                    aria-describedby={isError ? errorId : undefined}
                     required
                   />
                 </div>
-                <button type="submit" className="btn btn-primary btn-lg wl-submit">
-                  Request invite
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-lg wl-submit"
+                  disabled={status.kind === 'submitting'}
+                >
+                  {status.kind === 'submitting' ? 'Sending…' : 'Request invite'}
                   <i className="ri-arrow-right-line" />
                 </button>
+                {isError && (
+                  <div id={errorId} role="alert" className="wl-error">
+                    {status.message}
+                  </div>
+                )}
               </form>
             ) : (
-              <div className="wl-thanks">
-                <i className="ri-checkbox-circle-fill" />
+              <div className="wl-thanks" role="status">
+                <i className="ri-checkbox-circle-fill" aria-hidden />
                 <div>
                   <div className="wl-thanks-title">You're on the list.</div>
                   <div className="wl-thanks-sub mono-12px">
@@ -99,7 +133,6 @@ export function Waitlist() {
             </div>
           </div>
 
-          {/* RIGHT — editorial index */}
           <aside className="wl-index reveal reveal-right" data-delay="2">
             <dl className="wl-dl">
               <div className="wl-row">
@@ -128,12 +161,13 @@ export function Waitlist() {
               <div
                 ref={progressRef}
                 className={`wl-progress ${progressActive ? 'is-active' : ''}`}
-                aria-hidden="true"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={TOTAL_SPOTS}
+                aria-valuenow={CLAIMED}
+                aria-label={`${CLAIMED} of ${TOTAL_SPOTS} spots claimed`}
               >
-                <div
-                  className="wl-progress-fill"
-                  style={{ ['--fill-width' as string]: `${FILL_PCT}%` }}
-                />
+                <div className="wl-progress-fill" style={fillStyle} />
               </div>
             </div>
           </aside>

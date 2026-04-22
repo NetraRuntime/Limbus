@@ -1,12 +1,6 @@
-/* ==========================================================================
-   Kolosal — Design Tokens (colors + type)
-   Ported from kolosal-website/component/global/_color.scss + _font.scss
-   ========================================================================== */
 
-/* Inter still loads from Google Fonts — brand has no self-hosted Inter files yet.
-   Space Mono is the uploaded brand mono; it replaces Geist Mono AND IBM Plex Mono
-   as the single mono face used for UI labels, code, and display headlines.
-   Caveat is the uploaded brand accent, for *highlighted* words. */
+
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&display=swap');
 
 @font-face {
@@ -52,43 +46,43 @@
 }
 
 :root {
-  /* -------- Text (neutral near-black scale) -------- */
-  --color-text-900: #0D0E0F;   /* primary text, primary button bg   */
+  
+  --color-text-900: #0D0E0F;   
   --color-text-800: #3C3E40;
-  --color-text-700: #6A6F73;   /* secondary text                    */
-  --color-text-600: #9C9FA1;   /* placeholder, tertiary             */
+  --color-text-700: #6A6F73;   
+  --color-text-600: #9C9FA1;   
   --color-text-500: #CECFD0;
 
-  /* -------- Grey (backgrounds, borders) -------- */
-  --color-grey-900: #DDE1E3;   /* strongest divider / border        */
+  
+  --color-grey-900: #DDE1E3;   
   --color-grey-800: #E4E7E9;
-  --color-grey-700: #EBEDEE;   /* card borders                      */
+  --color-grey-700: #EBEDEE;   
   --color-grey-600: #F1F3F4;
-  --color-grey-500: #F8F9F9;   /* subtle section fill               */
+  --color-grey-500: #F8F9F9;   
 
-  /* -------- Information (blue — accent) -------- */
+  
   --color-information-900: #001431;
   --color-information-800: #002962;
   --color-information-700: #003D93;
   --color-information-600: #0052C4;
-  --color-information-500: #0066F5;  /* primary accent, link        */
+  --color-information-500: #0066F5;  
   --color-information-400: #3C8AF7;
   --color-information-300: #78AEFA;
   --color-information-200: #B4D2FC;
-  --color-information-100: #F0F6FE;  /* info-badge fill             */
+  --color-information-100: #F0F6FE;  
 
-  /* -------- Success (green) -------- */
+  
   --color-success-900: #0C260D;
   --color-success-800: #174B19;
   --color-success-700: #237126;
-  --color-success-600: #2E9632;  /* "READ ONLY" statement text     */
-  --color-success-500: #3ABC3F;  /* active step dot                 */
+  --color-success-600: #2E9632;  
+  --color-success-500: #3ABC3F;  
   --color-success-400: #68CC6C;
   --color-success-300: #97DC99;
   --color-success-200: #C5EBC6;
   --color-success-100: #F3FBF4;
 
-  /* -------- Danger (red) -------- */
+  
   --color-danger-900: #330A0A;
   --color-danger-800: #661414;
   --color-danger-700: #991D1D;
@@ -99,7 +93,7 @@
   --color-danger-200: #FFC2C2;
   --color-danger-100: #FFF3F3;
 
-  /* -------- Warning (amber) -------- */
+  
   --color-warning-900: #33220A;
   --color-warning-800: #664414;
   --color-warning-700: #99651D;
@@ -110,11 +104,11 @@
   --color-warning-200: #FFE6C2;
   --color-warning-100: #FFFAF3;
 
-  /* -------- Neutral -------- */
+  
   --color-neutral-white: #FFFFFF;
   --color-neutral-black: #000000;
 
-  /* -------- Brand token set (source-of-truth: Kolosal spec) -------- */
+  
   --color-text:             #091413;
   --color-subtitle:         #9b9b9b;
   --color-subtitle-muted:   #B5B5B5;
@@ -125,7 +119,7 @@
   --color-neutral:          #FFFFFF;
   --color-primary:          #FF4800;
 
-  /* -------- Semantic aliases (mapped onto the brand tokens) -------- */
+  
   --fg:            var(--color-text);
   --fg-muted:      var(--color-subtitle);
   --fg-subtle:     var(--color-subtitle-muted);
@@ -139,13 +133,13 @@
   --border-strong: var(--color-stroke);
   --accent:        var(--color-primary);
 
-  /* -------- Typography families -------- */
+  
   --font-sans:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono:    "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-display: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-accent:  "Caveat", "Space Mono", cursive; /* handwritten highlight on accent words */
+  --font-accent:  "Caveat", "Space Mono", cursive; 
 
-  /* -------- Radii (from button + card scales) -------- */
+  
   --radius-xs:  6px;
   --radius-sm:  8px;
   --radius-md: 10px;
@@ -154,7 +148,7 @@
   --radius-2xl: 20px;
   --radius-3xl: 24px;
 
-  /* -------- Shadows -------- */
+  
   --shadow-input:     0px 3px 4px -4px rgb(0 0 0 / 0.15);
   --shadow-card-sm:   0px 12px 12px -16px rgb(0 0 0 / 0.25);
   --shadow-card-md:   0px 12px 48px -24px rgb(0 0 0 / 0.25);
@@ -162,7 +156,7 @@
   --shadow-hero:      0px 32px 40px -32px rgb(0 0 0 / 0.65);
   --shadow-inset-highlight: inset 0px 2px 0px 0px rgb(255 255 255 / 0.25);
 
-  /* -------- Spacing -------- */
+  
   --space-0: 0;
   --space-1: 4px;
   --space-2: 8px;
@@ -176,21 +170,19 @@
   --space-16: 64px;
   --space-24: 96px;
   --space-32: 128px;
-  --space-section: 200px;  /* $spacing-section */
+  --space-section: 200px;  
 
-  /* -------- Layout -------- */
+  
   --container-max: 1080px;
   --container-px:  20px;
 }
 
-/* ==========================================================================
-   Base type specimens — drop-in classes mirroring _font.scss
-   ========================================================================== */
+
 
 .reguler, .regular { font-weight: 400; font-style: normal; }
 .medium  { font-weight: 500; font-style: normal; }
 
-/* Inter scale */
+
 .text-12px { font: 400 12px/16px var(--font-sans); letter-spacing: -0.2px; }
 .text-14px { font: 400 14px/20px var(--font-sans); letter-spacing: -0.2px; }
 .text-16px { font: 400 16px/24px var(--font-sans); letter-spacing: -0.2px; }
@@ -204,7 +196,7 @@
 .text-48px { font: 400 48px/60px var(--font-sans); letter-spacing: -0.4px; }
 .text-56px { font: 400 56px/72px var(--font-sans); letter-spacing: -0.6px; }
 
-/* Space Mono scale — used for eyebrows, UI labels, code, and the hero display */
+
 .mono-12px { font: 400 12px/16px var(--font-mono); letter-spacing: -0.4px; }
 .mono-14px { font: 400 14px/20px var(--font-mono); letter-spacing: -0.4px; }
 .mono-16px { font: 400 16px/24px var(--font-mono); letter-spacing: -0.4px; }
@@ -220,8 +212,7 @@
 
 .article-text { font: 400 15px/26px var(--font-sans); letter-spacing: 0; }
 
-/* Brand type scale (source-of-truth: Kolosal spec). Family-agnostic — pair with
-   .font-sans / .font-mono or set font-family on a parent. */
+
 .text-xs  { font-size: 12px; line-height: 16px; }
 .text-sm  { font-size: 14px; line-height: 20px; }
 .text-md  { font-size: 16px; line-height: 24px; }
@@ -230,15 +221,12 @@
 .text-2xl { font-size: 24px; line-height: 32px; letter-spacing: -0.6px; }
 .text-3xl { font-size: 32px; line-height: 40px; letter-spacing: -0.7px; }
 
-/* Display (Space Mono Bold) — hero lockup. Space Mono has no 500; use 700 for display weight. */
+
 .display-48  { font: 700 48px/56px  var(--font-display); letter-spacing: -2px; }
 .display-40  { font: 700 40px/48px  var(--font-display); letter-spacing: -1.5px; }
 .display-104 { font: 700 104px/112px var(--font-display); letter-spacing: -3px; }
 
-/* Accent (Caveat) — used for *highlighted* words inside a display or section heading,
-   paired with the brush-stroke underline ornament. Optically larger than the body
-   Space Mono, so scale down ~0.9× when mixed in. Always paired with color `--accent`.
-   Caveat ships in 400/500/600/700 — upright only, no italic. */
+
 .accent-word {
   font-family: var(--font-accent);
   font-weight: 400;
@@ -248,9 +236,7 @@
   line-height: 0.9;
 }
 
-/* ==========================================================================
-   Semantic roles
-   ========================================================================== */
+
 
 .h-display   { font: 700 48px/56px var(--font-display); letter-spacing: -2px; color: var(--fg); }
 .h-section   { font: 500 32px/44px var(--font-sans);    letter-spacing: -0.4px; color: var(--fg); }
@@ -260,9 +246,7 @@
 .p-body-lg   { font: 400 16px/24px var(--font-sans);    letter-spacing: -0.2px; color: var(--fg-muted); }
 .code        { font: 400 14px/20px var(--font-mono);    letter-spacing: -0.4px; color: var(--fg); }
 
-/* ==========================================================================
-   Keyframes used by the brand
-   ========================================================================== */
+
 
 @keyframes slide-down  { from { opacity:0; transform: translateY(-24px); } to { opacity:1; transform: none; } }
 @keyframes slide-up    { from { opacity:0; transform: translateY( 24px); } to { opacity:1; transform: none; } }

@@ -1,11 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// Empty mimeTypes = accept anything the user drops. The original migration
-// only whitelisted five specific MIMEs, which caused real-world drops to
-// fail: browsers emit `video/x-m4v`, `video/mpeg`, `video/avi`, or fall back
-// to `application/octet-stream` when they can't sniff the container. Rather
-// than maintain a growing allowlist, let the frontend's `video/*` prefix
-// check gate which files PB ever sees.
 migrate(
   (app) => {
     const collection = app.findCollectionByNameOrId('videos');

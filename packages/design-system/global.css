@@ -1,20 +1,11 @@
-/* ==========================================================================
-   App-level extensions on top of the canonical Kolosal tokens
-   ========================================================================== */
+
 
 :root {
-  /* Dot grid — matches the brand's "Model collections" panel treatment:
-     1px dots in --color-grey-800 on a 16px grid. The InfiniteCanvas renders
-     this as the base texture behind all world content. */
+  
   --dot-color: var(--color-grey-800);
 }
 
-/* ==========================================================================
-   Waitlist progress bar — scroll-triggered fill
-   Start collapsed, transition to --fill-width when the parent gains
-   .is-active (toggled by Waitlist's IntersectionObserver). kit.css already
-   defines the width transition; we just override the initial + target.
-   ========================================================================== */
+
 .wl-progress .wl-progress-fill {
   width: 0;
   transition-duration: 1.4s;
@@ -24,13 +15,7 @@
   width: var(--fill-width, 0);
 }
 
-/* ==========================================================================
-   NetraRT wordmark — pinned to Space Mono 700 across every surface.
-   The canonical kit.css declared `font: 500 ...` but Space Mono only ships
-   400 and 700 — 500 silently falls back to Regular, which makes the header
-   and footer logos render visibly lighter than the in-app (canvas) logo.
-   This rule unifies them. Size + letter-spacing still vary by context.
-   ========================================================================== */
+
 .brand-wordmark,
 .footer-wordmark,
 .wordmark-glyph {
@@ -56,9 +41,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* The canvas locks the viewport; the landing scrolls. The canvas app's
-   <App> toggles this class on <body> at mount so the scroll lock is
-   scoped rather than global. */
+
 body.is-canvas {
   overflow: hidden;
   height: 100%;
@@ -71,4 +54,26 @@ body.is-canvas #root {
 
 button {
   font-family: inherit;
+}
+
+
+
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+
+.wl-error {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-danger, #d4351c);
 }

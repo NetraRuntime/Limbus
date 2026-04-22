@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { z } from 'zod';
 import {
   InfiniteCanvas,
   type BackgroundPointerDown,
@@ -71,9 +72,6 @@ const loadImage = (file: File): Promise<{ src: string; width: number; height: nu
     img.src = src;
   });
 
-// Probe a video file for its intrinsic dimensions without decoding a frame.
-// Resolves once `loadedmetadata` fires, which is enough to get videoWidth /
-// videoHeight reliably across browsers.
 const loadVideo = (file: File): Promise<{ src: string; width: number; height: number }> =>
   new Promise((resolve, reject) => {
     const src = URL.createObjectURL(file);
@@ -122,26 +120,16 @@ const uid = () =>
 
 type ConnState = 'connecting' | 'ready' | 'offline';
 
-// Delay before the hover input hides — gives the mouse a beat to bridge the
-// gap from the media to the floating input without it disappearing.
 const HOVER_HIDE_MS = 160;
-// Pixels of pointer movement (in screen space) before a press-and-drag on a
-// media element is treated as a move. Below the threshold the interaction
-// falls through to click / double-click as usual.
 const DRAG_THRESHOLD_PX = 4;
 
 type DragOrig = { x: number; y: number; kind: MediaKind };
 
 type DragState = {
-  // The media the pointer came down on. Used to gate click semantics so a
-  // shift+click followed by a drag-cancel (moved === false) still toggles
-  // the correct id.
   anchorId: string;
   pointerId: number;
   startX: number;
   startY: number;
-  // Every id being moved, mapped to its pre-drag position + kind. Multi-drag
-  // populates this with the entire selection; single-drag has one entry.
   orig: Map<string, DragOrig>;
   moved: boolean;
   lastDx: number;
@@ -154,8 +142,6 @@ type MarqueeState = {
   startClientY: number;
   startWorldX: number;
   startWorldY: number;
-  // Selection BEFORE the marquee started — used to compute additive selection
-  // as (baseSet ∪ insideMarquee) on shift-drag.
   baseSet: Set<string>;
   additive: boolean;
   moved: boolean;
@@ -164,58 +150,36 @@ type MarqueeState = {
 type UploadPhase = 'sending' | 'finalizing' | 'error';
 type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
 
-// Screen-space band reserved below any focus target so the HighlightInput
-// (which renders HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT below the
-// active media) plus a little breathing room never crowds the viewport's
-// bottom edge. Fit-all, double-click-to-focus, and search-pick all reuse
-// this so the "bottom image's input" is always visible when selected.
 const HIGHLIGHT_BOTTOM_INSET_PX = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
 
-// Unit of work for runUploadPlan: the pending draft that lives in `media`,
-// the File to upload, and the metadata sent to PocketBase on createImage /
-// createVideo. Same shape used by file drops and Cmd/Ctrl+D duplicates.
 type UploadPlan = {
   draft: CanvasMedia;
   file: File;
   meta: { x: number; y: number; width: number; height: number; name: string };
 };
 
-// localStorage key for the cached viewport. `:v1` is a schema suffix so we
-// can invalidate old cache payloads if the View shape ever changes.
 const VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
-// Debounce window for persisting view changes — pan/zoom emits many frames,
-// so we wait for the motion to settle before writing.
 const VIEW_PERSIST_DEBOUNCE_MS = 200;
 
-// Occlusion culling: render only media whose world-space AABB intersects the
-// viewport plus this margin on each side (expressed as a fraction of the
-// viewport). A larger buffer mounts more off-screen items but makes pan
-// smoother by hiding the mount/unmount boundary — 0.5 keeps ~4x the viewport
-// area in the DOM, which trades a little memory for zero pop-in on brisk pans.
 const CULL_BUFFER_FACTOR = 0.5;
+
+const StoredViewSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  scale: z.number().finite().positive(),
+});
 
 const readStoredView = (): View | null => {
   if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(VIEW_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed.x === 'number' &&
-      Number.isFinite(parsed.x) &&
-      typeof parsed.y === 'number' &&
-      Number.isFinite(parsed.y) &&
-      typeof parsed.scale === 'number' &&
-      Number.isFinite(parsed.scale) &&
-      parsed.scale > 0
-    ) {
-      return { x: parsed.x, y: parsed.y, scale: parsed.scale };
-    }
+    const parsed = StoredViewSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
-    /* corrupt payload — fall through to fresh defaults */
+    
+    return null;
   }
-  return null;
 };
 
 const writeStoredView = (v: View) => {
@@ -223,12 +187,10 @@ const writeStoredView = (v: View) => {
   try {
     localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(v));
   } catch {
-    /* storage full / private mode — silently skip */
+    
   }
 };
 
-// Bounding rect (world coords) that covers every media item. Null when the
-// collection is empty — callers fall back to whatever default view they had.
 const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
   if (items.length === 0) return null;
   let minX = Infinity;
@@ -246,18 +208,8 @@ const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
 
-// Widened to HTMLElement so the filename-label <span> can share the same
-// drag handlers as the img / video — grabbing a media item's label moves
-// the item just like grabbing the image itself.
 type MediaPointerEvent = React.PointerEvent<HTMLElement>;
 
-// Memoized media renderer. Canvas re-renders on every rAF-paced view update
-// (to position marquee/pending/HighlightInput overlays), so each media
-// element would otherwise reconcile ~60×/sec — including for items that
-// haven't moved or been selected/hovered. React.memo + stable handler refs
-// + stable per-item references (see setMedia in pointermove: untouched
-// items preserve their prior reference) keep the per-frame cost near zero
-// for off-selection, non-dragged items.
 type MediaItemProps = {
   m: CanvasMedia;
   isActive: boolean;
@@ -292,11 +244,10 @@ const MediaItem = memo(function MediaItem({
   const handleDown = (e: MediaPointerEvent) => onPointerDown(e, m);
 
   const label = (
-    // Anchored at the media's top-left world coord. Counter-scales (via the
-    // --inv-view-scale CSS variable set by InfiniteCanvas's paintView) so it
-    // keeps a constant screen-size at any zoom. Shares the media's pointer
-    // handlers so dragging the label drags the image, and clicking it still
-    // selects/opens the context menu like clicking the image itself.
+    // Canvas items are pointer-driven; keyboard access to individual items
+    // happens through the SearchPalette (Cmd+K) which lists every media by
+    // name and focuses the picked one.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <span
       className="media-label"
       style={{ left: m.x, top: m.y }}
@@ -342,6 +293,7 @@ const MediaItem = memo(function MediaItem({
   }
   return (
     <>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
       <img
         src={m.src}
         alt={m.name}
@@ -363,9 +315,6 @@ const MediaItem = memo(function MediaItem({
   );
 });
 
-// Compute the starting view once at module load. Pulled out of the component
-// so the useState initializer and the `initial` prop share a single source
-// of truth — prevents a one-frame flicker where the two get out of sync.
 const getInitialView = (): View => {
   const stored = readStoredView();
   if (stored) return stored;
@@ -376,14 +325,7 @@ const getInitialView = (): View => {
 
 export function Canvas() {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
-  // Captures whether a saved view existed at the moment the canvas mounted.
-  // Used to gate the auto-fit below: when the user already has a deliberate
-  // camera from a prior session, we leave it alone; when they don't (first
-  // visit, or localStorage cleared), we fit all media into the viewport
-  // once loading settles.
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
-  // Latches after the one-shot auto-fit so later media changes (uploads,
-  // deletes) don't keep snapping the view around.
   const didInitialFitRef = useRef<boolean>(false);
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
@@ -392,62 +334,28 @@ export function Canvas() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
-  // Upload status per pending media id. Two-phase state:
-  //   phase 'sending'    → body in flight, pct ∈ [0, 1)
-  //   phase 'finalizing' → body fully sent, waiting for PB to return record
-  // Keeping phase + pct in ONE state entry (instead of deriving phase from
-  // pct) avoids a window where progress events race with render such that
-  // the chip briefly falls back to the "Uploading" placeholder.
   const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
-  // In-flight upload AbortControllers, keyed by draft id. A delete on a
-  // pending media aborts the XHR so the server doesn't end up with a ghost
-  // record referencing a file the user never meant to keep.
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
   // Highlight interaction state.
   const [hoverId, setHoverId] = useState<string | null>(null);
-  // Multi-selection. Shift+click toggles membership; plain click replaces
-  // with a single-element set; marquee commits a rect-intersected set.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  // The id most recently added to the selection. Used to anchor the
-  // HighlightInput when selection.size === 1. When selection is empty we
-  // fall back to hoverId so the current-hover UX still works.
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string>>({});
-  // Shared highlight input for the multi-select case (2+ items selected).
-  // Lives only for the lifetime of the current selection — a different set
-  // of selected ids resets it (see effect below). Intentionally separate
-  // from `highlightInputs` so multi-edit doesn't write to per-item state.
   const [multiHighlightInput, setMultiHighlightInput] = useState('');
   const hideTimer = useRef<number | null>(null);
-  // Live marquee — when non-null, a selection rectangle is being dragged out.
-  // Stored as world coords so it stays anchored to content under pan/zoom.
   const [marqueeRect, setMarqueeRect] = useState<{
     minX: number; minY: number; maxX: number; maxY: number;
   } | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
 
-  // Right-click context menu state. `id` identifies the media under the
-  // cursor; `x`/`y` are viewport coordinates for the menu anchor.
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
-  // Drag-to-move state. Kept in a ref so pointermove handlers don't force a
-  // re-render per frame; position updates go through setMedia.
   const dragRef = useRef<DragState | null>(null);
-  // Set when a shift-press toggled selection in pointerdown, so the click
-  // that follows knows not to re-toggle (and so an unreliable "click" event
-  // — browsers sometimes suppress click when the gesture doesn't meet their
-  // threshold — never causes the toggle to be missed in the first place).
   const shiftToggledRef = useRef(false);
-  // Mirror of the live view so pointermove can read the current scale without
-  // forcing handler re-creation on every view change.
   const viewRef = useRef<View>(view);
   viewRef.current = view;
 
-  // Items visually rendered with the selection outline ("is-active"). This is
-  // a superset of selectedIds: during a marquee we also preview the items the
-  // rect would select (union with base for shift-drag, just the inside set
-  // for plain drag). Hover falls through only when nothing is selected.
   const marqueeInside = useMemo(() => {
     if (!marqueeRect) return null;
     const inside = new Set<string>();
@@ -475,10 +383,6 @@ export function Canvas() {
     return new Set();
   }, [selectedIds, hoverId, marqueeInside]);
 
-  // HighlightInput anchors to a single item. Show only when exactly one item
-  // is selected (or, when nothing is selected, the hovered item). A multi-
-  // selection suppresses the input to avoid ambiguity about which item it
-  // would operate on.
   const activeId = useMemo<string | null>(() => {
     if (marqueeRef.current) return null;
     if (selectedIds.size === 1) return lastSelectedId ?? Array.from(selectedIds)[0] ?? null;
@@ -491,9 +395,6 @@ export function Canvas() {
     [activeId, media],
   );
 
-  // Union AABB of the currently-selected items in world space. Only computed
-  // when 2+ items are selected — a single selection already shows its outline
-  // via the is-active class, so an extra frame around it would be redundant.
   const selectionBBox = useMemo(() => {
     if (selectedIds.size < 2) return null;
     let minX = Infinity;
@@ -511,10 +412,6 @@ export function Canvas() {
     return { minX, minY, maxX, maxY };
   }, [selectedIds, media]);
 
-  // Order-independent signature of the current multi-selection — drives the
-  // reset effect below. The shared input must be scoped to one selection's
-  // lifetime, so any change in *which* ids are selected (or dropping below
-  // 2) wipes the value.
   const multiSelectKey = useMemo(() => {
     if (selectedIds.size < 2) return '';
     return Array.from(selectedIds).sort().join(' ');
@@ -523,8 +420,6 @@ export function Canvas() {
     setMultiHighlightInput('');
   }, [multiSelectKey]);
 
-  // Track window dimensions for viewport culling. The canvas is
-  // position:fixed; inset:0, so window size === viewport size.
   const [viewport, setViewport] = useState<{ w: number; h: number }>(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 0,
     h: typeof window !== 'undefined' ? window.innerHeight : 0,
@@ -536,12 +431,6 @@ export function Canvas() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Occlusion culling. Drop media whose AABB lies entirely outside the
-  // viewport (plus a generous buffer) so they're removed from the DOM and
-  // don't pay decode/paint cost. Never cull items that are part of an active
-  // interaction — the hovered item, any selected item, or any item currently
-  // being dragged — otherwise the HighlightInput's anchor disappears or the
-  // drag target gets ripped out from under the pointer.
   const visibleMedia = useMemo(() => {
     if (!viewport.w || !viewport.h || !media.length) return media;
     const padX = viewport.w * CULL_BUFFER_FACTOR;
@@ -580,9 +469,6 @@ export function Canvas() {
 
   useEffect(() => () => clearHideTimer(), [clearHideTimer]);
 
-  // Persist the camera (pan + zoom) after motion settles so the next session
-  // starts where the user left off. Debounced so pan/zoom tweens don't spam
-  // localStorage writes on every animation frame.
   useEffect(() => {
     const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
@@ -590,10 +476,7 @@ export function Canvas() {
 
   useEffect(() => {
     let cancelled = false;
-    // Load each collection independently so a missing `videos` collection
-    // (e.g. migration not yet applied) doesn't block images from rendering.
-    // Preserve the success/failure signal per call to drive conn status.
-    Promise.all([
+    void Promise.all([
       listImages().then(
         (r) => ({ ok: true as const, records: r }),
         (err) => {
@@ -616,14 +499,8 @@ export function Canvas() {
       ];
       merged.sort((a, b) => a.id.localeCompare(b.id));
       setMedia(merged);
-      // "ready" if at least one list call succeeded — the videos collection
-      // may legitimately be absent (migration pending) without PB being down.
       setConn(imgRes.ok || vidRes.ok ? 'ready' : 'offline');
 
-      // Fit-all on first visit: when no saved view existed at mount and the
-      // user has media on the canvas, frame everything. Snap (animate:false)
-      // so the blank default view never lingers as a visible flash. Skipped
-      // on subsequent mounts because persistView restored their camera.
       if (
         !initialHadStoredView.current &&
         !didInitialFitRef.current &&
@@ -632,11 +509,6 @@ export function Canvas() {
         const bounds = mediaBounds(merged);
         if (bounds) {
           didInitialFitRef.current = true;
-          // Defer one frame so InfiniteCanvas's container has laid out and
-          // focusOn's getBoundingClientRect returns the real viewport size.
-          // bottomInset leaves room for the HighlightInput that appears
-          // below the active media — so the bottommost items after fit
-          // have space for their input instead of being clipped.
           requestAnimationFrame(() => {
             canvasRef.current?.focusOn(bounds, {
               animate: false,
@@ -651,16 +523,11 @@ export function Canvas() {
     };
   }, []);
 
-  // Keep the delete handler's dependencies in a ref so the listener doesn't
-  // need to re-attach on every media/selection change.
   const mediaRef = useRef(media);
   mediaRef.current = media;
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
 
-  // Shared upload pipeline: adds the draft media, seeds the upload-status
-  // chip, and runs createImage/createVideo for each entry with progress and
-  // error handling. Used by file drops and by Cmd/Ctrl+D duplication.
   const runUploadPlan = useCallback(
     (plan: UploadPlan[]): Promise<void> => {
       if (plan.length === 0) return Promise.resolve();
@@ -692,9 +559,7 @@ export function Canvas() {
                 ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
                 : await createImage(p.file, p.meta, onProgress, ctrl.signal);
             const next =
-              p.draft.kind === 'video'
-                ? fromVideoRecord(record as VideoRecord)
-                : fromImageRecord(record as ImageRecord);
+              p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
             setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
             URL.revokeObjectURL(p.draft.src);
             setConn('ready');
@@ -739,37 +604,21 @@ export function Canvas() {
     setLastSelectedId(null);
   }, []);
 
-  // Select every media item on the canvas. Used by the Cmd/Ctrl+A shortcut.
-  // Pending uploads are included so the selection matches what the user
-  // visually sees — they can still be moved or deleted as part of the set.
   const selectAll = useCallback(() => {
     const all = mediaRef.current;
     if (all.length === 0) return;
     setSelectedIds(new Set(all.map((m) => m.id)));
-    // Multi-select anchors on the bounding box; leave the single-select
-    // anchor null so HighlightInput doesn't latch onto an arbitrary item.
     setLastSelectedId(null);
   }, []);
 
-  // Offset duplicates from their originals so the copy is clearly distinct
-  // from the source rather than visually stuck to it. Applied on both axes
-  // so the duplicate drifts down-and-to-the-right.
   const DUPLICATE_OFFSET = 64;
 
-  // Clone every non-pending selected media by fetching its file from PB,
-  // re-uploading it as a new record at (x + 24, y + 24), and selecting the
-  // duplicates once they land. Used by Cmd/Ctrl+D.
   const duplicateSelection = useCallback(async () => {
     const ids = selectedIdsRef.current;
     if (ids.size === 0) return;
-    // Snapshot the source items before any async work so state mutations
-    // mid-flight (e.g. user deletes or drags the source) don't corrupt the
-    // duplicate's shape.
     const sources = mediaRef.current.filter((m) => ids.has(m.id) && !m.pending);
     if (sources.length === 0) return;
 
-    // Fetch each source's file concurrently so large selections don't stall
-    // behind a single slow byte stream.
     const plans = await Promise.all(
       sources.map(async (m): Promise<UploadPlan | null> => {
         try {
@@ -778,8 +627,6 @@ export function Canvas() {
           const blob = await res.blob();
           const type = blob.type || res.headers.get('content-type') || '';
           const file = new File([blob], m.name, { type });
-          // Local preview URL for the pending draft so the duplicate is
-          // visible immediately; revoked by runUploadPlan on success.
           const src = URL.createObjectURL(blob);
           const meta = {
             x: m.x + DUPLICATE_OFFSET,
@@ -803,15 +650,11 @@ export function Canvas() {
     const plan = plans.filter((p): p is UploadPlan => p !== null);
     if (plan.length === 0) return;
 
-    // Replace the selection with the duplicates so the next drag/move acts
-    // on the copies — matches Figma / Sketch behavior.
     setSelectedIds(new Set(plan.map((p) => p.draft.id)));
     setLastSelectedId(plan.length === 1 ? plan[0]!.draft.id : null);
-    runUploadPlan(plan);
+    void runUploadPlan(plan);
   }, [runUploadPlan]);
 
-  // Deletes a media item by id. Used by delete-selection, the empty-input
-  // Delete shortcut inside HighlightInput, and the context-menu Delete action.
   const deleteMediaById = useCallback((id: string) => {
     const target = mediaRef.current.find((m) => m.id === id);
     if (!target) return;
@@ -845,9 +688,6 @@ export function Canvas() {
     for (const id of ids) deleteMediaById(id);
   }, [deleteMediaById]);
 
-  // Keyboard shortcuts:
-  //   Escape        — release pinned selection
-  //   Delete/Backsp — delete the pinned media (skipped while typing)
   useEffect(() => {
     const isEditable = (el: Element | null): boolean => {
       if (!el || !(el instanceof HTMLElement)) return false;
@@ -859,12 +699,6 @@ export function Canvas() {
         el.isContentEditable === true
       );
     };
-    // Three-layer defense: `document.activeElement` (source of truth for
-    // where the next keystroke will land), `e.target` (where this event
-    // fired), and a closest() climb up from the target looking for the
-    // highlight-input wrapper. The last one catches cases where React's
-    // root-level delegation plus stopPropagation still lets the event
-    // reach window before focus has resolved.
     const isTypingContext = (e: KeyboardEvent): boolean => {
       if (isEditable(document.activeElement)) return true;
       const target = e.target instanceof Element ? e.target : null;
@@ -878,8 +712,6 @@ export function Canvas() {
         clearSelection();
         return;
       }
-      // Cmd/Ctrl+A — select every media on the canvas. Skipped when a text
-      // input has focus so the browser's "select all text" still works there.
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.altKey &&
@@ -891,12 +723,6 @@ export function Canvas() {
         selectAll();
         return;
       }
-      // Cmd/Ctrl+D — duplicate the current selection. Claimed globally,
-      // including inside text inputs: the HighlightInput auto-focuses when
-      // a single media is selected, which is exactly the moment the user
-      // most wants to hit ⌘D to duplicate it. Cmd+D has no useful in-input
-      // behavior to preserve, so we always preventDefault to keep the
-      // browser's "add bookmark" dialog from surfacing.
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.altKey &&
@@ -905,7 +731,7 @@ export function Canvas() {
       ) {
         e.preventDefault();
         if (selectedIdsRef.current.size === 0) return;
-        duplicateSelection();
+        void duplicateSelection();
         return;
       }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -914,18 +740,10 @@ export function Canvas() {
       e.preventDefault();
       deleteSelection();
     };
-    // Capture phase so these shortcuts fire BEFORE any child's React
-    // handler — specifically HighlightInput.handleKey, which calls
-    // e.nativeEvent.stopPropagation() on every keystroke. Without capture,
-    // the input's stopPropagation would keep Cmd+D from ever reaching us
-    // and the browser's "add bookmark" dialog would fire instead.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [clearSelection, deleteSelection, selectAll, duplicateSelection]);
 
-  // Cmd/Ctrl+K toggles the macOS-Spotlight-style search palette. Fires
-  // globally so it still works when a text input (HighlightInput, etc.) has
-  // focus — this is the one shortcut the convention deliberately overrides.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -934,8 +752,6 @@ export function Canvas() {
       e.preventDefault();
       setSearchOpen((o) => !o);
     };
-    // Same reason as the primary keyboard effect: capture phase so the
-    // shortcut survives child stopPropagation calls.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
@@ -968,8 +784,6 @@ export function Canvas() {
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
 
   const handleFilesDrop = useCallback(async (files: File[], point: WorldPoint) => {
-    // The packaged WebKit webview sometimes hands us File objects whose
-    // `type` is empty — fall back to the extension so drops still work.
     const classify = (f: File): MediaKind | null => {
       if (f.type.startsWith('video/')) return 'video';
       if (f.type.startsWith('image/')) return 'image';
@@ -1013,10 +827,6 @@ export function Canvas() {
     const maxX = Math.max(...plan.map((p) => p.draft.x + p.draft.width));
     const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
 
-    // runUploadPlan adds drafts + seeds status synchronously, then returns a
-    // promise tracking the uploads. Kick it off, then focus; awaiting the
-    // returned promise at the end is optional — we do it so any caller
-    // awaiting handleFilesDrop resolves only after uploads settle.
     const uploading = runUploadPlan(plan);
     canvasRef.current?.focusOn(
       { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
@@ -1025,12 +835,7 @@ export function Canvas() {
     await uploading;
   }, [runUploadPlan]);
 
-  // Left-button press on empty canvas. Starts a marquee drag; on pointer-up
-  // with no movement, treats it as a click-to-deselect (shift held: no-op
-  // so the user can add to the selection by shift-clicking media next).
   const handleBackgroundPointerDown = useCallback((p: BackgroundPointerDown) => {
-    // Cancel any in-flight marquee before starting a new one (shouldn't
-    // happen, but defensive).
     marqueeRef.current = {
       pointerId: p.pointerId,
       startClientX: p.clientX,
@@ -1069,9 +874,6 @@ export function Canvas() {
       if (!m || e.pointerId !== m.pointerId) return;
       marqueeRef.current = null;
       if (!m.moved) {
-        // Click on empty space:
-        //   plain  → clear selection
-        //   shift  → leave selection unchanged (compositional intent)
         if (!m.additive) clearSelection();
         setMarqueeRect(null);
         return;
@@ -1101,8 +903,6 @@ export function Canvas() {
       const next = m.additive ? new Set(m.baseSet) : new Set<string>();
       for (const id of hit) next.add(id);
       setSelectedIds(next);
-      // Pick a reasonable last-selected anchor — prefer something newly
-      // added so HighlightInput has a sensible home if size collapses to 1.
       const newlyAdded = Array.from(hit).find((id) => !m.baseSet.has(id));
       setLastSelectedId(newlyAdded ?? Array.from(next)[next.size - 1] ?? null);
       setMarqueeRect(null);
@@ -1133,8 +933,6 @@ export function Canvas() {
         shiftToggledRef.current = false;
         return;
       }
-      // Suppress click after a drag-move so moving an item doesn't also
-      // toggle its selection.
       if (dragRef.current?.anchorId === id && dragRef.current.moved) return;
       clearHideTimer();
       setHoverId(id);
@@ -1161,9 +959,6 @@ export function Canvas() {
     e.stopPropagation();
     clearHideTimer();
     setHoverId(id);
-    // If the right-clicked item isn't already in the selection, replace the
-    // selection with just this id. If it IS in the selection, leave the
-    // multi-selection alone so menu actions (e.g. Delete) apply to the group.
     setSelectedIds((prev) => {
       if (prev.has(id)) return prev;
       return new Set([id]);
@@ -1172,14 +967,7 @@ export function Canvas() {
     setContextMenu({ id, x: e.clientX, y: e.clientY });
   }, [clearHideTimer]);
 
-  // Trigger a browser download for the given media. For already-uploaded
-  // items we fetch-as-blob first — the <a download> attribute is ignored
-  // when the URL is cross-origin (which it is in Tauri, where PB is served
-  // from 127.0.0.1:8090). Pending uploads still have a local blob: URL, so
-  // the anchor works directly.
   const exportMedia = useCallback(async (m: CanvasMedia) => {
-    // Prefer the original filename; fall back to the id with a reasonable
-    // extension so we never save files with no extension.
     const extFromName = m.name && /\.[a-z0-9]+$/i.test(m.name)
       ? m.name.match(/\.[a-z0-9]+$/i)![0]
       : m.kind === 'video' ? '.mp4' : '.png';
@@ -1212,15 +1000,10 @@ export function Canvas() {
       triggerDownload(url, true);
     } catch (err) {
       console.warn('[export] download failed for', m.id, err);
-      // Fallback: try a direct anchor click. Works when the file is
-      // same-origin even if fetch was blocked (e.g. adblock / CSP).
       triggerDownload(m.src, false);
     }
   }, []);
 
-  // Sidebar click — focus on the chosen media and pin it, mirroring the
-  // combined behavior of a single-click (pins) and double-click (zooms to)
-  // on the media itself.
   const handleSidebarSelect = useCallback(
     (id: string) => {
       const target = mediaRef.current.find((m) => m.id === id);
@@ -1240,11 +1023,6 @@ export function Canvas() {
   const handleMediaPointerDown = useCallback((e: MediaPointerEvent, m: CanvasMedia) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    // Shift+press toggles selection immediately on pointerdown. Previously
-    // this lived in the click handler, but click can be suppressed by the
-    // browser if any micro-movement happens between down and up (common on
-    // a trackpad), which caused additions to silently drop while removals
-    // still worked. Toggling here guarantees the selection change lands.
     if (e.shiftKey) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -1259,10 +1037,6 @@ export function Canvas() {
     }
     shiftToggledRef.current = false;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    // Pick the set of ids to move. If the pressed item is already part of the
-    // selection, the whole selection moves together (Figma parity). If it's
-    // outside the current selection, we assume the user wants to manipulate
-    // just that one item — no implicit multi-select from a plain drag.
     const sel = selectedIdsRef.current;
     const ids = sel.has(m.id) ? sel : new Set<string>([m.id]);
     const orig = new Map<string, DragOrig>();
@@ -1311,7 +1085,7 @@ export function Canvas() {
       try {
         (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
       } catch {
-        /* no-op */
+        
       }
       const { moved, lastDx, lastDy, orig } = d;
       window.setTimeout(() => {
@@ -1342,9 +1116,6 @@ export function Canvas() {
     [],
   );
 
-  // InfiniteCanvas reads this once on mount. Memoized so React never gets a
-  // fresh object on subsequent renders (which would be ignored anyway, but
-  // keeps intent explicit).
   const initial = useMemo<Partial<View>>(() => getInitialView(), []);
 
   const isEmpty = media.length === 0 && conn !== 'connecting';
@@ -1398,11 +1169,6 @@ export function Canvas() {
           const showLabel = rw > 160 && rh > 72;
           const status = uploadStatus[m.id];
           const isError = status?.phase === 'error';
-          // Label priority:
-          //   phase 'error'      → "Failed — <message>"
-          //   phase 'finalizing' → "Finalizing"
-          //   phase 'sending'    → "NN%"
-          //   no status yet      → "Uploading" (pre-seed; should be brief)
           let label = 'Uploading';
           if (status) {
             if (status.phase === 'error') {
@@ -1423,9 +1189,6 @@ export function Canvas() {
               role="status"
               aria-live="polite"
               aria-label={`${m.kind} ${isError ? 'upload failed' : 'uploading'}, ${label}`}
-              // Always expose the full label as a tooltip on error states —
-              // the chip truncates long messages with ellipsis, so without
-              // this the user can't see the server's reason without devtools.
               title={isError ? label : undefined}
             >
               <div className={`pending-chip ${isError ? 'is-error' : ''}`}>
@@ -1483,11 +1246,6 @@ export function Canvas() {
       )}
 
       {selectionBBox && !marqueeRect && (() => {
-        // Each selected media has a filename label floating above it at a
-        // constant screen height (counter-scaled). Grow the bbox's top edge
-        // by that constant so the frame visually contains the labels too,
-        // not just the image rects. ~19 px label (9/13 font + 2+2 padding
-        // + 1+1 border) + 6 px gap = 25; round up for a tiny buffer.
         const LABEL_OVERHANG_PX = 26;
         return (
         <div

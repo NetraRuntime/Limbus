@@ -40,8 +40,21 @@ const ROWS: Row[] = [
   },
 ];
 
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function SettingsModal({ open, settings, onChange, onReset, onClose }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    cardRef.current?.focus();
+    return () => {
+      returnFocusRef.current?.focus();
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -49,15 +62,28 @@ export function SettingsModal({ open, settings, onChange, onReset, onClose }: Pr
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const card = cardRef.current;
+      if (!card) return;
+      const focusable = card.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
-
-  useEffect(() => {
-    if (open) cardRef.current?.focus();
-  }, [open]);
 
   if (!open) return null;
 
@@ -78,7 +104,9 @@ export function SettingsModal({ open, settings, onChange, onReset, onClose }: Pr
         tabIndex={-1}
       >
         <div className="settings-header">
-          <h2 id="settings-title" className="settings-title">Settings</h2>
+          <h2 id="settings-title" className="settings-title">
+            Settings
+          </h2>
           <button
             type="button"
             className="settings-close"

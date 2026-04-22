@@ -19,37 +19,32 @@ type Props = {
 
 // Cap rendered rows so pathological libraries don't make the palette slow.
 const MAX_RESULTS = 50;
+const LISTBOX_ID = 'search-palette-listbox';
 
 export function SearchPalette({ open, items, onSelect, onClose }: Props) {
   const [query, setQuery] = useState('');
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items.slice(0, MAX_RESULTS);
-    return items
-      .filter((it) => it.name.toLowerCase().includes(q))
-      .slice(0, MAX_RESULTS);
+    return items.filter((it) => it.name.toLowerCase().includes(q)).slice(0, MAX_RESULTS);
   }, [items, query]);
+
+  const activeIdx = results.length === 0 ? 0 : Math.min(cursor, results.length - 1);
+  const activeId = results[activeIdx]?.id;
 
   // Fresh state on every open — Spotlight-like: always starts empty.
   useEffect(() => {
     if (!open) return;
     setQuery('');
-    setActiveIdx(0);
+    setCursor(0);
     // Defer one frame so the input is mounted before focus moves.
     const raf = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
   }, [open]);
-
-  // Keep the active index inside the current result window when results change.
-  useEffect(() => {
-    if (activeIdx >= results.length) {
-      setActiveIdx(Math.max(0, results.length - 1));
-    }
-  }, [results, activeIdx]);
 
   // Scroll the active row into view as the user arrows through a long list.
   useEffect(() => {
@@ -57,17 +52,17 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
     if (!list) return;
     const row = list.querySelector<HTMLElement>(`[data-idx="${activeIdx}"]`);
     if (row) row.scrollIntoView({ block: 'nearest' });
-  }, [activeIdx, results]);
+  }, [activeIdx]);
 
   if (!open) return null;
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIdx((i) => (results.length === 0 ? 0 : Math.min(results.length - 1, i + 1)));
+      setCursor((i) => (results.length === 0 ? 0 : Math.min(results.length - 1, i + 1)));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setActiveIdx((i) => Math.max(0, i - 1));
+      setCursor((i) => Math.max(0, i - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const picked = results[activeIdx];
@@ -91,17 +86,26 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Search canvas"
-        onKeyDown={handleKey}
       >
         <div className="search-input-row">
           <i className="ri-search-line search-input-icon" aria-hidden />
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-controls={LISTBOX_ID}
+            aria-expanded
+            aria-autocomplete="list"
+            aria-activedescendant={activeId ? `search-result-${activeId}` : undefined}
             className="search-input"
             placeholder="Search images and videos…"
+            aria-label="Search images and videos"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setCursor(0);
+            }}
+            onKeyDown={handleKey}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -114,6 +118,7 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
               aria-label="Clear search"
               onClick={() => {
                 setQuery('');
+                setCursor(0);
                 inputRef.current?.focus();
               }}
             >
@@ -122,7 +127,13 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
           )}
         </div>
 
-        <div className="search-results" ref={listRef}>
+        <div
+          className="search-results"
+          ref={listRef}
+          role="listbox"
+          id={LISTBOX_ID}
+          aria-label="Results"
+        >
           {results.length === 0 ? (
             <div className="search-empty">
               {items.length === 0 ? 'No media on the canvas yet' : 'No matches'}
@@ -132,11 +143,12 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
               <button
                 key={it.id}
                 type="button"
+                role="option"
+                id={`search-result-${it.id}`}
+                aria-selected={idx === activeIdx}
                 data-idx={idx}
                 className={`search-result ${idx === activeIdx ? 'is-active' : ''}`}
-                // Mouse hover sets the active row so arrow keys and mouse
-                // stay in sync — matches Spotlight / Raycast behavior.
-                onMouseEnter={() => setActiveIdx(idx)}
+                onMouseEnter={() => setCursor(idx)}
                 onClick={() => onSelect(it)}
               >
                 <i

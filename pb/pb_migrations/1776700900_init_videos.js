@@ -1,8 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// Mirrors the `images` collection but accepts common web-deliverable video
-// MIME types and bumps the per-file cap. World-space placement fields stay
-// identical so the Canvas can handle images and videos with the same layout.
 migrate(
   (app) => {
     const collection = new Collection({
