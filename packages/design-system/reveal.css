@@ -1,9 +1,4 @@
-/* ==========================================================================
-   Reveal-on-scroll — matches the canonical brand pattern:
-   0.6–0.8s ease-out, slight translate, opacity fade. Triggered by the
-   `useRevealOnScroll` hook adding `.is-visible`. Staggers through a CSS
-   var (`--reveal-delay`) that section-level CSS (or inline styles) can set.
-   ========================================================================== */
+
 
 .reveal {
   opacity: 0;
@@ -27,7 +22,7 @@
   transform: none;
 }
 
-/* Stagger helpers — spec calls for +0.1s / +0.2s between siblings. */
+
 .reveal[data-delay="0"]    { --reveal-delay: 0ms; }
 .reveal[data-delay="1"]    { --reveal-delay: 80ms; }
 .reveal[data-delay="2"]    { --reveal-delay: 160ms; }

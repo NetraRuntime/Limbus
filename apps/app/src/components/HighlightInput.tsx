@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+
+const readViewportWidth = () => (typeof window === 'undefined' ? 1024 : window.innerWidth);
 
 type ScreenRect = { x: number; y: number; width: number; height: number };
 
 type Props = {
-  /** Image bounding rect in screen coords. Input is pinned to its bottom edge. */
+  
   rect: ScreenRect;
   value: string;
   onChange: (next: string) => void;
@@ -13,11 +15,7 @@ type Props = {
   onBlur?: () => void;
   onEscape?: () => void;
   onSubmit?: (value: string) => void;
-  /**
-   * Fires when Delete/Backspace is pressed while the input is empty — an
-   * escape hatch so the canvas's "delete pinned media" shortcut works even
-   * when the autofocused input would otherwise swallow the key.
-   */
+  
   onDeleteWhenEmpty?: () => void;
   autoFocus?: boolean;
 };
@@ -28,11 +26,6 @@ const MIN_WIDTH = 240;
 const MAX_WIDTH = 420;
 const VIEWPORT_MARGIN = 12;
 
-// Always place the input just below the image. Horizontal: centered on the
-// image midpoint, clamped to the viewport so the input never slides off-
-// screen even for images near the left or right edge. Placement intentionally
-// does NOT flip to "above" — it's consistently the bottom, regardless of where
-// the image is on the viewport or where the cursor sits.
 export function HighlightInput({
   rect,
   value,
@@ -47,30 +40,31 @@ export function HighlightInput({
   autoFocus,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [vw, setVw] = useState(readViewportWidth);
 
   useLayoutEffect(() => {
     if (autoFocus) inputRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
+  useEffect(() => {
+    const onResize = () => setVw(readViewportWidth());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const width = Math.max(MIN_WIDTH, Math.min(rect.width, MAX_WIDTH));
   const top = rect.y + rect.height + HIGHLIGHT_INPUT_GAP;
-
-  let left = rect.x + rect.width / 2 - width / 2;
-  const vw = typeof window === 'undefined' ? 1024 : window.innerWidth;
-  left = Math.max(VIEWPORT_MARGIN, Math.min(left, vw - width - VIEWPORT_MARGIN));
+  const desiredLeft = rect.x + rect.width / 2 - width / 2;
+  const left = Math.max(
+    VIEWPORT_MARGIN,
+    Math.min(desiredLeft, vw - width - VIEWPORT_MARGIN),
+  );
 
   const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    // Stop the NATIVE event from bubbling to window — React's synthetic
-    // `stopPropagation` only short-circuits React's own event system; the
-    // underlying native event continues past React's root delegate to any
-    // window-level listeners (e.g. the canvas's delete shortcut).
     e.nativeEvent.stopPropagation();
     if (e.key === 'Escape') {
       e.preventDefault();
       onEscape?.();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      onSubmit?.(value);
     } else if (
       (e.key === 'Delete' || e.key === 'Backspace') &&
       value === '' &&
@@ -79,19 +73,26 @@ export function HighlightInput({
       e.preventDefault();
       onDeleteWhenEmpty();
     }
+    // Enter is handled natively by the wrapping <form>'s onSubmit.
   };
 
   return (
-    <div
+    // The form wrapper exists to capture stray pointer events that would
+    // otherwise reach the canvas (pan-start) and to provide a native submit
+    // target for Enter. Keyboard interaction lives on the <input>.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
+    <form
       className="highlight-input"
+      role="search"
       style={{ top, left, width, height: HIGHLIGHT_INPUT_HEIGHT }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={(e) => e.stopPropagation()}
-      // Block pan-start so focusing/typing in the input doesn't grab the
-      // canvas pointer.
       onPointerDown={(e) => e.stopPropagation()}
-      role="search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit?.(value);
+      }}
     >
       <i className="ri-sparkling-2-line highlight-input-icon" aria-hidden="true" />
       <input
@@ -108,6 +109,6 @@ export function HighlightInput({
         autoComplete="off"
         spellCheck={false}
       />
-    </div>
+    </form>
   );
 }

@@ -1,0 +1,9 @@
+**/dist/
+**/node_modules/
+**/.vite/
+**/target/
+**/src-tauri/target/
+**/pb_data/
+pb/pb_migrations/
+pnpm-lock.yaml
+*.min.*

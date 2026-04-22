@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 
-// Canvas lives in the Tauri desktop build. The landing (web) promotes the
-// download instead of linking into a /app route that web visitors can't use.
-// When a real release binary exists, swap DOWNLOAD_HREF for its URL.
 const DOWNLOAD_HREF = '#waitlist';
 
 export function Header() {
@@ -83,13 +80,16 @@ export function Header() {
         </button>
       </div>
 
-      {/* Slide-down panel, only rendered visible on narrow viewports via CSS. */}
+      {/* Slide-down panel. Outer is a click-outside dismiss surface;
+          keyboard users get Escape (handled above) and the menu-toggle. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         id="mobile-menu"
         className={`menu-panel ${open ? 'is-open' : ''}`}
         onClick={close}
         aria-hidden={!open}
       >
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
         <div className="menu-inner" onClick={(e) => e.stopPropagation()}>
           <a className="menu-link" href="#why" onClick={close}>
             Why NetraRT

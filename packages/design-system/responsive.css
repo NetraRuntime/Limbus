@@ -1,12 +1,8 @@
-/* ==========================================================================
-   Responsive overrides + mobile navigation
-   Layered on top of kit.css and App.css — this is where app-level
-   responsiveness lives so the canonical design-system CSS stays pristine.
-   ========================================================================== */
 
-/* ---------- Mobile menu toggle ---------- */
 
-/* Hidden by default; unhides at the navbar collapse breakpoint below. */
+
+
+
 .menu-toggle {
   display: none;
   appearance: none;
@@ -34,7 +30,7 @@
   outline-offset: 2px;
 }
 
-/* Panel — full-width overlay that drops below the header. */
+
 .menu-panel {
   position: fixed;
   top: 72px;
@@ -102,7 +98,7 @@
   justify-content: center;
 }
 
-/* ---------- Navbar collapse ---------- */
+
 
 @media (max-width: 820px) {
   .brand-tag {
@@ -118,13 +114,13 @@
     display: inline-flex;
   }
   .header-inner {
-    /* Keep the logo + toggle cleanly apart. */
+    
     gap: 12px;
   }
 }
 
 @media (max-width: 420px) {
-  /* Very narrow — shrink the wordmark so it never wraps against the toggle. */
+  
   .brand-wordmark {
     font-size: 20px;
     line-height: 20px;
@@ -140,7 +136,7 @@
   }
 }
 
-/* ---------- Hero tightening ---------- */
+
 
 @media (max-width: 820px) {
   .hero {
@@ -161,7 +157,7 @@
   }
 }
 
-/* ---------- Why section — smoothly reflow the marquee pill ---------- */
+
 
 @media (max-width: 520px) {
   .why-v2-pill {
@@ -179,7 +175,7 @@
   }
 }
 
-/* ---------- Waitlist tightening on small screens ---------- */
+
 
 @media (max-width: 460px) {
   .wl-title {
@@ -204,7 +200,7 @@
   }
 }
 
-/* ---------- Footer tightening ---------- */
+
 
 @media (max-width: 520px) {
   .site-footer {
@@ -222,9 +218,7 @@
   }
 }
 
-/* ==========================================================================
-   Canvas HUD + empty state responsiveness
-   ========================================================================== */
+
 
 @media (max-width: 640px) {
   .hud-top-left {
@@ -265,7 +259,7 @@
 }
 
 @media (max-width: 380px) {
-  /* Drop X/Y on very narrow screens — zoom is the signal worth keeping. */
+  
   .status-pill .status-label:not(:first-child),
   .status-pill .status-value:not(:nth-of-type(1)) {
     display: none;

@@ -1,8 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// Initial schema — the `images` collection backs every image dropped onto
-// the canvas. x/y/width/height store the world-space placement so the
-// scene can be restored verbatim on reload.
 migrate(
   (app) => {
     const collection = new Collection({
@@ -32,8 +29,6 @@ migrate(
         { name: 'created', type: 'autodate', onCreate: true },
         { name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
       ],
-      // Local-dev rules: fully open so the frontend can read/write without
-      // auth. Tighten these to `@request.auth.id != ""` before deploying.
       listRule: '',
       viewRule: '',
       createRule: '',

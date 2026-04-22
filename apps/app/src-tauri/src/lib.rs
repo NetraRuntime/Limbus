@@ -13,9 +13,6 @@ const PB_PORT: u16 = 8090;
 struct PocketBaseProcess(Mutex<Option<CommandChild>>);
 
 fn port_in_use() -> bool {
-    // If something is already serving on 8090, reuse it rather than fighting
-    // over the port — common during dev when the user already has
-    // `pnpm db:start` running in another shell.
     TcpStream::connect_timeout(
         &format!("{PB_HOST}:{PB_PORT}").parse().unwrap(),
         Duration::from_millis(200),
@@ -32,10 +29,6 @@ fn start_pocketbase(app: &AppHandle) -> Result<CommandChild, String> {
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("create pb_data dir {}: {e}", data_dir.display()))?;
 
-    // Bundled migrations ship alongside the app under `Resources/pb_migrations`
-    // (mapped from `../pb/pb_migrations` by tauri.conf.json). Point PB at that
-    // directory so it auto-applies any new migrations on first boot — no
-    // copying into pb_data, no manual setup step.
     let migrations_dir = app
         .path()
         .resolve("pb_migrations", tauri::path::BaseDirectory::Resource)
@@ -63,9 +56,6 @@ fn start_pocketbase(app: &AppHandle) -> Result<CommandChild, String> {
         .spawn()
         .map_err(|e| format!("spawn pocketbase: {e}"))?;
 
-    // Drain the sidecar's stdout/stderr so its pipe buffer never fills up
-    // (which would wedge PocketBase). Forward everything to our own stderr
-    // so `tauri dev` shows PB logs alongside Vite.
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {

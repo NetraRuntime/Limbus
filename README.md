@@ -1,11 +1,33 @@
 # NetraRT
 
-**Vision AI for anyone.** An infinite-canvas desktop app for running
-state-of-the-art vision models locally — no cloud, no API bills, no
-frames leaving your hardware.
+**Vision AI for anyone, anywhere, on any device.**
 
+Netra is a platform to make vision AI as accessible as text AI has
+become. Today, running a vision model or a vision-language model at
+the edge is still hard — you fight with model formats, inference
+runtimes, hardware quirks, and latency budgets that never quite fit.
+Most developers give up and send frames to the cloud, which breaks
+privacy, costs money, and adds latency that kills real-time use cases.
+
+Born out of [**SAM3.c**](https://github.com/) (a pure C port of
+Segment Anything 3) and [**Kolosal AI**](https://kolosal.ai) (an
+open-source C++ LLM platform that runs on any GPU), Netra brings the
+same obsession with performance and accessibility to the vision world.
+Cameras, drones, robots, phones, Raspberry Pis — anywhere a frame
+exists, vision AI should just work.
+
+**NetraRT** is the user-facing surface of that platform: an
+infinite-canvas desktop app for running state-of-the-art vision models
+locally — no cloud, no API bills, no frames leaving your hardware.
 This monorepo hosts the public website, the canvas app (Tauri desktop
 + web debug build), and shared design-system and tooling packages.
+
+## Who it's for
+
+- **Developers** who want to drop vision AI into an app with a few lines of code.
+- **Agentic coding tools** that need a local, scriptable vision backend.
+- **Ordinary people** who want vision AI to run out of the box, no setup ritual.
+- **Students and scientists** generating synthetic datasets, annotating data, or building OCR pipelines without fighting infrastructure.
 
 ## Layout
 

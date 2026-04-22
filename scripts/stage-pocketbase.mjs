@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// Copies pb/pocketbase → src-tauri/binaries/pocketbase-<target-triple>[.exe]
-// so Tauri's sidecar bundling (`externalBin: ["binaries/pocketbase"]`) can
-// find a per-platform executable to ship. Runs before every `tauri dev` and
-// `tauri build` via the `beforeDevCommand` / `beforeBuildCommand` hooks.
-//
-// Target triple resolution order:
-//   1. TAURI_ENV_TARGET_TRIPLE (injected by `tauri build --target ...`)
-//   2. `rustc -vV` host triple (the current machine)
-//
-// The pb/pocketbase source is gitignored — developers install it once
-// (see README / `scripts/fetch-pocketbase.*`). CI/release pipelines should
-// download the matching binary for the target before invoking `tauri build`.
 
 import { execSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -37,8 +25,6 @@ const resolveTriple = () => {
 };
 
 const triple = resolveTriple();
-// Tauri appends `.exe` on Windows targets regardless of host. Detect from
-// the triple itself so cross-builds name the binary correctly.
 const targetExt = triple.includes('windows') ? '.exe' : '';
 const sourceName = isWindowsHost ? 'pocketbase.exe' : 'pocketbase';
 

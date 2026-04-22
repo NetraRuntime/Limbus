@@ -17,9 +17,6 @@ type Props = {
 export function FloatingSidebar({ items, activeId, onSelect }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Keep the active item in view when focus switches programmatically — e.g.
-  // user clicks a media on the canvas and the sidebar scrolls that thumb
-  // into view so the selection is always discoverable.
   useEffect(() => {
     if (!activeId || !listRef.current) return;
     const el = listRef.current.querySelector<HTMLElement>(
@@ -50,8 +47,6 @@ export function FloatingSidebar({ items, activeId, onSelect }: Props) {
               aria-label={`Focus ${m.name}`}
               aria-pressed={isActive}
               onClick={() => onSelect(m.id)}
-              // Prevent the canvas pan from capturing the pointer before the
-              // click resolves on the button.
               onPointerDown={(e) => e.stopPropagation()}
             >
               {m.kind === 'video' ? (

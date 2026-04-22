@@ -1,26 +1,19 @@
 import { useEffect } from 'react';
 
 type Options = {
-  /** CSS selector to observe. All matching elements are watched. */
+  
   selector?: string;
-  /** Class added to each element once it intersects. */
+  
   visibleClass?: string;
-  /** IntersectionObserver threshold (0..1). */
+  
   threshold?: number;
-  /** Negative bottom margin to trigger slightly before reaching the fold. */
+  
   rootMargin?: string;
-  /** When true, stop observing an element after the first intersection. */
+  
   once?: boolean;
 };
 
-/**
- * Scan the DOM for a selector on mount, observe matches with a single shared
- * IntersectionObserver, and toggle a visible class when they enter view.
- * Deps-free: matches the brand's described "IntersectionObserver adds
- * .animation class" pattern without a dependency.
- *
- * Re-scans when `deps` change so route swaps still animate.
- */
+
 export function useRevealOnScroll(
   {
     selector = '.reveal',

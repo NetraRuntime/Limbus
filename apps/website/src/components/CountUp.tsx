@@ -1,30 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 
 type Props = {
-  /** Final value to count up to. */
+  
   to: number;
-  /** Starting value (default 0). */
+  
   from?: number;
-  /** Animation duration in ms. */
+  
   durationMs?: number;
-  /** Decimal places to render (0 = integer, 1 = 1 decimal, etc). */
+  
   decimals?: number;
-  /** Prepend — e.g. "$" or "~". */
+  
   prefix?: string;
-  /** Append — e.g. "%", "+", " users". */
+  
   suffix?: string;
-  /** Use locale thousands grouping (e.g. "1,234"). Only applies to integers. */
+  
   group?: boolean;
-  /** IntersectionObserver threshold to trigger (0..1). */
+  
   threshold?: number;
-  /** Delay in ms after visibility before starting the count. */
+  
   startDelayMs?: number;
   className?: string;
 };
 
-// Render a number that eases from `from` to `to` the first time the element
-// enters the viewport. rAF-driven, reduced-motion aware, keeps the digits on
-// tabular rails so the surrounding layout doesn't jiggle.
 export function CountUp({
   to,
   from = 0,

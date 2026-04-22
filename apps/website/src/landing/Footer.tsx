@@ -1,3 +1,9 @@
+const SOCIALS = [
+  { id: 'github', label: 'GitHub (coming soon)', icon: 'ri-github-fill' },
+  { id: 'x', label: 'X (coming soon)', icon: 'ri-twitter-x-line' },
+  { id: 'linkedin', label: 'LinkedIn (coming soon)', icon: 'ri-linkedin-fill' },
+] as const;
+
 export function Footer() {
   return (
     <footer className="site-footer">
@@ -8,15 +14,16 @@ export function Footer() {
             <span className="footer-wordmark">NetraRT</span>
             <p>Vision AI, as easy as text. On any device.</p>
             <div className="footer-socials">
-              <a href="#" aria-label="GitHub">
-                <i className="ri-github-fill" />
-              </a>
-              <a href="#" aria-label="X">
-                <i className="ri-twitter-x-line" />
-              </a>
-              <a href="#" aria-label="LinkedIn">
-                <i className="ri-linkedin-fill" />
-              </a>
+              {SOCIALS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-label={s.label}
+                  disabled
+                >
+                  <i className={s.icon} aria-hidden />
+                </button>
+              ))}
             </div>
           </div>
           <div className="footer-cols footer-cols-2 reveal reveal-up" data-delay="2">
@@ -28,7 +35,9 @@ export function Footer() {
             <div>
               <h4>Contact</h4>
               <a href="mailto:hello@netra.dev">hello@netra.dev</a>
-              <a href="#">Press</a>
+              <button type="button" disabled aria-label="Press (coming soon)">
+                Press
+              </button>
             </div>
           </div>
         </div>
