@@ -1443,15 +1443,25 @@ export function Canvas() {
         />
       )}
 
-      {selectionBBox && !marqueeRect && (
+      {selectionBBox && !marqueeRect && (() => {
+        // Each selected media has a filename label floating above it at a
+        // constant screen height (counter-scaled). Grow the bbox's top edge
+        // by that constant so the frame visually contains the labels too,
+        // not just the image rects. ~19 px label (9/13 font + 2+2 padding
+        // + 1+1 border) + 6 px gap = 25; round up for a tiny buffer.
+        const LABEL_OVERHANG_PX = 26;
+        return (
         <div
           className="selection-bbox"
           aria-hidden
           style={{
             left: selectionBBox.minX * view.scale + view.x,
-            top: selectionBBox.minY * view.scale + view.y,
+            top: selectionBBox.minY * view.scale + view.y - LABEL_OVERHANG_PX,
             width: Math.max(0, (selectionBBox.maxX - selectionBBox.minX) * view.scale),
-            height: Math.max(0, (selectionBBox.maxY - selectionBBox.minY) * view.scale),
+            height: Math.max(
+              0,
+              (selectionBBox.maxY - selectionBBox.minY) * view.scale + LABEL_OVERHANG_PX,
+            ),
           }}
         >
           <span className="selection-bbox-handle tl" />
@@ -1463,7 +1473,8 @@ export function Canvas() {
             {selectedIds.size}
           </span>
         </div>
-      )}
+        );
+      })()}
 
       {isEmpty && (
         <div className="empty-state" aria-hidden>
