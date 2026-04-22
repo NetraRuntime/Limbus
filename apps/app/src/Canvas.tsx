@@ -30,6 +30,7 @@ import {
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
+import { SearchPalette, type SearchItem } from './components/SearchPalette';
 import { useSettings } from './hooks/useSettings';
 import './App.css';
 
@@ -357,6 +358,7 @@ export function Canvas() {
   const [media, setMedia] = useState<CanvasMedia[]>([]);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   // Upload status per pending media id. Two-phase state:
   //   phase 'sending'    → body in flight, pct ∈ [0, 1)
@@ -683,6 +685,45 @@ export function Canvas() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [clearSelection, deleteSelection]);
+
+  // Cmd/Ctrl+K toggles the macOS-Spotlight-style search palette. Fires
+  // globally so it still works when a text input (HighlightInput, etc.) has
+  // focus — this is the one shortcut the convention deliberately overrides.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 'k') return;
+      e.preventDefault();
+      setSearchOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const searchItems = useMemo<SearchItem[]>(
+    () =>
+      media
+        .filter((m) => !m.pending)
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          kind: m.kind,
+          x: m.x,
+          y: m.y,
+          width: m.width,
+          height: m.height,
+        })),
+    [media],
+  );
+
+  const handleSearchSelect = useCallback((item: SearchItem) => {
+    setSearchOpen(false);
+    canvasRef.current?.focusOn(
+      { x: item.x, y: item.y, width: item.width, height: item.height },
+      { animate: true },
+    );
+  }, []);
 
   const handleChange = useCallback((v: View) => setView(v), []);
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
@@ -1449,6 +1490,13 @@ export function Canvas() {
         onChange={updateSetting}
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
+      />
+
+      <SearchPalette
+        open={searchOpen}
+        items={searchItems}
+        onSelect={handleSearchSelect}
+        onClose={() => setSearchOpen(false)}
       />
     </>
   );
