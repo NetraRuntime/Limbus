@@ -31,6 +31,7 @@ import {
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
+import { Sam3VersionBadge } from './components/Sam3VersionBadge';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
@@ -1527,6 +1528,8 @@ export function Canvas() {
           <span className="wordmark-divider" aria-hidden />
           <span className={`conn-dot conn-${conn}`} aria-label={`connection ${conn}`} />
           <span className="wordmark-tag">{conn}</span>
+          <span className="wordmark-divider" aria-hidden />
+          <Sam3VersionBadge />
         </div>
       </div>
 
