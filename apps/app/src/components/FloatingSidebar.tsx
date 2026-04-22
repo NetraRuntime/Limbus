@@ -59,6 +59,16 @@ export function FloatingSidebar({ items, activeId, onSelect }: Props) {
                   muted
                   playsInline
                   preload="metadata"
+                  // WebKit with `preload="metadata"` and no `autoplay`
+                  // loads container metadata but never decodes a frame,
+                  // leaving the element black until some heuristic
+                  // eventually triggers a fetch (can take minutes when
+                  // many items queue on the 6-connection cap).
+                  // Seeking to just after t=0 forces a small range-read
+                  // and decodes the first frame immediately.
+                  onLoadedMetadata={(e) => {
+                    e.currentTarget.currentTime = 0.001;
+                  }}
                   aria-hidden
                 />
               ) : (
