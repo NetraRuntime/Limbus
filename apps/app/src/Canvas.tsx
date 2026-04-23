@@ -1260,7 +1260,7 @@ export function Canvas() {
       try {
         (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
       } catch {
-        
+
       }
       const { moved, lastDx, lastDy, orig } = d;
       window.setTimeout(() => {
@@ -1270,6 +1270,12 @@ export function Canvas() {
       }, 0);
       if (!moved) return;
       const currentMedia = mediaRef.current;
+      const moves: Array<{
+        id: string;
+        kind: 'image' | 'video';
+        from: { x: number; y: number };
+        to: { x: number; y: number };
+      }> = [];
       for (const [id, o] of orig) {
         const stillPending = currentMedia.find((m) => m.id === id)?.pending;
         if (stillPending) continue;
@@ -1277,6 +1283,12 @@ export function Canvas() {
           o.kind === 'video' ? updateVideoPosition : updateImagePosition;
         const nextX = o.x + lastDx;
         const nextY = o.y + lastDy;
+        moves.push({
+          id,
+          kind: o.kind,
+          from: { x: o.x, y: o.y },
+          to: { x: nextX, y: nextY },
+        });
         persist(id, { x: nextX, y: nextY })
           .then(() => setConn('ready'))
           .catch((err) => {
@@ -1287,8 +1299,14 @@ export function Canvas() {
             );
           });
       }
+      if (moves.length > 0) {
+        history.push(
+          moveEntry({ moves, setMedia, onConn: setConn }),
+          { alreadyApplied: true },
+        );
+      }
     },
-    [],
+    [history],
   );
 
   const initial = useMemo<Partial<View>>(() => getInitialView(), []);
