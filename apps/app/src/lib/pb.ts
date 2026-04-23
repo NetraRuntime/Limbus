@@ -153,6 +153,19 @@ export const deleteAllSegmentationsForImage = (
   imageId: string,
 ): Promise<void> => deleteSegmentationsForImage(imageId, []);
 
+export const deleteSegmentationByImageTag = async (
+  imageId: string,
+  tag: string,
+): Promise<void> => {
+  const raw = await pb
+    .collection('segmentations')
+    .getFullList({ filter: `image="${imageId}"` });
+  const existing = parseList(SegmentationRecordSchema, raw);
+  const match = findSegByTag(existing, tag);
+  if (!match) return;
+  await pb.collection('segmentations').delete(match.id);
+};
+
 export const updateImagePosition = async (
   id: string,
   pos: { x: number; y: number },
