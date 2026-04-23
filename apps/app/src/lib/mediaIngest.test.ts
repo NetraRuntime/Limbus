@@ -10,6 +10,7 @@ import {
   MAX_ZIP_DEPTH,
   MAX_UNCOMPRESSED_BYTES,
   SOFT_SIZE_BYTES,
+  buildDescriptorFromFile,
 } from './mediaIngest';
 
 describe('classifyByExtension', () => {
@@ -192,5 +193,37 @@ describe('extractZipRecursive', () => {
         limit: MAX_UNCOMPRESSED_BYTES,
       }),
     ).toThrow();
+  });
+});
+
+describe('buildDescriptorFromFile', () => {
+  it('image File becomes an image descriptor with working load()', async () => {
+    const bytes = tinyPng();
+    const f = new File([bytes], 'hi.png', { type: 'image/png' });
+    const budget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
+    const descs = await buildDescriptorFromFile(f, 'folder/hi.png', budget);
+    expect(descs).toHaveLength(1);
+    expect(descs[0]!.kind).toBe('image');
+    expect(descs[0]!.relativePath).toBe('folder/hi.png');
+    const out = await descs[0]!.load();
+    expect(out.name).toBe('hi.png');
+  });
+
+  it('zip File is expanded into its inner descriptors', async () => {
+    const inner = buildZip({ 'a.png': tinyPng() });
+    // fflate returns Uint8Array<ArrayBufferLike>; DOM BlobPart requires the
+    // narrower ArrayBufferView<ArrayBuffer>. Cast at the test boundary.
+    const f = new File([inner as BlobPart], 'pack.zip', { type: 'application/zip' });
+    const budget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
+    const descs = await buildDescriptorFromFile(f, 'folder/pack.zip', budget);
+    expect(descs).toHaveLength(1);
+    expect(descs[0]!.relativePath).toBe('folder/pack.zip/a.png');
+  });
+
+  it('non-media, non-zip File yields no descriptors', async () => {
+    const f = new File(['hi'], 'readme.txt', { type: 'text/plain' });
+    const budget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
+    const descs = await buildDescriptorFromFile(f, 'readme.txt', budget);
+    expect(descs).toHaveLength(0);
   });
 });

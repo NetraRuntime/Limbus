@@ -139,3 +139,191 @@ export function extractZipRecursive(
 
   return out;
 }
+
+export async function buildDescriptorFromFile(
+  file: File,
+  relativePath: string,
+  budget: SizeBudget,
+): Promise<MediaDescriptor[]> {
+  const kind = classifyByExtension(file.name);
+  if (kind === 'zip') {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    budget.bytesUsed += bytes.byteLength;
+    if (budget.bytesUsed > budget.limit) {
+      throw new SizeCapExceededError(budget.bytesUsed, budget.limit);
+    }
+    return extractZipRecursive(bytes, relativePath, 1, budget);
+  }
+  if (kind !== 'image' && kind !== 'video') return [];
+
+  budget.bytesUsed += file.size;
+  if (budget.bytesUsed > budget.limit) {
+    throw new SizeCapExceededError(budget.bytesUsed, budget.limit);
+  }
+
+  const mime = file.type || mimeFromExtension(file.name);
+  const descriptor: MediaDescriptor = {
+    relativePath,
+    name: file.name,
+    size: file.size,
+    kind,
+    mime,
+    source: { type: 'file', file },
+    load: async () => file,
+  };
+  return [descriptor];
+}
+
+// captureDataTransfer produces a ScanInput synchronously from
+// DataTransfer.items before the event's DataTransfer handle becomes
+// unusable. webkitGetAsEntry must be called synchronously for the same
+// reason.
+export function captureDataTransfer(dt: DataTransfer): ScanInput {
+  const entries: Array<FileSystemEntry | null> = [];
+  const fallbackFiles: File[] = [];
+  for (let i = 0; i < dt.items.length; i++) {
+    const it = dt.items[i];
+    if (!it || it.kind !== 'file') continue;
+    const entry = typeof it.webkitGetAsEntry === 'function'
+      ? it.webkitGetAsEntry()
+      : null;
+    if (entry) {
+      entries.push(entry);
+    } else {
+      const f = it.getAsFile();
+      if (f) fallbackFiles.push(f);
+    }
+  }
+  return { entries, fallbackFiles };
+}
+
+export function dropContainsFolderOrZip(input: ScanInput): boolean {
+  for (const e of input.entries) {
+    if (!e) continue;
+    if (e.isDirectory) return true;
+    if (classifyByExtension(e.name) === 'zip') return true;
+  }
+  for (const f of input.fallbackFiles) {
+    if (classifyByExtension(f.name) === 'zip') return true;
+  }
+  return false;
+}
+
+async function readAllEntries(
+  reader: FileSystemDirectoryReader,
+): Promise<FileSystemEntry[]> {
+  const out: FileSystemEntry[] = [];
+  // FileSystemDirectoryReader.readEntries can return a bounded batch; must
+  // call repeatedly until it yields an empty array.
+  for (;;) {
+    const batch: FileSystemEntry[] = await new Promise((resolve, reject) =>
+      reader.readEntries(resolve, reject),
+    );
+    if (batch.length === 0) return out;
+    out.push(...batch);
+  }
+}
+
+const entryToFile = (entry: FileSystemFileEntry): Promise<File> =>
+  new Promise((resolve, reject) => entry.file(resolve, reject));
+
+async function walkEntry(
+  entry: FileSystemEntry,
+  prefix: string,
+  budget: SizeBudget,
+  signal: AbortSignal,
+  emit: (d: MediaDescriptor) => void,
+): Promise<void> {
+  if (signal.aborted) return;
+  const nextPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+  if (entry.isDirectory) {
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    const children = await readAllEntries(reader);
+    for (const child of children) {
+      if (signal.aborted) return;
+      await walkEntry(child, nextPath, budget, signal, emit);
+    }
+    return;
+  }
+  if (!entry.isFile) return;
+  const file = await entryToFile(entry as FileSystemFileEntry);
+  const descs = await buildDescriptorFromFile(file, nextPath, budget);
+  for (const d of descs) emit(d);
+}
+
+export async function* scanDataTransfer(
+  captured: ScanInput,
+  signal: AbortSignal,
+): AsyncGenerator<ScanEvent> {
+  const budget: SizeBudget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
+  const queue: MediaDescriptor[] = [];
+  let scanned = 0;
+  let bytes = 0;
+  let softWarned = false;
+
+  const emit = (d: MediaDescriptor) => {
+    queue.push(d);
+    scanned++;
+    bytes += d.size;
+  };
+
+  try {
+    for (const f of captured.fallbackFiles) {
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      const descs = await buildDescriptorFromFile(f, f.name, budget);
+      for (const d of descs) emit(d);
+    }
+    for (const entry of captured.entries) {
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      if (!entry) continue;
+      await walkEntry(entry, '', budget, signal, emit);
+    }
+
+    // Drain the queue as ScanEvents. The modal populates incrementally
+    // during the drain; for folders with thousands of files, HARD_ITEM_CAP
+    // and SOFT_ITEM_CAP trip here.
+    for (const d of queue) {
+      yield { type: 'descriptor', descriptor: d };
+      if (scanned > HARD_ITEM_CAP) {
+        yield {
+          type: 'error',
+          code: 'cap-hard',
+          message: `Too many files (${scanned}). Please split into smaller batches.`,
+        };
+        return;
+      }
+      if (!softWarned && (scanned >= SOFT_ITEM_CAP || bytes >= SOFT_SIZE_BYTES)) {
+        softWarned = true;
+        yield { type: 'warning', code: 'cap-soft', count: scanned, bytes };
+      }
+      yield { type: 'progress', scanned, bytes };
+    }
+    yield { type: 'done' };
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      yield { type: 'error', code: 'aborted', message: 'scan cancelled' };
+      return;
+    }
+    if (err instanceof SizeCapExceededError) {
+      yield {
+        type: 'error',
+        code: 'cap-hard',
+        message: `Archive exceeds the ${(budget.limit / 1024 ** 3).toFixed(0)} GB uncompressed limit.`,
+      };
+      return;
+    }
+    if (err instanceof DepthCapExceededError) {
+      yield {
+        type: 'error',
+        code: 'zip-malformed',
+        message: `Zip nesting exceeds ${MAX_ZIP_DEPTH} levels.`,
+      };
+      return;
+    }
+    yield {
+      type: 'error',
+      code: 'scan-failed',
+      message: (err as Error).message || 'scan failed',
+    };
+  }
+}
