@@ -66,7 +66,7 @@ describe('createHistoryController', () => {
     expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: false });
   });
 
-  it('clears future and evicts each cleared entry when a new push happens', async () => {
+  it('clears future on a new push without evicting — future entries are undone', async () => {
     const c = createHistoryController();
     const a = makeEntry('a');
     const b = makeEntry('b');
@@ -82,25 +82,47 @@ describe('createHistoryController', () => {
 
     c.push(d, { alreadyApplied: true });
 
-    expect(b.evictSpy).toHaveBeenCalledTimes(1);
-    expect(cc.evictSpy).toHaveBeenCalledTimes(1);
+    // Future entries represent undone actions — their side effects were already
+    // reversed by undo. Committing them on eviction would undo the reversal.
+    expect(b.evictSpy).not.toHaveBeenCalled();
+    expect(cc.evictSpy).not.toHaveBeenCalled();
     expect(a.evictSpy).not.toHaveBeenCalled();
     expect(d.evictSpy).not.toHaveBeenCalled();
     expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: false });
   });
 
-  it('clear() drains past and future and evicts every entry', () => {
+  it('clear() evicts past entries but not future entries', async () => {
     const c = createHistoryController();
     const a = makeEntry('a');
     const b = makeEntry('b');
     c.push(a, { alreadyApplied: true });
     c.push(b, { alreadyApplied: true });
+    await c.undo();
 
     c.clear();
 
     expect(a.evictSpy).toHaveBeenCalledTimes(1);
-    expect(b.evictSpy).toHaveBeenCalledTimes(1);
+    expect(b.evictSpy).not.toHaveBeenCalled();
     expect(c.getSnapshot()).toEqual({ canUndo: false, canRedo: false });
+  });
+
+  it('re-deleting an item whose restore is in the future does not evict the stale delete', async () => {
+    // Regression: upload → delete → undo → delete again used to hard-delete
+    // the record when the new push cleared the future, breaking the next undo
+    // with a 404 because the old delete entry's onEvict fired against a record
+    // that the undo had just restored.
+    const c = createHistoryController();
+    const firstDelete = makeEntry('delete-1');
+    const secondDelete = makeEntry('delete-2');
+
+    c.push(firstDelete, { alreadyApplied: true });
+    await c.undo();
+    expect(c.getSnapshot()).toEqual({ canUndo: false, canRedo: true });
+
+    c.push(secondDelete, { alreadyApplied: true });
+
+    expect(firstDelete.evictSpy).not.toHaveBeenCalled();
+    expect(secondDelete.evictSpy).not.toHaveBeenCalled();
   });
 
   it('serializes overlapping undo calls in order', async () => {

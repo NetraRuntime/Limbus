@@ -46,12 +46,11 @@ export function createHistoryController<M = unknown>(
       const dropped = past.shift();
       if (dropped) evict(dropped);
     }
-    // Clear future on any new push.
-    if (future.length > 0) {
-      const drained = future;
-      future = [];
-      for (const e of drained) evict(e);
-    }
+    // Clear future on any new push. Entries in future have been undone —
+    // their side effects were already reversed, so onEvict must NOT fire:
+    // a delete entry in future has had its record restored, and committing
+    // the soft-delete there would hard-delete a record that's now live.
+    if (future.length > 0) future = [];
     emit();
   };
 
@@ -95,10 +94,13 @@ export function createHistoryController<M = unknown>(
     });
 
   const clear = (): void => {
-    const drained = [...past, ...future];
+    // Only past entries represent applied actions with deferred side effects
+    // to commit. Future entries have been undone; evicting them would undo
+    // the reversal (e.g. hard-delete a record an undo just restored).
+    const drainedPast = past;
     past = [];
     future = [];
-    for (const e of drained) evict(e);
+    for (const e of drainedPast) evict(e);
     emit();
   };
 
@@ -109,10 +111,17 @@ export function createHistoryController<M = unknown>(
     };
   };
 
-  const getSnapshot = (): HistorySnapshot => ({
-    canUndo: past.length > 0,
-    canRedo: future.length > 0,
-  });
+  // `useSyncExternalStore` compares snapshots by reference, so return a
+  // cached object whose identity only changes when the booleans flip.
+  let snapshot: HistorySnapshot = { canUndo: false, canRedo: false };
+  const getSnapshot = (): HistorySnapshot => {
+    const canUndo = past.length > 0;
+    const canRedo = future.length > 0;
+    if (canUndo !== snapshot.canUndo || canRedo !== snapshot.canRedo) {
+      snapshot = { canUndo, canRedo };
+    }
+    return snapshot;
+  };
 
   return { push, undo, redo, clear, subscribe, getSnapshot };
 }

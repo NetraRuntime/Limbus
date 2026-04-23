@@ -3,9 +3,11 @@ export type HistoryEntry<M = unknown> = {
   do: () => void | Promise<void>;
   /** Revert the action. Called on undo. */
   undo: () => void | Promise<void>;
-  /** Fired when this entry leaves the past and future stacks permanently —
-   *  past-limit overflow, future-clear on a new push, or a clear() call.
-   *  Use for committing to operations deferred while the entry was undoable. */
+  /** Fired when this entry leaves the past stack permanently — past-limit
+   *  overflow or a clear() call while the entry was in past. Use for committing
+   *  operations deferred while the entry was undoable. Never fires for entries
+   *  leaving the future stack: those represent undone actions whose side
+   *  effects have already been reversed. */
   onEvict?: () => void | Promise<void>;
   /** Human-readable label for dev logs and any future UI. */
   label: string;
