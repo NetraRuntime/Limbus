@@ -1,6 +1,5 @@
 import PocketBase from 'pocketbase';
 import { z } from 'zod';
-import { invoke } from '@tauri-apps/api/core';
 
 const EnvSchema = z.object({
   VITE_PB_URL: z.string().optional(),
@@ -250,10 +249,3 @@ export const listTrashed = async (opts: {
     videos: parseList(PlacementRecordSchema, vids),
   };
 };
-
-/**
- * Drop the SAM3 encoding cache for an image. Only relevant for images; videos
- * do not have a SAM3 cache. Fire-and-forget — a failure here is non-fatal.
- */
-export const deleteImageEncoding = (id: string): Promise<void> =>
-  invoke<void>('delete_image_encoding', { id });

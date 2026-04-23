@@ -105,7 +105,7 @@ export function deleteEntry(args: {
   deleted: HistoryMedia[];
   setMedia: SetMedia;
   onConn: Conn;
-  onHardDelete: OnHardDelete;
+  onHardDelete?: OnHardDelete;
 }): HistoryEntry<CanvasActionMeta> {
   const { deleted, setMedia, onConn, onHardDelete } = args;
   const ids = deleted.map((m) => m.id);
@@ -160,7 +160,7 @@ export function deleteEntry(args: {
       for (const m of deleted) {
         try {
           await (m.kind === 'video' ? hardDeleteVideo : hardDeleteImage)(m.id);
-          onHardDelete(m.id, m.kind);
+          onHardDelete?.(m.id, m.kind);
         } catch (err) {
           console.warn('[history] hard-delete failed for', m.id, err);
         }
