@@ -59,7 +59,7 @@ type Props = {
   initial?: Partial<View>;
   onChange?: (view: View) => void;
   onPointerWorld?: (p: (WorldPoint & { screenX: number; screenY: number }) | null) => void;
-  onFilesDrop?: (files: File[], worldPoint: WorldPoint) => void;
+  onDataTransferDrop?: (dt: DataTransfer, worldPoint: WorldPoint) => void;
   
   onBackgroundPointerDown?: (p: BackgroundPointerDown) => void;
   
@@ -79,7 +79,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     initial,
     onChange,
     onPointerWorld,
-    onFilesDrop,
+    onDataTransferDrop,
     onBackgroundPointerDown,
     zoomSensitivity = PINCH_ZOOM_MULTIPLIER,
     panSpeed = 1,
@@ -326,12 +326,11 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     e.preventDefault();
     dragDepth.current = 0;
     setDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (!files.length || !onFilesDrop) return;
+    if (!onDataTransferDrop) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     const wp = clientToWorld(e.clientX, e.clientY, rect, viewRef.current);
-    onFilesDrop(files, { worldX: wp.worldX, worldY: wp.worldY });
+    onDataTransferDrop(e.dataTransfer, { worldX: wp.worldX, worldY: wp.worldY });
   };
 
   useImperativeHandle(
