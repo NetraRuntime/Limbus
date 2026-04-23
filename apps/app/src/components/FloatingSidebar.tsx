@@ -19,13 +19,13 @@ export function FloatingSidebar({ items, activeId, onSelect }: Props) {
   const glass = useAutoLiquidGlassFilter({ radius: 12 });
 
   useEffect(() => {
-    const list = glass.ref.current;
+    const list = glass.element;
     if (!activeId || !list) return;
     const el = list.querySelector<HTMLElement>(
       `[data-id="${CSS.escape(activeId)}"]`,
     );
     el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [activeId, glass.ref]);
+  }, [activeId, glass.element]);
 
   if (items.length === 0) return null;
 

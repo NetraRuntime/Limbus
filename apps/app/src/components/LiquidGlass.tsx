@@ -1,12 +1,11 @@
 import {
+  useCallback,
   useId,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import {
   generateFilterAssets,
@@ -219,7 +218,13 @@ export type AutoLiquidGlassOptions = Omit<
 };
 
 export type AutoLiquidGlassResult = {
-  ref: RefObject<HTMLDivElement>;
+  /** Attach to the element the filter should refract behind. Callback
+   *  ref so the measurement effect fires when the element actually
+   *  mounts — including after a parent's early-return → JSX transition. */
+  ref: (el: HTMLDivElement | null) => void;
+  /** The currently attached element, or null when unmounted. Useful for
+   *  imperative access (querySelector, scrollIntoView on children). */
+  element: HTMLDivElement | null;
   filterId: string;
   filterSvg: ReactNode;
   /** Merge into the target element's `style` prop. */
@@ -232,15 +237,24 @@ export function useAutoLiquidGlassFilter({
   heightStep = 2,
   ...filterOpts
 }: AutoLiquidGlassOptions): AutoLiquidGlassResult {
-  const ref = useRef<HTMLDivElement>(null);
+  // Tracking the element in state (not a ref) makes the measurement
+  // effect re-run when the element lazily attaches. A plain useRef
+  // variant runs the effect exactly once on mount — if the parent
+  // returned null on that render, ref.current was null, the effect
+  // bailed, and the ResizeObserver never got set up. The size state
+  // then stuck at the dummy initial value forever.
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
   // Start at non-zero so the first filter is valid even before measure.
   const [size, setSize] = useState({ width: 200, height: 32 });
 
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    setElement(el);
+  }, []);
+
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    if (!element) return;
     const measure = () => {
-      const r = el.getBoundingClientRect();
+      const r = element.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
       const w = Math.max(1, Math.round(r.width / widthStep) * widthStep);
       const h = Math.max(1, Math.round(r.height / heightStep) * heightStep);
@@ -248,9 +262,9 @@ export function useAutoLiquidGlassFilter({
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
+    ro.observe(element);
     return () => ro.disconnect();
-  }, [widthStep, heightStep]);
+  }, [element, widthStep, heightStep]);
 
   const clampedRadius = Math.min(radius, Math.min(size.width, size.height) / 2);
 
@@ -270,7 +284,7 @@ export function useAutoLiquidGlassFilter({
     backdropFilter,
   };
 
-  return { ref, filterId, filterSvg, style };
+  return { ref, element, filterId, filterSvg, style };
 }
 
 // ─── Wrapper component ──────────────────────────────────────────────────────
