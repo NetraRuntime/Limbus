@@ -6,7 +6,9 @@ import type { HistoryController } from './types';
  *  window level, capture phase. Typing contexts (inputs, textareas,
  *  contenteditable) are ignored so the browser's default undo for text edits
  *  keeps working. */
-export function useHistoryShortcuts(history: HistoryController<unknown>): void {
+export function useHistoryShortcuts<M = unknown>(
+  history: HistoryController<M>,
+): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
