@@ -67,6 +67,14 @@ import { subscribeTauriDrops } from './lib/tauriDragDrop';
 import { placeGrid } from './lib/gridPlacement';
 import { useImportPreview } from './hooks/useImportPreview';
 import { ImportPreviewModal } from './components/ImportPreviewModal';
+import {
+  createLodCache,
+  createMipWorkerClient,
+  useLodHydration,
+  useLodSources,
+  type LodCache,
+  type MipWorkerClient,
+} from './features/lod';
 import './App.css';
 
 type CanvasMedia = {
@@ -392,6 +400,8 @@ type MediaItemProps = {
   m: CanvasMedia;
   isActive: boolean;
   placement: LabelPlacement;
+  lodSrc?: string;
+  playVideo?: boolean;
   onEnter: (id: string) => void;
   onLeave: () => void;
   onClick: (e: React.MouseEvent, id: string) => void;
@@ -406,6 +416,8 @@ const MediaItem = memo(function MediaItem({
   m,
   isActive,
   placement,
+  lodSrc,
+  playVideo = true,
   onEnter,
   onLeave,
   onClick,
@@ -453,6 +465,30 @@ const MediaItem = memo(function MediaItem({
   );
 
   if (m.kind === 'video') {
+    if (!playVideo) {
+      return (
+        <>
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
+          <img
+            src={lodSrc ?? m.src}
+            alt={m.name}
+            draggable={false}
+            className={cls}
+            style={style}
+            onMouseEnter={handleEnter}
+            onMouseLeave={onLeave}
+            onClick={handleClick}
+            onDoubleClick={handleDouble}
+            onContextMenu={handleContext}
+            onPointerDown={handleDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+          />
+          {label}
+        </>
+      );
+    }
     return (
       <>
         <video
@@ -482,7 +518,7 @@ const MediaItem = memo(function MediaItem({
     <>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
       <img
-        src={m.src}
+        src={lodSrc ?? m.src}
         alt={m.name}
         draggable={false}
         className={cls}
@@ -529,6 +565,25 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const settingsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
 
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
+  const [lodCache, setLodCache] = useState<LodCache | null>(null);
+  const [lodWorker, setLodWorker] = useState<MipWorkerClient | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    createLodCache()
+      .then((c) => {
+        if (!cancelled) setLodCache(c);
+      })
+      .catch((err) => console.warn('[lod] cache open failed', err));
+    const worker = createMipWorkerClient();
+    setLodWorker(worker);
+    return () => {
+      cancelled = true;
+      worker?.terminate();
+      setLodWorker(null);
+    };
+  }, []);
+
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
   const didInitialFitRef = useRef<boolean>(false);
   // Flipped once the PocketBase list fetch has resolved. Guards the
@@ -710,6 +765,73 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     });
     return items;
   }, [visibleMedia, stackOrder, media]);
+
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const lodItems = useMemo(
+    () =>
+      paintMedia
+        .filter((m) => !m.pending)
+        .map((m) => ({
+          id: m.id,
+          kind: m.kind,
+          src: m.src,
+          width: m.width,
+          height: m.height,
+        })),
+    [paintMedia],
+  );
+  const { sources: lodSources, reportLevelBlob, reportDims, dropAsset } = useLodSources({
+    items: lodItems,
+    viewScale: view.scale,
+    dpr,
+    cache: lodCache,
+  });
+  const [priorityIds, setPriorityIds] = useState<Set<string>>(() => new Set());
+
+  const hydrationItems = useMemo(
+    () =>
+      media
+        .filter((m) => !m.pending)
+        .map((m) => ({
+          id: m.id,
+          kind: m.kind,
+          src: m.src,
+          priority: priorityIds.has(m.id),
+        })),
+    [media, priorityIds],
+  );
+
+  const handleLevelReady = useCallback(
+    (e: { assetId: string; levelPx: number; blob: Blob }) => {
+      reportLevelBlob(e.assetId, e.levelPx, e.blob);
+    },
+    [reportLevelBlob],
+  );
+
+  const handleAssetReady = useCallback(
+    (id: string) => {
+      setPriorityIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (lodCache) {
+        void lodCache.getDims(id).then((d) => {
+          if (d) reportDims(id, d.naturalWidth, d.naturalHeight);
+        });
+      }
+    },
+    [lodCache, reportDims],
+  );
+
+  useLodHydration({
+    items: hydrationItems,
+    cache: lodCache,
+    worker: lodWorker,
+    onLevelReady: handleLevelReady,
+    onAssetReady: handleAssetReady,
+  });
 
   // Label placement: per-item corner (tl/tr/bl/br) chosen so the filename
   // badge doesn't land over a strictly-higher-stacked neighbor. Rank comes
@@ -934,6 +1056,11 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             const next =
               p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
             setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
+            setPriorityIds((prev) => {
+              const out = new Set(prev);
+              out.add(next.id);
+              return out;
+            });
             URL.revokeObjectURL(p.draft.src);
             setConn('ready');
             if (p.draft.kind === 'image' && sam3Available) {
@@ -1144,13 +1271,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           }),
           { alreadyApplied: true },
         );
+        if (lodCache) void lodCache.delete(id);
+        dropAsset(id);
       })
       .catch((err) => {
         console.warn('[pb] delete failed for', id, err);
         setConn('offline');
         setMedia((prev) => [...prev, target]);
       });
-  }, [clearSegment, history]);
+  }, [clearSegment, history, lodCache, dropAsset]);
 
   // Batched multi-delete: one history entry covers every soft-deleted item
   // in the current selection so Cmd-Z restores them all atomically. Pending
@@ -1761,22 +1890,27 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         zoomSensitivity={settings.zoomSensitivity}
         panSpeed={settings.panSpeed}
       >
-        {paintMedia.map((m) => (
-          <MediaItem
-            key={m.id}
-            m={m}
-            isActive={activeSet.has(m.id)}
-            placement={labelPlacements.get(m.id) ?? 'tl'}
-            onEnter={handleMediaEnter}
-            onLeave={handleMediaLeave}
-            onClick={handleMediaClick}
-            onDoubleClick={handleMediaDoubleClick}
-            onContextMenu={handleMediaContextMenu}
-            onPointerDown={handleMediaPointerDown}
-            onPointerMove={handleMediaPointerMove}
-            onPointerUp={handleMediaPointerUp}
-          />
-        ))}
+        {paintMedia.map((m) => {
+          const lod = lodSources.get(m.id);
+          return (
+            <MediaItem
+              key={m.id}
+              m={m}
+              isActive={activeSet.has(m.id)}
+              placement={labelPlacements.get(m.id) ?? 'tl'}
+              lodSrc={lod?.lodSrc}
+              playVideo={lod ? lod.playVideo : true}
+              onEnter={handleMediaEnter}
+              onLeave={handleMediaLeave}
+              onClick={handleMediaClick}
+              onDoubleClick={handleMediaDoubleClick}
+              onContextMenu={handleMediaContextMenu}
+              onPointerDown={handleMediaPointerDown}
+              onPointerMove={handleMediaPointerMove}
+              onPointerUp={handleMediaPointerUp}
+            />
+          );
+        })}
       </InfiniteCanvas>
 
       {visibleMedia
