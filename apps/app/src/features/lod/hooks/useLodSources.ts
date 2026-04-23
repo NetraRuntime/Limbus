@@ -145,7 +145,7 @@ export function useLodSources({
       }
 
       const playVideo =
-        item.kind === 'video' && onScreenPx * dpr > MAX_LEVEL_PX;
+        item.kind === 'video' && onScreenPx > MAX_LEVEL_PX;
       const final: LodSource = lodSrc
         ? { lodSrc, isFallback: false, playVideo }
         : { lodSrc: item.src, isFallback: true, playVideo };
