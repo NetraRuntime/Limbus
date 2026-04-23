@@ -2021,7 +2021,7 @@ alone — they drive the loading/error chips.
 
 - [ ] **Step 3: Run tests**
 
-Run: `pnpm --filter @netra/app test --run`
+Run: `pnpm --filter @netrart/app test`
 Expected: PASS.
 
 - [ ] **Step 4: Commit**
