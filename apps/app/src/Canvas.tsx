@@ -12,7 +12,6 @@ import {
   createImage,
   createVideo,
   deleteImage,
-  deleteImageEncoding,
   deleteVideo,
   hardDeleteImage,
   hardDeleteVideo,
@@ -871,9 +870,6 @@ export function Canvas() {
             deleted: [target as HistoryMedia],
             setMedia,
             onConn: setConn,
-            onHardDelete: (hid, kind) => {
-              if (kind === 'image') void deleteImageEncoding(hid);
-            },
           }),
           { alreadyApplied: true },
         );
