@@ -12,6 +12,7 @@ import {
   createImage,
   createVideo,
   deleteImage,
+  deleteImageEncoding,
   deleteVideo,
   hardDeleteImage,
   hardDeleteVideo,
@@ -863,13 +864,26 @@ export function Canvas() {
     }
     const fn = target.kind === 'video' ? deleteVideo : deleteImage;
     fn(id)
-      .then(() => setConn('ready'))
+      .then(() => {
+        setConn('ready');
+        history.push(
+          deleteEntry({
+            deleted: [target as HistoryMedia],
+            setMedia,
+            onConn: setConn,
+            onHardDelete: (hid, kind) => {
+              if (kind === 'image') void deleteImageEncoding(hid);
+            },
+          }),
+          { alreadyApplied: true },
+        );
+      })
       .catch((err) => {
         console.warn('[pb] delete failed for', id, err);
         setConn('offline');
         setMedia((prev) => [...prev, target]);
       });
-  }, []);
+  }, [history]);
 
   const deleteSelection = useCallback(() => {
     const ids = Array.from(selectedIdsRef.current);
