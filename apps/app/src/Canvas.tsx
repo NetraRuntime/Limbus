@@ -14,8 +14,11 @@ import {
   createVideo,
   deleteImage,
   deleteVideo,
+  hardDeleteImage,
+  hardDeleteVideo,
   imageFileUrl,
   listImages,
+  listTrashed,
   listVideos,
   updateImagePosition,
   updateVideoPosition,
@@ -43,6 +46,15 @@ import {
   type LabelPlacement,
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
+import { isTypingContext } from './lib/dom/isTypingContext';
+import { useHistory, useHistoryShortcuts } from './lib/history';
+import {
+  moveEntry,
+  deleteEntry,
+  createEntry,
+  type CanvasActionMeta,
+  type HistoryMedia,
+} from './lib/canvasHistory';
 import './App.css';
 
 type CanvasMedia = {
@@ -546,6 +558,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     };
   }, [tool]);
 
+  const history = useHistory<CanvasActionMeta>({
+    limit: 100,
+    onError: (err, phase) => {
+      console.warn(`[history] ${phase} failed`, err);
+    },
+  });
+  useHistoryShortcuts(history);
+
   const dragRef = useRef<DragState | null>(null);
   const shiftToggledRef = useRef(false);
   const viewRef = useRef<View>(view);
@@ -768,6 +788,38 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     };
   }, []);
 
+  // Launch-time sweep: hard-delete PB records soft-deleted more than 1 hour
+  // ago. Catches sessions that ended before an entry could be evicted from
+  // the history stack (quits, crashes, or idle closes).
+  useEffect(() => {
+    let cancelled = false;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    void listTrashed({ olderThanMs: ONE_HOUR_MS })
+      .then(({ images, videos }) => {
+        if (cancelled) return;
+        for (const img of images) {
+          void hardDeleteImage(img.id)
+            .then(() => {
+              void deleteImageEncoding(img.id);
+            })
+            .catch((err) => {
+              console.warn('[history] sweep hardDeleteImage failed', img.id, err);
+            });
+        }
+        for (const vid of videos) {
+          void hardDeleteVideo(vid.id).catch((err) => {
+            console.warn('[history] sweep hardDeleteVideo failed', vid.id, err);
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('[history] trash sweep failed', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const mediaRef = useRef(media);
   mediaRef.current = media;
   const selectedIdsRef = useRef(selectedIds);
@@ -877,6 +929,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
                 });
               });
             }
+            history.push(
+              createEntry({
+                created: [next as HistoryMedia],
+                setMedia,
+                onConn: setConn,
+              }),
+              { alreadyApplied: true },
+            );
           } catch (err) {
             if ((err as Error | null)?.name !== 'AbortError') {
               const message = (err as Error | null)?.message ?? 'upload failed';
@@ -910,7 +970,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         }),
       ).then(() => {});
     },
-    [sam3Available],
+    [sam3Available, history],
   );
 
   const clearSelection = useCallback(() => {
@@ -1045,16 +1105,29 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     fn(id)
       .then(() => {
         setConn('ready');
-        if (target.kind === 'image') {
-          void deleteImageEncoding(id);
-        }
+        history.push(
+          deleteEntry({
+            deleted: [target as HistoryMedia],
+            setMedia,
+            onConn: setConn,
+            // Keep the SAM3 encoding cache alive during the soft-delete
+            // window so undo → re-segment is instant. Drop it only when
+            // the entry is evicted (history buffer overflow) and the
+            // record is hard-deleted. The launch sweep is the other
+            // path; it also calls deleteImageEncoding after hardDelete.
+            onHardDelete: (hid, kind) => {
+              if (kind === 'image') void deleteImageEncoding(hid);
+            },
+          }),
+          { alreadyApplied: true },
+        );
       })
       .catch((err) => {
         console.warn('[pb] delete failed for', id, err);
         setConn('offline');
         setMedia((prev) => [...prev, target]);
       });
-  }, [clearSegment]);
+  }, [clearSegment, history]);
 
   const deleteSelection = useCallback(() => {
     const ids = Array.from(selectedIdsRef.current);
@@ -1063,24 +1136,6 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   }, [deleteMediaById]);
 
   useEffect(() => {
-    const isEditable = (el: Element | null): boolean => {
-      if (!el || !(el instanceof HTMLElement)) return false;
-      const tag = el.tagName;
-      return (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        el.isContentEditable === true
-      );
-    };
-    const isTypingContext = (e: KeyboardEvent): boolean => {
-      if (isEditable(document.activeElement)) return true;
-      const target = e.target instanceof Element ? e.target : null;
-      if (isEditable(target)) return true;
-      if (target?.closest('.highlight-input, input, textarea, [contenteditable="true"]'))
-        return true;
-      return false;
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         clearSelection();
@@ -1480,7 +1535,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       try {
         (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
       } catch {
-        
+
       }
       const { moved, lastDx, lastDy, orig } = d;
       window.setTimeout(() => {
@@ -1490,6 +1545,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       }, 0);
       if (!moved) return;
       const currentMedia = mediaRef.current;
+      const moves: Array<{
+        id: string;
+        kind: 'image' | 'video';
+        from: { x: number; y: number };
+        to: { x: number; y: number };
+      }> = [];
       for (const [id, o] of orig) {
         const stillPending = currentMedia.find((m) => m.id === id)?.pending;
         if (stillPending) continue;
@@ -1497,6 +1558,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           o.kind === 'video' ? updateVideoPosition : updateImagePosition;
         const nextX = o.x + lastDx;
         const nextY = o.y + lastDy;
+        moves.push({
+          id,
+          kind: o.kind,
+          from: { x: o.x, y: o.y },
+          to: { x: nextX, y: nextY },
+        });
         persist(id, { x: nextX, y: nextY })
           .then(() => setConn('ready'))
           .catch((err) => {
@@ -1507,8 +1574,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             );
           });
       }
+      if (moves.length > 0) {
+        history.push(
+          moveEntry({ moves, setMedia, onConn: setConn }),
+          { alreadyApplied: true },
+        );
+      }
     },
-    [],
+    [history],
   );
 
   const initial = useMemo<Partial<View>>(() => getInitialView(), []);
