@@ -12,22 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import './InfiniteCanvas.css';
-
-const clientToWorld = (
-  clientX: number,
-  clientY: number,
-  rect: DOMRect,
-  view: View,
-): WorldPoint & { screenX: number; screenY: number } => {
-  const screenX = clientX - rect.left;
-  const screenY = clientY - rect.top;
-  return {
-    screenX,
-    screenY,
-    worldX: (screenX - view.x) / view.scale,
-    worldY: (screenY - view.y) / view.scale,
-  };
-};
+import { clientToWorld } from './lib/coords';
 
 export type View = { x: number; y: number; scale: number };
 
