@@ -4,3 +4,5 @@ export type {
   ComposedBake,
   BakeEntry,
 } from './types';
+export { SegmentBakeLayer } from './SegmentBakeLayer';
+export { evictBake, evictDecode } from './bakeCache';
