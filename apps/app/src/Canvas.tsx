@@ -46,9 +46,12 @@ import {
   buildDescriptorFromFile,
   captureDataTransfer,
   dropContainsFolderOrZip,
+  scanTauriPaths,
   type MediaDescriptor,
   type ScanInput,
 } from './lib/mediaIngest';
+import { subscribeTauriDrops } from './lib/tauriDragDrop';
+import { invoke } from '@tauri-apps/api/core';
 import { placeGrid } from './lib/gridPlacement';
 import { useImportPreview } from './hooks/useImportPreview';
 import { ImportPreviewModal } from './components/ImportPreviewModal';
@@ -1070,6 +1073,59 @@ export function Canvas() {
     preview.cancel();
     if (point && descs.length) void importDescriptors(descs, point);
   }, [importDescriptors, preview]);
+
+  useEffect(() => {
+    return subscribeTauriDrops(({ paths, position }) => {
+      if (!paths.length) return;
+      const rect = document.documentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const clientX = position.x / dpr;
+      const clientY = position.y / dpr;
+      const view = canvasRef.current?.getView();
+      if (!view) return;
+      const worldX = (clientX - rect.left - view.x) / view.scale;
+      const worldY = (clientY - rect.top - view.y) / view.scale;
+      const point: WorldPoint = { worldX, worldY };
+      pendingPointRef.current = point;
+
+      const looksLikeFolderOrZip =
+        paths.length > 1 ||
+        paths.some((p) => {
+          const leaf = p.split(/[\\/]/).pop() ?? p;
+          const ext = leaf.includes('.')
+            ? leaf.slice(leaf.lastIndexOf('.') + 1).toLowerCase()
+            : '';
+          return ext === '' || ext === 'zip';
+        });
+
+      if (!looksLikeFolderOrZip) {
+        // Single plain file — bypass preview.
+        void (async () => {
+          const path = paths[0]!;
+          const bytes = (await invoke<number[] | Uint8Array>('read_file_bytes', {
+            path,
+          })) as unknown as ArrayLike<number>;
+          const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+          const leaf = path.split(/[\\/]/).pop() ?? path;
+          const file = new File([u8 as BlobPart], leaf);
+          const budget = { bytesUsed: 0, limit: Number.MAX_SAFE_INTEGER };
+          const descs = await buildDescriptorFromFile(file, leaf, budget);
+          if (descs.length) await importDescriptors(descs, point);
+        })();
+        return;
+      }
+
+      const label =
+        paths.length === 1
+          ? (paths[0]!.split(/[\\/]/).pop() ?? paths[0]!)
+          : `${paths.length} sources`;
+      void preview.start({
+        kind: 'generator',
+        label,
+        makeGenerator: (signal) => scanTauriPaths(paths, signal),
+      });
+    });
+  }, [preview, importDescriptors]);
 
   const handleBackgroundPointerDown = useCallback((p: BackgroundPointerDown) => {
     marqueeRef.current = {

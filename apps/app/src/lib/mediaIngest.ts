@@ -1,5 +1,6 @@
 // apps/app/src/lib/mediaIngest.ts
 
+import { invoke } from '@tauri-apps/api/core';
 import { unzipSync } from 'fflate';
 
 export const SOFT_ITEM_CAP = 500;
@@ -330,6 +331,150 @@ export async function* scanDataTransfer(
         type: 'error',
         code: 'cap-depth',
         message: `Zip nesting exceeds ${MAX_ZIP_DEPTH} levels.`,
+      };
+      return;
+    }
+    if (err instanceof ZipMalformedError) {
+      yield {
+        type: 'error',
+        code: 'zip-malformed',
+        message: `Archive is malformed and could not be opened.`,
+      };
+      return;
+    }
+    yield {
+      type: 'error',
+      code: 'scan-failed',
+      message: (err as Error).message || 'scan failed',
+    };
+  }
+}
+
+type TauriEntryInfo = {
+  absolutePath: string;
+  relativePath: string;
+  size: number;
+  extension: string;
+};
+
+function descriptorFromTauriEntry(
+  entry: TauriEntryInfo,
+): MediaDescriptor | null {
+  const kind = classifyByExtension(entry.relativePath);
+  if (kind !== 'image' && kind !== 'video') return null;
+  const leaf = entry.relativePath.split('/').pop() ?? entry.relativePath;
+  const mime = mimeFromExtension(leaf);
+  return {
+    relativePath: entry.relativePath,
+    name: leaf,
+    size: entry.size,
+    kind,
+    mime,
+    source: { type: 'tauri-path', absolutePath: entry.absolutePath },
+    load: async () => {
+      const bytes = (await invoke<number[] | Uint8Array>('read_file_bytes', {
+        path: entry.absolutePath,
+      })) as unknown as ArrayLike<number>;
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      return new File([u8 as BlobPart], leaf, mime ? { type: mime } : undefined);
+    },
+  };
+}
+
+export async function* scanTauriPaths(
+  paths: string[],
+  signal: AbortSignal,
+): AsyncGenerator<ScanEvent> {
+  const budget: SizeBudget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
+  let scanned = 0;
+  let bytes = 0;
+  let softWarned = false;
+
+  try {
+    const entries = (await invoke<TauriEntryInfo[]>('scan_paths', {
+      paths,
+    })) as TauriEntryInfo[];
+    if (signal.aborted) {
+      yield { type: 'error', code: 'aborted', message: 'scan cancelled' };
+      return;
+    }
+
+    for (const entry of entries) {
+      if (signal.aborted) {
+        yield { type: 'error', code: 'aborted', message: 'scan cancelled' };
+        return;
+      }
+
+      const kind = classifyByExtension(entry.relativePath);
+      if (kind === 'zip') {
+        const rawBytes = (await invoke<number[] | Uint8Array>('read_file_bytes', {
+          path: entry.absolutePath,
+        })) as unknown as ArrayLike<number>;
+        const u8 =
+          rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
+        budget.bytesUsed += u8.byteLength;
+        if (budget.bytesUsed > budget.limit) {
+          yield {
+            type: 'error',
+            code: 'cap-hard',
+            message: `Archive exceeds the ${(budget.limit / 1024 ** 3).toFixed(0)} GB uncompressed limit.`,
+          };
+          return;
+        }
+        const inner = extractZipRecursive(u8, entry.relativePath, 1, budget);
+        for (const d of inner) {
+          scanned++;
+          bytes += d.size;
+          yield { type: 'descriptor', descriptor: d };
+          if (scanned > HARD_ITEM_CAP) {
+            yield {
+              type: 'error',
+              code: 'cap-hard',
+              message: `Too many files (${scanned}).`,
+            };
+            return;
+          }
+          if (!softWarned && (scanned >= SOFT_ITEM_CAP || bytes >= SOFT_SIZE_BYTES)) {
+            softWarned = true;
+            yield { type: 'warning', code: 'cap-soft', count: scanned, bytes };
+          }
+        }
+        continue;
+      }
+
+      const d = descriptorFromTauriEntry(entry);
+      if (!d) continue;
+      scanned++;
+      bytes += d.size;
+      yield { type: 'descriptor', descriptor: d };
+      if (scanned > HARD_ITEM_CAP) {
+        yield {
+          type: 'error',
+          code: 'cap-hard',
+          message: `Too many files (${scanned}).`,
+        };
+        return;
+      }
+      if (!softWarned && (scanned >= SOFT_ITEM_CAP || bytes >= SOFT_SIZE_BYTES)) {
+        softWarned = true;
+        yield { type: 'warning', code: 'cap-soft', count: scanned, bytes };
+      }
+    }
+    yield { type: 'done' };
+  } catch (err) {
+    if (err instanceof DepthCapExceededError) {
+      yield {
+        type: 'error',
+        code: 'cap-depth',
+        message: `Zip nesting exceeds ${MAX_ZIP_DEPTH} levels.`,
+      };
+      return;
+    }
+    if (err instanceof SizeCapExceededError) {
+      yield {
+        type: 'error',
+        code: 'cap-hard',
+        message: `Archive exceeds the ${(budget.limit / 1024 ** 3).toFixed(0)} GB uncompressed limit.`,
       };
       return;
     }
