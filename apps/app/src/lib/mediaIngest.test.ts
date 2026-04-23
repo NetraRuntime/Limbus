@@ -5,12 +5,14 @@ import {
   extractZipRecursive,
   SizeCapExceededError,
   DepthCapExceededError,
+  ZipMalformedError,
   SOFT_ITEM_CAP,
   HARD_ITEM_CAP,
   MAX_ZIP_DEPTH,
   MAX_UNCOMPRESSED_BYTES,
   SOFT_SIZE_BYTES,
   buildDescriptorFromFile,
+  dropContainsFolderOrZip,
 } from './mediaIngest';
 
 describe('classifyByExtension', () => {
@@ -183,16 +185,14 @@ describe('extractZipRecursive', () => {
     ).toThrow(SizeCapExceededError);
   });
 
-  it('throws on malformed zip bytes', () => {
-    // Task 5's scanDataTransfer will wrap this and translate to a
-    // 'zip-malformed' ScanEvent; Task 2's contract is: throw, don't swallow.
+  it('throws ZipMalformedError on malformed zip bytes', () => {
     const garbage = new Uint8Array([0, 0, 0, 0, 1, 2, 3]);
     expect(() =>
       extractZipRecursive(garbage, 'root.zip', 0, {
         bytesUsed: 0,
         limit: MAX_UNCOMPRESSED_BYTES,
       }),
-    ).toThrow();
+    ).toThrow(ZipMalformedError);
   });
 });
 
@@ -225,5 +225,32 @@ describe('buildDescriptorFromFile', () => {
     const budget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
     const descs = await buildDescriptorFromFile(f, 'readme.txt', budget);
     expect(descs).toHaveLength(0);
+  });
+});
+
+describe('dropContainsFolderOrZip', () => {
+  it('returns true when a fallback file is a zip', () => {
+    const zipFile = new File([], 'pack.zip');
+    expect(
+      dropContainsFolderOrZip({ entries: [], fallbackFiles: [zipFile] }),
+    ).toBe(true);
+  });
+
+  it('returns true when an entry is a directory', () => {
+    const fakeDir = {
+      isDirectory: true,
+      isFile: false,
+      name: 'photos',
+    } as FileSystemEntry;
+    expect(
+      dropContainsFolderOrZip({ entries: [fakeDir], fallbackFiles: [] }),
+    ).toBe(true);
+  });
+
+  it('returns false for only-plain-file fallbacks', () => {
+    const img = new File([], 'a.png');
+    expect(
+      dropContainsFolderOrZip({ entries: [], fallbackFiles: [img] }),
+    ).toBe(false);
   });
 });
