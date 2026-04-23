@@ -636,6 +636,16 @@
   mix-blend-mode: normal;
 }
 
+/* White outline layer, stacked over the tinted fill. Rendered from the
+   luma channel of the same mask PNG, which the Rust worker writes as a
+   1-pixel ring along the binary mask boundary. */
+.segment-mask-edge {
+  position: fixed;
+  z-index: 12;
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+
 .segment-bbox {
   position: fixed;
   z-index: 13;
