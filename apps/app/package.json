@@ -21,6 +21,7 @@
     "@netrart/design-system": "workspace:*",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "fflate": "^0.8.2",
     "pocketbase": "^0.26.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
