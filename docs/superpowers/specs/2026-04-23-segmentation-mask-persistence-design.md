@@ -42,7 +42,7 @@ New PocketBase collection `segmentations`, one row per `(image, tag)` pair.
 
 ## Migration
 
-`pb/pb_migrations/1777100000_init_segmentations.js` — mirrors `1776700800_init_images.js`:
+`pb/pb_migrations/1777200000_init_segmentations.js` — mirrors `1776700800_init_images.js`:
 
 - `up`: `new Collection({ type: 'base', name: 'segmentations', fields: [...], indexes: [...], ...Rule: '' })`, then `app.save(collection)`.
 - `down`: `app.findCollectionByNameOrId('segmentations')` → `app.delete(collection)`.
@@ -204,7 +204,7 @@ Manual:
 
 ## File touch list
 
-- `pb/pb_migrations/1777100000_init_segmentations.js` — new
+- `pb/pb_migrations/1777200000_init_segmentations.js` — new
 - `apps/app/src/lib/pb.ts` — add schemas + 4 helpers
 - `apps/app/src/Canvas.tsx` — 3 hooks: persist in `submitSegment` resolve, prune at submit start, wipe in `clearSegment`, hydrate on load
 
