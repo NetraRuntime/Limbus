@@ -134,4 +134,62 @@ describe('createHistoryController', () => {
 
     expect(order).toEqual(['b', 'a']);
   });
+
+  it('surfaces undo errors via onError and rolls the entry back to past', async () => {
+    const onError = vi.fn();
+    const c = createHistoryController({ onError });
+    const failing: HistoryEntry = {
+      label: 'boom',
+      do: vi.fn(),
+      undo: vi.fn().mockRejectedValueOnce(new Error('PB offline')),
+    };
+
+    c.push(failing, { alreadyApplied: true });
+    await c.undo();
+
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), 'undo');
+    // Entry stays retryable — still in past, future empty.
+    expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: false });
+  });
+
+  it('surfaces redo errors via onError and rolls the entry back to future', async () => {
+    const onError = vi.fn();
+    const c = createHistoryController({ onError });
+    const doFn = vi.fn().mockRejectedValueOnce(new Error('PB offline'));
+    const entry: HistoryEntry = {
+      label: 'boom',
+      do: doFn,
+      undo: vi.fn(),
+    };
+
+    c.push(entry, { alreadyApplied: true });
+    await c.undo();
+    await c.redo();
+
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), 'do');
+    expect(c.getSnapshot()).toEqual({ canUndo: false, canRedo: true });
+  });
+
+  it('push with alreadyApplied: true does not call do, but redo does', async () => {
+    const c = createHistoryController();
+    const doSpy = vi.fn();
+    const undoSpy = vi.fn();
+    const entry: HistoryEntry = { label: 'x', do: doSpy, undo: undoSpy };
+
+    c.push(entry, { alreadyApplied: true });
+    expect(doSpy).not.toHaveBeenCalled();
+
+    await c.undo();
+    expect(undoSpy).toHaveBeenCalledTimes(1);
+
+    await c.redo();
+    expect(doSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('push without alreadyApplied calls do immediately', () => {
+    const c = createHistoryController();
+    const doSpy = vi.fn();
+    c.push({ label: 'x', do: doSpy, undo: vi.fn() });
+    expect(doSpy).toHaveBeenCalledTimes(1);
+  });
 });
