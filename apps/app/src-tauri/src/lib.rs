@@ -84,12 +84,122 @@ fn sam3_version() -> String {
     sam3::version().to_string()
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EntryInfo {
+    absolute_path: String,
+    relative_path: String,
+    size: u64,
+    extension: String,
+}
+
+fn is_supported_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "bmp" | "heic" | "heif" | "svg" |
+        "mp4" | "webm" | "mov" | "m4v" | "mkv" | "ogv" | "avi" | "3gp" |
+        "zip"
+    )
+}
+
+fn walk_into(
+    root_name: &str,
+    absolute: &std::path::Path,
+    out: &mut Vec<EntryInfo>,
+) -> std::io::Result<()> {
+    let meta = std::fs::metadata(absolute)?;
+    if meta.is_file() {
+        let ext = absolute
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default();
+        if !is_supported_ext(&ext) {
+            return Ok(());
+        }
+        let relative = root_name.to_string();
+        out.push(EntryInfo {
+            absolute_path: absolute.to_string_lossy().to_string(),
+            relative_path: relative,
+            size: meta.len(),
+            extension: ext,
+        });
+        return Ok(());
+    }
+    if !meta.is_dir() {
+        return Ok(());
+    }
+    fn walk_dir(
+        prefix: &str,
+        dir: &std::path::Path,
+        out: &mut Vec<EntryInfo>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let next_prefix = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let ft = entry.file_type()?;
+            if ft.is_dir() {
+                walk_dir(&next_prefix, &path, out)?;
+            } else if ft.is_file() {
+                let ext = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_ascii_lowercase())
+                    .unwrap_or_default();
+                if !is_supported_ext(&ext) {
+                    continue;
+                }
+                let size = std::fs::metadata(&path)?.len();
+                out.push(EntryInfo {
+                    absolute_path: path.to_string_lossy().to_string(),
+                    relative_path: next_prefix,
+                    size,
+                    extension: ext,
+                });
+            }
+        }
+        Ok(())
+    }
+    walk_dir(root_name, absolute, out)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn scan_paths(paths: Vec<String>) -> Result<Vec<EntryInfo>, String> {
+    let mut out = Vec::new();
+    for p in paths {
+        let path = std::path::PathBuf::from(&p);
+        let root_name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| p.clone());
+        walk_into(&root_name, &path, &mut out).map_err(|e| format!("scan {p}: {e}"))?;
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+    std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(PocketBaseProcess::default())
-        .invoke_handler(tauri::generate_handler![pb_url, sam3_version])
+        .invoke_handler(tauri::generate_handler![
+            pb_url,
+            sam3_version,
+            scan_paths,
+            read_file_bytes,
+        ])
         .setup(|app| {
             if port_in_use() {
                 eprintln!("[pocketbase] {PB_HOST}:{PB_PORT} already bound — skipping sidecar, using existing instance");
