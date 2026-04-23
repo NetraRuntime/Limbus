@@ -45,6 +45,7 @@ import { labelOuterWidth } from './lib/labelMetrics';
 import {
   createLodCache,
   createMipWorkerClient,
+  useLodHydration,
   useLodSources,
   type LodCache,
   type MipWorkerClient,
@@ -612,10 +613,52 @@ export function Canvas() {
     dpr,
     cache: lodCache,
   });
-  // Task 13 will wire these into hydration + delete handlers.
-  void reportLevelBlob;
-  void reportDims;
-  void dropAsset;
+  const [priorityIds, setPriorityIds] = useState<Set<string>>(() => new Set());
+
+  const hydrationItems = useMemo(
+    () =>
+      media
+        .filter((m) => !m.pending)
+        .map((m) => ({
+          id: m.id,
+          kind: m.kind,
+          src: m.src,
+          priority: priorityIds.has(m.id),
+        })),
+    [media, priorityIds],
+  );
+
+  const handleLevelReady = useCallback(
+    (e: { assetId: string; levelPx: number; blob: Blob }) => {
+      reportLevelBlob(e.assetId, e.levelPx, e.blob);
+    },
+    [reportLevelBlob],
+  );
+
+  const handleAssetReady = useCallback(
+    (id: string) => {
+      setPriorityIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (lodCache) {
+        void lodCache.getDims(id).then((d) => {
+          if (d) reportDims(id, d.naturalWidth, d.naturalHeight);
+        });
+      }
+    },
+    [lodCache, reportDims],
+  );
+
+  useLodHydration({
+    items: hydrationItems,
+    cache: lodCache,
+    worker: lodWorkerRef.current,
+    onLevelReady: handleLevelReady,
+    onAssetReady: handleAssetReady,
+  });
 
   // Label placement: per-item corner (tl/tr/bl/br) chosen so the filename
   // badge doesn't land over a strictly-higher-stacked neighbor. Rank comes
@@ -808,6 +851,11 @@ export function Canvas() {
             const next =
               p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
             setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
+            setPriorityIds((prev) => {
+              const out = new Set(prev);
+              out.add(next.id);
+              return out;
+            });
             URL.revokeObjectURL(p.draft.src);
             setConn('ready');
           } catch (err) {
@@ -921,13 +969,17 @@ export function Canvas() {
     }
     const fn = target.kind === 'video' ? deleteVideo : deleteImage;
     fn(id)
-      .then(() => setConn('ready'))
+      .then(() => {
+        setConn('ready');
+        if (lodCache) void lodCache.delete(id);
+        dropAsset(id);
+      })
       .catch((err) => {
         console.warn('[pb] delete failed for', id, err);
         setConn('offline');
         setMedia((prev) => [...prev, target]);
       });
-  }, []);
+  }, [lodCache, dropAsset]);
 
   const deleteSelection = useCallback(() => {
     const ids = Array.from(selectedIdsRef.current);
