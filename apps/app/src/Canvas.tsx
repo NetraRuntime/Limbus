@@ -32,10 +32,12 @@ import {
   HIGHLIGHT_INPUT_GAP,
   HIGHLIGHT_INPUT_HEIGHT,
 } from './components/HighlightInput';
+import { colorForTag } from './components/savedTags';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { Sam3VersionBadge } from './components/Sam3VersionBadge';
+import { SavedTagsPopover } from './components/SavedTagsPopover';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
 import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
@@ -169,24 +171,6 @@ const uid = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-/** Qualitative palette for distinguishing overlapping segmentation masks.
- *  Hand-picked for decent contrast against typical photography and against
- *  each other. Cycled by index when more masks are returned than colors. */
-const MASK_PALETTE = [
-  '#4aa8ff', // blue
-  '#ff6fae', // pink
-  '#ffc94a', // amber
-  '#48d5a1', // green
-  '#a46cff', // violet
-  '#ff7a59', // coral
-  '#26c4d6', // teal
-  '#f05a5a', // red
-  '#9ed356', // lime
-  '#d9a3ff', // lavender
-];
-
-const maskColor = (i: number) => MASK_PALETTE[i % MASK_PALETTE.length]!;
-
 async function precacheImageEncoding(record: ImageRecord): Promise<void> {
   try {
     await invoke('sam3_encode_image', {
@@ -253,10 +237,12 @@ type SegmentResponse = {
   source_height: number;
 };
 
-type SegmentState =
-  | { status: 'loading'; text: string }
-  | { status: 'ready'; text: string; response: SegmentResponse }
-  | { status: 'error'; text: string; message: string };
+type TagSegment =
+  | { tag: string; status: 'loading' }
+  | { tag: string; status: 'ready'; response: SegmentResponse }
+  | { tag: string; status: 'error'; message: string };
+
+type SegmentState = { entries: TagSegment[] };
 
 const HIGHLIGHT_BOTTOM_INSET_PX = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
 
@@ -1145,11 +1131,23 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   }, []);
 
   const submitSegment = useCallback(
-    (m: CanvasMedia, text: string) => {
+    (m: CanvasMedia, tags: string[]) => {
       if (m.kind !== 'image') return;
       if (!sam3Available) return;
-      const raw = text.trim();
-      if (!raw) {
+      // De-dupe case-insensitively but keep the first-seen casing as the
+      // tag's canonical identity — the pill, the mask, and the bbox all
+      // key off this exact string via colorForTag.
+      const seen = new Set<string>();
+      const cleaned: string[] = [];
+      for (const raw of tags) {
+        const t = raw.trim();
+        if (!t) continue;
+        const key = t.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        cleaned.push(t);
+      }
+      if (cleaned.length === 0) {
         clearSegment(m.id);
         return;
       }
@@ -1159,29 +1157,45 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       }
       const seq = (segmentSeqRef.current[m.id] ?? 0) + 1;
       segmentSeqRef.current[m.id] = seq;
-      setSegments((prev) => ({ ...prev, [m.id]: { status: 'loading', text: raw } }));
-      invoke<SegmentResponse>('sam3_segment_text', {
-        id: m.id,
-        collectionId: m.collectionId,
-        file: m.file,
-        text: raw,
-      })
-        .then((response) => {
-          if (segmentSeqRef.current[m.id] !== seq) return;
-          setSegments((prev) => ({
+      setSegments((prev) => ({
+        ...prev,
+        [m.id]: { entries: cleaned.map((tag) => ({ tag, status: 'loading' })) },
+      }));
+
+      const updateTag = (tag: string, patch: TagSegment) => {
+        if (segmentSeqRef.current[m.id] !== seq) return;
+        setSegments((prev) => {
+          const current = prev[m.id];
+          if (!current) return prev;
+          return {
             ...prev,
-            [m.id]: { status: 'ready', text: raw, response },
-          }));
-        })
-        .catch((err: unknown) => {
-          if (segmentSeqRef.current[m.id] !== seq) return;
-          const message = err instanceof Error ? err.message : String(err);
-          console.warn('[sam3] segment failed for', m.id, err);
-          setSegments((prev) => ({
-            ...prev,
-            [m.id]: { status: 'error', text: raw, message },
-          }));
+            [m.id]: {
+              entries: current.entries.map((entry) =>
+                entry.tag === tag ? patch : entry,
+              ),
+            },
+          };
         });
+      };
+
+      // Each tag is a separate prompt — SAM3 is single-object per call and
+      // the worker already queues concurrent invokes server-side.
+      for (const tag of cleaned) {
+        invoke<SegmentResponse>('sam3_segment_text', {
+          id: m.id,
+          collectionId: m.collectionId,
+          file: m.file,
+          text: tag,
+        })
+          .then((response) => {
+            updateTag(tag, { tag, status: 'ready', response });
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`[sam3] segment failed for ${m.id} (${tag})`, err);
+            updateTag(tag, { tag, status: 'error', message });
+          });
+      }
     },
     [clearSegment, sam3Available],
   );
@@ -2051,90 +2065,126 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const rh = m.height * view.scale;
           const state = segments[m.id]!;
           const base = `segment-${m.id}`;
-          if (state.status === 'loading') {
-            return [
-              <div
-                key={`${base}-loading`}
-                className="segment-overlay segment-overlay--loading"
-                style={{ left: rx, top: ry, width: rw, height: rh }}
-                role="status"
-                aria-live="polite"
-                aria-label={`Segmenting "${state.text}"`}
-              >
-                <div className="segment-chip">
-                  <span className="encoding-spinner" aria-hidden />
-                  <span className="encoding-label">Segmenting</span>
-                </div>
-              </div>,
-            ];
-          }
-          if (state.status === 'error') {
-            return [
-              <div
-                key={`${base}-error`}
-                className="segment-overlay segment-overlay--error"
-                style={{ left: rx, top: ry, width: rw, height: rh }}
-                role="alert"
-                title={state.message}
-              >
-                <div className="segment-chip segment-chip--error">
-                  <i className="ri-error-warning-line" aria-hidden />
-                  <span className="encoding-label">No match</span>
-                </div>
-              </div>,
-            ];
-          }
-          return state.response.masks.flatMap((mask, idx) => {
-            const color = maskColor(idx);
-            const nodes: JSX.Element[] = [
-              <div
-                key={`${base}-mask-${idx}`}
-                className="segment-mask"
-                style={{
-                  left: rx,
-                  top: ry,
-                  width: rw,
-                  height: rh,
-                  backgroundColor: color,
-                  opacity: 0.5,
-                  WebkitMaskImage: `url(data:image/png;base64,${mask.png_base64})`,
-                  maskImage: `url(data:image/png;base64,${mask.png_base64})`,
-                  WebkitMaskSize: '100% 100%',
-                  maskSize: '100% 100%',
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskRepeat: 'no-repeat',
-                }}
-                aria-hidden
-              />,
-            ];
-            // Bounding box is in mask-pixel coordinates; translate to
-            // screen coordinates via the mask's own width/height so it
-            // rides the image through pan/zoom.
-            if (mask.bbox && mask.width > 0 && mask.height > 0) {
-              const [x1, y1, x2, y2] = mask.bbox;
-              const fx = rw / mask.width;
-              const fy = rh / mask.height;
-              const bx = rx + x1 * fx;
-              const by = ry + y1 * fy;
-              const bw = Math.max(1, (x2 - x1) * fx);
-              const bh = Math.max(1, (y2 - y1) * fy);
+          const nodes: JSX.Element[] = [];
+
+          // Per-tag masks + boxes, each recolored by its tag identity so
+          // the pill, mask fill, and bounding box share one hue.
+          for (const entry of state.entries) {
+            if (entry.status !== 'ready') continue;
+            const { accent } = colorForTag(entry.tag);
+            entry.response.masks.forEach((mask, idx) => {
+              const maskKey = `${base}-${entry.tag}-mask-${idx}`;
               nodes.push(
                 <div
-                  key={`${base}-box-${idx}`}
-                  className="segment-bbox"
+                  key={maskKey}
+                  className="segment-mask"
                   style={{
-                    left: bx,
-                    top: by,
-                    width: bw,
-                    height: bh,
-                    borderColor: color,
+                    left: rx,
+                    top: ry,
+                    width: rw,
+                    height: rh,
+                    backgroundColor: accent,
+                    opacity: 0.5,
+                    WebkitMaskImage: `url(data:image/png;base64,${mask.png_base64})`,
+                    maskImage: `url(data:image/png;base64,${mask.png_base64})`,
+                    WebkitMaskSize: '100% 100%',
+                    maskSize: '100% 100%',
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
                   }}
                   aria-hidden
                 />,
               );
-            }
-            return nodes;
-          });
+              // Bounding box is in mask-pixel coordinates; translate to
+              // screen coordinates via the mask's own width/height so it
+              // rides the image through pan/zoom.
+              if (mask.bbox && mask.width > 0 && mask.height > 0) {
+                const [x1, y1, x2, y2] = mask.bbox;
+                const fx = rw / mask.width;
+                const fy = rh / mask.height;
+                const bx = rx + x1 * fx;
+                const by = ry + y1 * fy;
+                const bw = Math.max(1, (x2 - x1) * fx);
+                const bh = Math.max(1, (y2 - y1) * fy);
+                nodes.push(
+                  <div
+                    key={`${base}-${entry.tag}-box-${idx}`}
+                    className="segment-bbox"
+                    style={{
+                      left: bx,
+                      top: by,
+                      width: bw,
+                      height: bh,
+                      borderColor: accent,
+                    }}
+                    aria-hidden
+                  />,
+                );
+              }
+            });
+          }
+
+          const loadingTags = state.entries.filter((e) => e.status === 'loading');
+          const errorTags = state.entries.filter(
+            (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
+          );
+
+          if (loadingTags.length > 0 || errorTags.length > 0) {
+            nodes.push(
+              <div
+                key={`${base}-chips`}
+                className="segment-overlay segment-overlay--chips"
+                style={{ left: rx, top: ry, width: rw, height: rh }}
+                aria-hidden
+              >
+                <div className="segment-chip-stack">
+                  {loadingTags.map((entry) => {
+                    const { bg, fg, border } = colorForTag(entry.tag);
+                    return (
+                      <div
+                        key={`loading-${entry.tag}`}
+                        className="segment-chip"
+                        style={{
+                          background: bg,
+                          color: fg,
+                          borderColor: border,
+                        }}
+                        role="status"
+                        aria-live="polite"
+                        aria-label={`Segmenting "${entry.tag}"`}
+                      >
+                        <span className="encoding-spinner" aria-hidden />
+                        <span className="encoding-label">{entry.tag}</span>
+                      </div>
+                    );
+                  })}
+                  {errorTags.map((entry) => {
+                    const { bg, fg, border } = colorForTag(entry.tag);
+                    return (
+                      <div
+                        key={`error-${entry.tag}`}
+                        className="segment-chip segment-chip--error"
+                        style={{
+                          background: bg,
+                          color: fg,
+                          borderColor: border,
+                        }}
+                        role="alert"
+                        title={entry.message}
+                      >
+                        <i className="ri-error-warning-line" aria-hidden />
+                        <span className="encoding-label">
+                          No match — {entry.tag}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>,
+            );
+          }
+
+          return nodes;
         })}
 
       {tool === 'box' && activeMedia && activeRect && cursor && (() => {
@@ -2206,7 +2256,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             clearSelection();
             scheduleHide();
           }}
-          onSubmit={(next) => submitSegment(activeMedia, next.join(', '))}
+          onSubmit={(next) => submitSegment(activeMedia, next)}
           onDeleteWhenEmpty={deleteSelection}
           autoFocus={selectedIds.has(activeMedia.id)}
         />
@@ -2441,6 +2491,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       </div>
 
       <div className="hud hud-top-right">
+        <SavedTagsPopover />
         {settingsPillGlass.filterSvg}
         <div
           ref={settingsPillGlass.ref}
