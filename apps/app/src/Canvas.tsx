@@ -752,6 +752,14 @@ export function Canvas() {
             setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
             URL.revokeObjectURL(p.draft.src);
             setConn('ready');
+            history.push(
+              createEntry({
+                created: [next as HistoryMedia],
+                setMedia,
+                onConn: setConn,
+              }),
+              { alreadyApplied: true },
+            );
           } catch (err) {
             if ((err as Error | null)?.name !== 'AbortError') {
               const message = (err as Error | null)?.message ?? 'upload failed';
@@ -785,7 +793,7 @@ export function Canvas() {
         }),
       ).then(() => {});
     },
-    [],
+    [history],
   );
 
   const clearSelection = useCallback(() => {
