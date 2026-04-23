@@ -1129,11 +1129,68 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       });
   }, [clearSegment, history]);
 
+  // Batched multi-delete: one history entry covers every soft-deleted item
+  // in the current selection so Cmd-Z restores them all atomically. Pending
+  // uploads are aborted individually — they have no server state to undo, so
+  // they don't participate in the entry. If the selection contains only
+  // pending items, no entry is pushed (nothing to undo).
   const deleteSelection = useCallback(() => {
     const ids = Array.from(selectedIdsRef.current);
     if (ids.length === 0) return;
-    for (const id of ids) deleteMediaById(id);
-  }, [deleteMediaById]);
+    const idSet = new Set(ids);
+    const targets = mediaRef.current.filter((m) => idSet.has(m.id));
+    if (targets.length === 0) return;
+
+    const pending = targets.filter((t) => t.pending);
+    const live = targets.filter((t) => !t.pending);
+
+    setMedia((prev) => prev.filter((m) => !idSet.has(m.id)));
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+    setLastSelectedId((cur) => (cur && idSet.has(cur) ? null : cur));
+    setHoverId((cur) => (cur && idSet.has(cur) ? null : cur));
+
+    for (const t of pending) {
+      uploadCtrlsRef.current[t.id]?.abort();
+      URL.revokeObjectURL(t.src);
+    }
+    for (const t of live) clearSegment(t.id);
+
+    if (live.length === 0) return;
+
+    Promise.all(
+      live.map((t) =>
+        (t.kind === 'video' ? deleteVideo : deleteImage)(t.id),
+      ),
+    )
+      .then(() => {
+        setConn('ready');
+        history.push(
+          deleteEntry({
+            deleted: live as HistoryMedia[],
+            setMedia,
+            onConn: setConn,
+            onHardDelete: (hid, kind) => {
+              if (kind === 'image') void deleteImageEncoding(hid);
+            },
+          }),
+          { alreadyApplied: true },
+        );
+      })
+      .catch((err) => {
+        console.warn('[pb] batch delete failed', err);
+        setConn('offline');
+        setMedia((prev) => {
+          const have = new Set(prev.map((m) => m.id));
+          const restored = live.filter((t) => !have.has(t.id));
+          return [...prev, ...restored];
+        });
+      });
+  }, [clearSegment, history]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
