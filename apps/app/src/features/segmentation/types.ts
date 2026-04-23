@@ -27,7 +27,9 @@ export type ComposeInput = {
     bbox: [number, number, number, number] | null;
     accent: string;
   }>;
-  decodeCache: Map<string, ImageBitmap>;
+  decodeCache: {
+    get: (key: string) => Promise<ImageBitmap>;
+  };
 };
 
 /**
