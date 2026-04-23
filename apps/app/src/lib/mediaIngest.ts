@@ -32,7 +32,7 @@ export type ScanEvent =
   | { type: 'done' }
   | {
       type: 'error';
-      code: 'cap-hard' | 'zip-malformed' | 'aborted' | 'scan-failed';
+      code: 'cap-hard' | 'cap-depth' | 'zip-malformed' | 'aborted' | 'scan-failed';
       message: string;
     };
 
@@ -87,6 +87,13 @@ export class DepthCapExceededError extends Error {
   }
 }
 
+export class ZipMalformedError extends Error {
+  constructor(public override cause: unknown) {
+    super(`zip archive is malformed: ${(cause as Error)?.message ?? String(cause)}`);
+    this.name = 'ZipMalformedError';
+  }
+}
+
 export type SizeBudget = { bytesUsed: number; limit: number };
 
 export function extractZipRecursive(
@@ -97,7 +104,12 @@ export function extractZipRecursive(
 ): MediaDescriptor[] {
   if (depth > MAX_ZIP_DEPTH) throw new DepthCapExceededError(depth);
 
-  const entries = unzipSync(zipBytes);
+  let entries: Record<string, Uint8Array>;
+  try {
+    entries = unzipSync(zipBytes);
+  } catch (err) {
+    throw new ZipMalformedError(err);
+  }
   const out: MediaDescriptor[] = [];
 
   for (const [name, bytes] of Object.entries(entries)) {
@@ -316,8 +328,16 @@ export async function* scanDataTransfer(
     if (err instanceof DepthCapExceededError) {
       yield {
         type: 'error',
-        code: 'zip-malformed',
+        code: 'cap-depth',
         message: `Zip nesting exceeds ${MAX_ZIP_DEPTH} levels.`,
+      };
+      return;
+    }
+    if (err instanceof ZipMalformedError) {
+      yield {
+        type: 'error',
+        code: 'zip-malformed',
+        message: `Archive is malformed and could not be opened.`,
       };
       return;
     }
