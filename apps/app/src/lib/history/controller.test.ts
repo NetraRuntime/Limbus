@@ -49,4 +49,57 @@ describe('createHistoryController', () => {
     expect(cc.doSpy).toHaveBeenCalledTimes(1);
     expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: false });
   });
+
+  it('evicts the oldest entry when past exceeds limit', () => {
+    const c = createHistoryController({ limit: 2 });
+    const a = makeEntry('a');
+    const b = makeEntry('b');
+    const cc = makeEntry('c');
+
+    c.push(a, { alreadyApplied: true });
+    c.push(b, { alreadyApplied: true });
+    c.push(cc, { alreadyApplied: true });
+
+    expect(a.evictSpy).toHaveBeenCalledTimes(1);
+    expect(b.evictSpy).not.toHaveBeenCalled();
+    expect(cc.evictSpy).not.toHaveBeenCalled();
+    expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: false });
+  });
+
+  it('clears future and evicts each cleared entry when a new push happens', async () => {
+    const c = createHistoryController();
+    const a = makeEntry('a');
+    const b = makeEntry('b');
+    const cc = makeEntry('c');
+    const d = makeEntry('d');
+
+    c.push(a, { alreadyApplied: true });
+    c.push(b, { alreadyApplied: true });
+    c.push(cc, { alreadyApplied: true });
+    await c.undo();
+    await c.undo();
+    expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: true });
+
+    c.push(d, { alreadyApplied: true });
+
+    expect(b.evictSpy).toHaveBeenCalledTimes(1);
+    expect(cc.evictSpy).toHaveBeenCalledTimes(1);
+    expect(a.evictSpy).not.toHaveBeenCalled();
+    expect(d.evictSpy).not.toHaveBeenCalled();
+    expect(c.getSnapshot()).toEqual({ canUndo: true, canRedo: false });
+  });
+
+  it('clear() drains past and future and evicts every entry', () => {
+    const c = createHistoryController();
+    const a = makeEntry('a');
+    const b = makeEntry('b');
+    c.push(a, { alreadyApplied: true });
+    c.push(b, { alreadyApplied: true });
+
+    c.clear();
+
+    expect(a.evictSpy).toHaveBeenCalledTimes(1);
+    expect(b.evictSpy).toHaveBeenCalledTimes(1);
+    expect(c.getSnapshot()).toEqual({ canUndo: false, canRedo: false });
+  });
 });
