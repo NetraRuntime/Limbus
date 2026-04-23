@@ -42,6 +42,7 @@ import {
   type LabelPlacement,
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
+import { isTypingContext } from './lib/dom/isTypingContext';
 import './App.css';
 
 type CanvasMedia = {
@@ -858,24 +859,6 @@ export function Canvas() {
   }, [deleteMediaById]);
 
   useEffect(() => {
-    const isEditable = (el: Element | null): boolean => {
-      if (!el || !(el instanceof HTMLElement)) return false;
-      const tag = el.tagName;
-      return (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        el.isContentEditable === true
-      );
-    };
-    const isTypingContext = (e: KeyboardEvent): boolean => {
-      if (isEditable(document.activeElement)) return true;
-      const target = e.target instanceof Element ? e.target : null;
-      if (isEditable(target)) return true;
-      if (target?.closest('.highlight-input, input, textarea, [contenteditable="true"]'))
-        return true;
-      return false;
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         clearSelection();
