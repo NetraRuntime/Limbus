@@ -589,6 +589,123 @@
   animation: highlightInputIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.highlight-input-row {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.highlight-input-row::-webkit-scrollbar {
+  display: none;
+}
+
+.highlight-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: 500 12px/1 var(--font-sans);
+  letter-spacing: -0.1px;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.highlight-tag-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.highlight-tag-remove {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.highlight-tag-remove:hover {
+  opacity: 1;
+  background: rgb(0 0 0 / 0.25);
+}
+
+.highlight-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: color-mix(in srgb, var(--color-neutral) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 24px -12px rgb(0 0 0 / 0.3),
+    0 0 0 1px color-mix(in srgb, var(--color-text) 4%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  z-index: 1;
+  animation: highlightInputIn 140ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.highlight-suggestion {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font: 400 13px/1 var(--font-sans);
+  text-align: left;
+  transition: background 100ms ease;
+}
+
+.highlight-suggestion.is-active,
+.highlight-suggestion:hover {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.highlight-suggestion-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.highlight-suggestion-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes highlightInputIn {
   from {
     opacity: 0;
@@ -608,8 +725,8 @@
 }
 
 .highlight-input-field {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 80px;
+  min-width: 80px;
   height: 100%;
   background: transparent;
   border: 0;
@@ -739,8 +856,8 @@ body[data-canvas-tool="box"] .media-label {
 }
 
 .highlight-input-field {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 80px;
+  min-width: 80px;
   height: 100%;
   background: transparent;
   border: 0;
