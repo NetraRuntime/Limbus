@@ -1192,10 +1192,21 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       }
       const seq = (segmentSeqRef.current[m.id] ?? 0) + 1;
       segmentSeqRef.current[m.id] = seq;
-      setSegments((prev) => ({
-        ...prev,
-        [m.id]: { entries: cleaned.map((tag) => ({ tag, status: 'loading' })) },
-      }));
+      // Preserve already-ready entries so their masks don't flash to a
+      // spinner on re-submit. Only re-invoke tags that are new, errored,
+      // or still loading (the seq bump invalidates old in-flight invokes).
+      const priorByKey = new Map<string, TagSegment>();
+      for (const e of segments[m.id]?.entries ?? []) {
+        priorByKey.set(e.tag.toLowerCase(), e);
+      }
+      const tagsToInvoke: string[] = [];
+      const nextEntries: TagSegment[] = cleaned.map((tag) => {
+        const prior = priorByKey.get(tag.toLowerCase());
+        if (prior && prior.status === 'ready') return prior;
+        tagsToInvoke.push(tag);
+        return { tag, status: 'loading' };
+      });
+      setSegments((prev) => ({ ...prev, [m.id]: { entries: nextEntries } }));
       // Drop any persisted rows for tags that are no longer in the set.
       // Fire-and-forget — races with in-flight upserts are fine because the
       // unique (image, lower(tag)) index prevents duplicate rows.
@@ -1221,7 +1232,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
       // Each tag is a separate prompt — SAM3 is single-object per call and
       // the worker already queues concurrent invokes server-side.
-      for (const tag of cleaned) {
+      for (const tag of tagsToInvoke) {
         invoke<SegmentResponse>('sam3_segment_text', {
           id: m.id,
           collectionId: m.collectionId,
@@ -1248,7 +1259,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           });
       }
     },
-    [clearSegment, sam3Available],
+    [clearSegment, sam3Available, segments],
   );
 
   const selectAll = useCallback(() => {
