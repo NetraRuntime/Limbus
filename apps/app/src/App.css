@@ -87,6 +87,10 @@
   white-space: nowrap;
 }
 
+.sam3-error-tag {
+  color: #d93a3a;
+}
+
 
 .status-pill {
   display: inline-flex;
@@ -386,6 +390,100 @@
   color: #d93a3a;
 }
 
+/* Encoding overlay: subtle top-right chip while SAM3 precaches the image.
+   No dimming — the image itself is already usable; this just surfaces
+   that the encoder is running in the background. */
+.encoding-overlay {
+  position: fixed;
+  z-index: 14;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 8px;
+}
+
+.encoding-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--fg);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.encoding-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  animation: pending-spin 900ms linear infinite;
+  flex-shrink: 0;
+}
+
+.encoding-label {
+  white-space: nowrap;
+}
+
+/* SAM3 text-segmentation mask. Uses CSS mask-image with a single-channel
+   PNG (white = object, black = background); the div's tinted background
+   bleeds through only where the object is. Scales smoothly with zoom. */
+.segment-mask {
+  position: fixed;
+  z-index: 12;
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+
+.segment-bbox {
+  position: fixed;
+  z-index: 13;
+  pointer-events: none;
+  border: 2px solid;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.segment-overlay {
+  position: fixed;
+  z-index: 13;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 8px;
+}
+
+.segment-overlay--loading .segment-chip,
+.segment-overlay--error .segment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--fg);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.segment-chip--error {
+  color: #d93a3a;
+  border-color: color-mix(in srgb, #d93a3a 55%, transparent);
+}
+
 
 
 .marquee-rect {
@@ -591,6 +689,45 @@
   .media-toolbar {
     animation: none;
   }
+}
+
+
+/* Box tool: swap the world-media cursor to crosshair globally and draw
+   precision guides clipped to the active media's screen rect. */
+body[data-canvas-tool="box"] .world-image,
+body[data-canvas-tool="box"] .media-label {
+  cursor: crosshair;
+}
+
+.box-crosshair {
+  position: fixed;
+  z-index: 12;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.box-crosshair-line {
+  position: absolute;
+  /* Bone white — warm off-white for precision on photo content. The dark
+     halo keeps the 1-px line readable on bright backgrounds. */
+  background: #e3dac9;
+  opacity: 0.85;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.35);
+}
+
+.box-crosshair-line.is-vertical {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.box-crosshair-line.is-horizontal {
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
 }
 
 
@@ -1262,4 +1399,49 @@
   background: color-mix(in srgb, var(--bg-subtle) 60%, transparent);
   color: var(--fg);
   font: 500 10px/1 var(--font-mono);
+}
+
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--fg);
+  z-index: 100;
+}
+
+.boot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-7);
+  max-width: 420px;
+  text-align: center;
+}
+
+.boot-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border-muted);
+  border-top-color: var(--fg);
+  animation: boot-spin 0.9s linear infinite;
+}
+
+.boot-title {
+  font: 600 15px/1.3 var(--font-sans);
+}
+
+.boot-subtitle {
+  font: 400 13px/1.5 var(--font-sans);
+  color: var(--fg-muted);
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
