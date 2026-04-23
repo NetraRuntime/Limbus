@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { invoke } from '@tauri-apps/api/core';
 import {
   InfiniteCanvas,
   type BackgroundPointerDown,
@@ -54,6 +55,11 @@ type CanvasMedia = {
   width: number;
   height: number;
   pending?: boolean;
+  /** PocketBase collection id — present for uploaded (non-pending) items.
+   *  Used to resolve the on-disk file path for SAM3 segmentation. */
+  collectionId?: string;
+  /** PocketBase file field (the storage filename). Pairs with `collectionId`. */
+  file?: string;
 };
 
 const formatZoom = (scale: number) => {
@@ -109,6 +115,8 @@ const fromImageRecord = (r: ImageRecord): CanvasMedia => ({
   y: r.y,
   width: r.width,
   height: r.height,
+  collectionId: r.collectionId,
+  file: r.file,
 });
 
 const fromVideoRecord = (r: VideoRecord): CanvasMedia => ({
@@ -120,12 +128,52 @@ const fromVideoRecord = (r: VideoRecord): CanvasMedia => ({
   y: r.y,
   width: r.width,
   height: r.height,
+  collectionId: r.collectionId,
+  file: r.file,
 });
 
 const uid = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+/** Qualitative palette for distinguishing overlapping segmentation masks.
+ *  Hand-picked for decent contrast against typical photography and against
+ *  each other. Cycled by index when more masks are returned than colors. */
+const MASK_PALETTE = [
+  '#4aa8ff', // blue
+  '#ff6fae', // pink
+  '#ffc94a', // amber
+  '#48d5a1', // green
+  '#a46cff', // violet
+  '#ff7a59', // coral
+  '#26c4d6', // teal
+  '#f05a5a', // red
+  '#9ed356', // lime
+  '#d9a3ff', // lavender
+];
+
+const maskColor = (i: number) => MASK_PALETTE[i % MASK_PALETTE.length]!;
+
+async function precacheImageEncoding(record: ImageRecord): Promise<void> {
+  try {
+    await invoke('sam3_encode_image', {
+      id: record.id,
+      collectionId: record.collectionId,
+      file: record.file,
+    });
+  } catch (err) {
+    console.warn('[sam3] precache failed for', record.id, err);
+  }
+}
+
+async function deleteImageEncoding(id: string): Promise<void> {
+  try {
+    await invoke('sam3_delete_image_cache', { id });
+  } catch (err) {
+    console.warn('[sam3] cache delete failed for', id, err);
+  }
+}
 
 type ConnState = 'connecting' | 'ready' | 'offline';
 
@@ -158,6 +206,25 @@ type MarqueeState = {
 
 type UploadPhase = 'sending' | 'finalizing' | 'error';
 type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
+
+type SegMask = {
+  png_base64: string;
+  width: number;
+  height: number;
+  score: number;
+  bbox: [number, number, number, number] | null;
+};
+
+type SegmentResponse = {
+  masks: SegMask[];
+  source_width: number;
+  source_height: number;
+};
+
+type SegmentState =
+  | { status: 'loading'; text: string }
+  | { status: 'ready'; text: string; response: SegmentResponse }
+  | { status: 'error'; text: string; message: string };
 
 const HIGHLIGHT_BOTTOM_INSET_PX = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
 
@@ -224,6 +291,47 @@ const writeStoredStackOrder = (order: string[]) => {
   } catch {
 
   }
+};
+
+/** World-unit target for a new upload when no existing media is present. */
+const DEFAULT_UPLOAD_LONGEST_SIDE = 640;
+
+/** Scale `dims` so its longest side matches the median longest-side of the
+ *  given reference items. Keeps aspect ratio. Rounded to integer world units
+ *  to keep the persisted meta and the on-disk source_width/source_height
+ *  cleanly aligned. Pending items are filtered out by the caller so in-flight
+ *  uploads don't skew the reference. */
+const normalizeUploadSize = (
+  dims: { width: number; height: number },
+  reference: readonly { width: number; height: number }[],
+): { width: number; height: number } => {
+  if (dims.width <= 0 || dims.height <= 0) return dims;
+  const target =
+    reference.length === 0
+      ? DEFAULT_UPLOAD_LONGEST_SIDE
+      : medianLongestSide(reference);
+  if (!target || !Number.isFinite(target) || target <= 0) return dims;
+  const longest = Math.max(dims.width, dims.height);
+  if (longest <= 0) return dims;
+  const k = target / longest;
+  return {
+    width: Math.max(1, Math.round(dims.width * k)),
+    height: Math.max(1, Math.round(dims.height * k)),
+  };
+};
+
+const medianLongestSide = (
+  items: readonly { width: number; height: number }[],
+): number => {
+  const longs: number[] = [];
+  for (const m of items) {
+    const s = Math.max(m.width, m.height);
+    if (Number.isFinite(s) && s > 0) longs.push(s);
+  }
+  if (longs.length === 0) return 0;
+  longs.sort((a, b) => a - b);
+  const mid = longs.length >> 1;
+  return longs.length % 2 === 0 ? (longs[mid - 1]! + longs[mid]!) / 2 : longs[mid]!;
 };
 
 const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
@@ -367,7 +475,14 @@ const getInitialView = (): View => {
   return { x: w / 2, y: h / 2, scale: 1 };
 };
 
-export function Canvas() {
+type CanvasProps = {
+  /** When set, SAM3 failed to load. Encode/segment calls are skipped and a
+   *  compact error chip is shown in the top-left HUD. */
+  sam3Error?: string | null;
+};
+
+export function Canvas({ sam3Error = null }: CanvasProps = {}) {
+  const sam3Available = !sam3Error;
   // HUD liquid-glass filters. Each one measures its own element via
   // ResizeObserver; pill surfaces use radius 999 (auto-clamped to
   // height/2 in the hook), the wordmark uses the design-system md
@@ -400,6 +515,9 @@ export function Canvas() {
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
   const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
+  const [encodingIds, setEncodingIds] = useState<Set<string>>(() => new Set());
+  const [segments, setSegments] = useState<Record<string, SegmentState>>({});
+  const segmentSeqRef = useRef<Record<string, number>>({});
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
   // Highlight interaction state.
@@ -416,6 +534,17 @@ export function Canvas() {
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [tool, setTool] = useState<CanvasTool>('drag');
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+
+  // Surface the tool to global CSS so we can swap the cursor on world media
+  // without re-rendering every MediaItem when the tool changes.
+  useEffect(() => {
+    document.body.dataset.canvasTool = tool;
+    return () => {
+      delete document.body.dataset.canvasTool;
+    };
+  }, [tool]);
 
   const dragRef = useRef<DragState | null>(null);
   const shiftToggledRef = useRef(false);
@@ -732,6 +861,22 @@ export function Canvas() {
             setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
             URL.revokeObjectURL(p.draft.src);
             setConn('ready');
+            if (p.draft.kind === 'image' && sam3Available) {
+              const imageRecord = record as ImageRecord;
+              setEncodingIds((prev) => {
+                const next = new Set(prev);
+                next.add(imageRecord.id);
+                return next;
+              });
+              void precacheImageEncoding(imageRecord).finally(() => {
+                setEncodingIds((prev) => {
+                  if (!prev.has(imageRecord.id)) return prev;
+                  const next = new Set(prev);
+                  next.delete(imageRecord.id);
+                  return next;
+                });
+              });
+            }
           } catch (err) {
             if ((err as Error | null)?.name !== 'AbortError') {
               const message = (err as Error | null)?.message ?? 'upload failed';
@@ -765,13 +910,67 @@ export function Canvas() {
         }),
       ).then(() => {});
     },
-    [],
+    [sam3Available],
   );
 
   const clearSelection = useCallback(() => {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
   }, []);
+
+  const clearSegment = useCallback((id: string) => {
+    // Bump the sequence so any in-flight invoke for this id is ignored when
+    // it resolves.
+    segmentSeqRef.current[id] = (segmentSeqRef.current[id] ?? 0) + 1;
+    setSegments((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const submitSegment = useCallback(
+    (m: CanvasMedia, text: string) => {
+      if (m.kind !== 'image') return;
+      if (!sam3Available) return;
+      const raw = text.trim();
+      if (!raw) {
+        clearSegment(m.id);
+        return;
+      }
+      if (!m.collectionId || !m.file) {
+        console.warn('[sam3] segment skipped — missing pb metadata for', m.id);
+        return;
+      }
+      const seq = (segmentSeqRef.current[m.id] ?? 0) + 1;
+      segmentSeqRef.current[m.id] = seq;
+      setSegments((prev) => ({ ...prev, [m.id]: { status: 'loading', text: raw } }));
+      invoke<SegmentResponse>('sam3_segment_text', {
+        id: m.id,
+        collectionId: m.collectionId,
+        file: m.file,
+        text: raw,
+      })
+        .then((response) => {
+          if (segmentSeqRef.current[m.id] !== seq) return;
+          setSegments((prev) => ({
+            ...prev,
+            [m.id]: { status: 'ready', text: raw, response },
+          }));
+        })
+        .catch((err: unknown) => {
+          if (segmentSeqRef.current[m.id] !== seq) return;
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn('[sam3] segment failed for', m.id, err);
+          setSegments((prev) => ({
+            ...prev,
+            [m.id]: { status: 'error', text: raw, message },
+          }));
+        });
+    },
+    [clearSegment, sam3Available],
+  );
 
   const selectAll = useCallback(() => {
     const all = mediaRef.current;
@@ -841,15 +1040,21 @@ export function Canvas() {
       URL.revokeObjectURL(target.src);
       return;
     }
+    clearSegment(id);
     const fn = target.kind === 'video' ? deleteVideo : deleteImage;
     fn(id)
-      .then(() => setConn('ready'))
+      .then(() => {
+        setConn('ready');
+        if (target.kind === 'image') {
+          void deleteImageEncoding(id);
+        }
+      })
       .catch((err) => {
         console.warn('[pb] delete failed for', id, err);
         setConn('offline');
         setMedia((prev) => [...prev, target]);
       });
-  }, []);
+  }, [clearSegment]);
 
   const deleteSelection = useCallback(() => {
     const ids = Array.from(selectedIdsRef.current);
@@ -967,12 +1172,23 @@ export function Canvas() {
       .filter((e): e is { file: File; kind: MediaKind } => e.kind !== null);
     if (!accepted.length) return;
 
-    const loaded = await Promise.all(
+    const rawLoaded = await Promise.all(
       accepted.map(async ({ file, kind }) => {
         const dims = await (kind === 'video' ? loadVideo(file) : loadImage(file));
         return { file, kind, ...dims };
       }),
     );
+
+    // Normalize each new item's longest side to match the existing canvas
+    // median (or a default when empty) so a tiny icon and a 4k photo don't
+    // land next to each other at wildly different scales. Aspect ratio is
+    // preserved; the original file is still uploaded unchanged — only the
+    // placed world dimensions are scaled.
+    const reference = mediaRef.current.filter((m) => !m.pending);
+    const loaded = rawLoaded.map((l) => ({
+      ...l,
+      ...normalizeUploadSize({ width: l.width, height: l.height }, reference),
+    }));
 
     const gap = 32;
     const first = loaded[0];
@@ -1205,6 +1421,12 @@ export function Canvas() {
       return;
     }
     shiftToggledRef.current = false;
+    if (toolRef.current === 'box') {
+      // Box tool disables move-to-drag on media. Selection (via click) still
+      // works because handleMediaClick runs on pointerup with no dragRef set.
+      // Box-drawing pointer logic will hook in here in a follow-up.
+      return;
+    }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const sel = selectedIdsRef.current;
     const ids = sel.has(m.id) ? sel : new Set<string>([m.id]);
@@ -1377,6 +1599,160 @@ export function Canvas() {
           );
         })}
 
+      {visibleMedia
+        .filter((m) => !m.pending && m.kind === 'image' && encodingIds.has(m.id))
+        .map((m) => {
+          const rx = m.x * view.scale + view.x;
+          const ry = m.y * view.scale + view.y;
+          const rw = m.width * view.scale;
+          const rh = m.height * view.scale;
+          const showLabel = rw > 110 && rh > 48;
+          return (
+            <div
+              key={`encoding-${m.id}`}
+              className="encoding-overlay"
+              style={{ left: rx, top: ry, width: rw, height: rh }}
+              role="status"
+              aria-live="polite"
+              aria-label="Encoding image for SAM3"
+            >
+              <div className="encoding-chip">
+                <span className="encoding-spinner" aria-hidden />
+                {showLabel && <span className="encoding-label">Encoding</span>}
+              </div>
+            </div>
+          );
+        })}
+
+      {visibleMedia
+        .filter((m) => m.kind === 'image' && segments[m.id])
+        .flatMap((m) => {
+          const rx = m.x * view.scale + view.x;
+          const ry = m.y * view.scale + view.y;
+          const rw = m.width * view.scale;
+          const rh = m.height * view.scale;
+          const state = segments[m.id]!;
+          const base = `segment-${m.id}`;
+          if (state.status === 'loading') {
+            return [
+              <div
+                key={`${base}-loading`}
+                className="segment-overlay segment-overlay--loading"
+                style={{ left: rx, top: ry, width: rw, height: rh }}
+                role="status"
+                aria-live="polite"
+                aria-label={`Segmenting "${state.text}"`}
+              >
+                <div className="segment-chip">
+                  <span className="encoding-spinner" aria-hidden />
+                  <span className="encoding-label">Segmenting</span>
+                </div>
+              </div>,
+            ];
+          }
+          if (state.status === 'error') {
+            return [
+              <div
+                key={`${base}-error`}
+                className="segment-overlay segment-overlay--error"
+                style={{ left: rx, top: ry, width: rw, height: rh }}
+                role="alert"
+                title={state.message}
+              >
+                <div className="segment-chip segment-chip--error">
+                  <i className="ri-error-warning-line" aria-hidden />
+                  <span className="encoding-label">No match</span>
+                </div>
+              </div>,
+            ];
+          }
+          return state.response.masks.flatMap((mask, idx) => {
+            const color = maskColor(idx);
+            const nodes: JSX.Element[] = [
+              <div
+                key={`${base}-mask-${idx}`}
+                className="segment-mask"
+                style={{
+                  left: rx,
+                  top: ry,
+                  width: rw,
+                  height: rh,
+                  backgroundColor: color,
+                  opacity: 0.5,
+                  WebkitMaskImage: `url(data:image/png;base64,${mask.png_base64})`,
+                  maskImage: `url(data:image/png;base64,${mask.png_base64})`,
+                  WebkitMaskSize: '100% 100%',
+                  maskSize: '100% 100%',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskRepeat: 'no-repeat',
+                }}
+                aria-hidden
+              />,
+            ];
+            // Bounding box is in mask-pixel coordinates; translate to
+            // screen coordinates via the mask's own width/height so it
+            // rides the image through pan/zoom.
+            if (mask.bbox && mask.width > 0 && mask.height > 0) {
+              const [x1, y1, x2, y2] = mask.bbox;
+              const fx = rw / mask.width;
+              const fy = rh / mask.height;
+              const bx = rx + x1 * fx;
+              const by = ry + y1 * fy;
+              const bw = Math.max(1, (x2 - x1) * fx);
+              const bh = Math.max(1, (y2 - y1) * fy);
+              nodes.push(
+                <div
+                  key={`${base}-box-${idx}`}
+                  className="segment-bbox"
+                  style={{
+                    left: bx,
+                    top: by,
+                    width: bw,
+                    height: bh,
+                    borderColor: color,
+                  }}
+                  aria-hidden
+                />,
+              );
+            }
+            return nodes;
+          });
+        })}
+
+      {tool === 'box' && activeMedia && activeRect && cursor && (() => {
+        const cx = cursor.worldX * view.scale + view.x;
+        const cy = cursor.worldY * view.scale + view.y;
+        if (
+          cx < activeRect.x ||
+          cx > activeRect.x + activeRect.width ||
+          cy < activeRect.y ||
+          cy > activeRect.y + activeRect.height
+        ) {
+          return null;
+        }
+        return (
+          <div
+            className="box-crosshair"
+            aria-hidden
+            style={{
+              left: activeRect.x,
+              top: activeRect.y,
+              width: activeRect.width,
+              height: activeRect.height,
+            }}
+          >
+            <span
+              className="box-crosshair-line is-vertical"
+              style={{ left: cx - activeRect.x }}
+            />
+            <span
+              className="box-crosshair-line is-horizontal"
+              style={{ top: cy - activeRect.y }}
+            />
+          </div>
+        );
+      })()}
+
       {activeMedia && activeRect && (
         <MediaToolbar
           rect={activeRect}
@@ -1392,9 +1768,10 @@ export function Canvas() {
           key={activeMedia.id}
           rect={activeRect}
           value={highlightInputs[activeMedia.id] ?? ''}
-          onChange={(v) =>
-            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: v }))
-          }
+          onChange={(v) => {
+            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: v }));
+            if (v.trim() === '') clearSegment(activeMedia.id);
+          }}
           onMouseEnter={clearHideTimer}
           onMouseLeave={scheduleHide}
           onFocus={() => {
@@ -1411,6 +1788,7 @@ export function Canvas() {
             clearSelection();
             scheduleHide();
           }}
+          onSubmit={(v) => submitSegment(activeMedia, v)}
           onDeleteWhenEmpty={deleteSelection}
           autoFocus={selectedIds.has(activeMedia.id)}
         />
@@ -1543,7 +1921,13 @@ export function Canvas() {
           <span className={`conn-dot conn-${conn}`} aria-label={`connection ${conn}`} />
           <span className="wordmark-tag">{conn}</span>
           <span className="wordmark-divider" aria-hidden />
-          <Sam3VersionBadge />
+          {sam3Error ? (
+            <span className="wordmark-tag sam3-error-tag" role="alert" title={sam3Error}>
+              SAM3 Error
+            </span>
+          ) : (
+            <Sam3VersionBadge />
+          )}
         </div>
       </div>
 

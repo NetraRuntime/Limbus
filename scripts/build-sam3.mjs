@@ -38,6 +38,11 @@ const configureArgs = [
   '-DSAM3_SHARED=ON',
   '-DCMAKE_BUILD_TYPE=Release',
   '-DSAM3_TESTS=OFF',
+  // Metal backend (MLX-C) for GPU acceleration. The CMake option() at the
+  // top of vendor/sam3.c/CMakeLists.txt defaults to OFF and defeats the
+  // "auto-enable on APPLE" fallback below it, so we set it explicitly.
+  // First configure pulls mlx-c over git; subsequent builds are cached.
+  ...(isMac ? ['-DSAM3_METAL=ON'] : []),
 ];
 
 const buildArgs = [
