@@ -305,10 +305,10 @@ fn segment_text(
         result
     };
 
-    // Cap the number of masks returned to keep the UI responsive. NMS on a
-    // crowded image can still pass dozens of well-separated detections;
-    // truncate to the top-K by score.
-    const MAX_MASKS: usize = 16;
+    // Sort masks best-first by IoU score so the frontend renders the
+    // highest-confidence detections on top. NMS has already filtered
+    // overlapping duplicates upstream; anything that makes it here is a
+    // distinct detection worth returning.
     let mut order: Vec<usize> = (0..reduced.n_masks()).collect();
     order.sort_by(|a, b| {
         reduced
@@ -319,7 +319,6 @@ fn segment_text(
             .partial_cmp(&reduced.iou_scores().get(*a).copied().unwrap_or(0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    order.truncate(MAX_MASKS);
 
     let mask_w = reduced.mask_width() as u32;
     let mask_h = reduced.mask_height() as u32;
