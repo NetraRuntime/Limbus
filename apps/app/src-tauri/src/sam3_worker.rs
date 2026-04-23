@@ -331,7 +331,7 @@ fn segment_text(
             Some(s) => s,
             None => continue,
         };
-        let png_base64 = encode_binary_mask_png(slice, mask_w, mask_h)?;
+        let png_base64 = encode_soft_mask_png(slice, mask_w, mask_h)?;
         masks.push(SegMask {
             png_base64,
             width: mask_w,
@@ -348,13 +348,20 @@ fn segment_text(
     })
 }
 
-/// Threshold logits at 0.0 and PNG-encode as a 2-channel luma+alpha image:
-/// alpha is 255 on foreground pixels and 0 on background. CSS `mask-image`
-/// defaults to alpha-based masking for PNGs with an alpha channel, so this
-/// renders correctly without needing `mask-mode: luminance`. Base64
-/// transport keeps the IPC payload compact vs. Vec<u8> (which serializes
-/// as a JSON number array).
-fn encode_binary_mask_png(logits: &[f32], width: u32, height: u32) -> Result<String, String> {
+/// PNG-encode mask logits as a 2-channel luma+alpha image with *soft*
+/// edges. Applies a sigmoid to the logits so the transition zone around
+/// each object boundary spans multiple grayscale levels instead of a
+/// hard 0/255 step. CSS `mask-image` bilinearly upscales the PNG to the
+/// displayed image size — a soft-alpha source scales cleanly, whereas a
+/// binary source stair-steps at the mask-pixel grid. The CLI achieves
+/// the same effect by resizing the float logits to image resolution
+/// before thresholding; we keep the mask at source resolution and let
+/// the renderer do the upscaling, which avoids bloating the IPC and DB
+/// payload for every mask.
+///
+/// Base64 transport keeps the payload compact vs. Vec<u8> (which
+/// serializes as a JSON number array).
+fn encode_soft_mask_png(logits: &[f32], width: u32, height: u32) -> Result<String, String> {
     let n = (width as usize)
         .checked_mul(height as usize)
         .ok_or_else(|| "mask dims overflow".to_string())?;
@@ -363,9 +370,11 @@ fn encode_binary_mask_png(logits: &[f32], width: u32, height: u32) -> Result<Str
     }
     let mut la = Vec::with_capacity(n * 2);
     for v in &logits[..n] {
-        let fg = *v > 0.0;
-        la.push(if fg { 255u8 } else { 0u8 }); // luma
-        la.push(if fg { 255u8 } else { 0u8 }); // alpha
+        // sigmoid(v) in [0,1]; quantize to 8-bit alpha.
+        let a = 1.0_f32 / (1.0_f32 + (-*v).exp());
+        let a8 = (a * 255.0).clamp(0.0, 255.0).round() as u8;
+        la.push(255u8); // luma — ignored by alpha-source mask-image
+        la.push(a8); // alpha drives the soft edge
     }
 
     let mut png_bytes: Vec<u8> = Vec::new();
