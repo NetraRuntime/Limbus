@@ -15,13 +15,13 @@ describe('placeGrid', () => {
   it('four items: 2x2 grid with cluster centered on anchor', () => {
     const items = [mk(100, 100), mk(100, 100), mk(100, 100), mk(100, 100)];
     const out = placeGrid(items, { worldX: 0, worldY: 0 }, 10);
-    // cell = 110x110, 2 cols, 2 rows, cluster = 220x220, centered on (0,0)
-    // first cell top-left at (-110, -110)
+    // cluster = 2*100 + 1*10 = 210 (content + internal gap, no trailing gap).
+    // origin = -105. cell stride = 110.
     expect(out.map((r) => ({ x: r.x, y: r.y }))).toEqual([
-      { x: -110, y: -110 },
-      { x: 0, y: -110 },
-      { x: -110, y: 0 },
-      { x: 0, y: 0 },
+      { x: -105, y: -105 },
+      { x: 5, y: -105 },
+      { x: -105, y: 5 },
+      { x: 5, y: 5 },
     ]);
   });
 
@@ -50,5 +50,37 @@ describe('placeGrid', () => {
 
   it('empty input returns empty', () => {
     expect(placeGrid([], { worldX: 0, worldY: 0 }, 32)).toEqual([]);
+  });
+
+  it('two items: 2x1 grid', () => {
+    const items = [mk(100, 100), mk(100, 100)];
+    const out = placeGrid(items, { worldX: 0, worldY: 0 }, 20);
+    // cols=2, rows=1. cluster = 2*100 + 1*20 = 220. origin = -110.
+    expect(out.map((r) => ({ x: r.x, y: r.y }))).toEqual([
+      { x: -110, y: -50 },
+      { x: 10, y: -50 },
+    ]);
+  });
+
+  it('three items: 2x2 grid with trailing empty cell', () => {
+    const items = [mk(100, 100), mk(100, 100), mk(100, 100)];
+    const out = placeGrid(items, { worldX: 0, worldY: 0 }, 0);
+    // cols=ceil(sqrt(3))=2, rows=ceil(3/2)=2. cluster = 200x200. origin = -100,-100.
+    expect(out.map((r) => ({ x: r.x, y: r.y }))).toEqual([
+      { x: -100, y: -100 },
+      { x: 0, y: -100 },
+      { x: -100, y: 0 },
+    ]);
+  });
+
+  it('non-zero anchor and gap compose correctly', () => {
+    const items = Array.from({ length: 9 }, () => mk(60, 40));
+    const out = placeGrid(items, { worldX: 1000, worldY: 500 }, 20);
+    // cols=3, rows=3, cellW=80, cellH=60. clusterW = 3*60 + 2*20 = 220. clusterH = 3*40 + 2*20 = 160.
+    // originX = 1000 - 110 = 890. originY = 500 - 80 = 420.
+    // item 0 at (890, 420). item 4 (col 1, row 1) at (890+80, 420+60) = (970, 480).
+    expect(out[0]).toMatchObject({ x: 890, y: 420 });
+    expect(out[4]).toMatchObject({ x: 970, y: 480 });
+    expect(out[8]).toMatchObject({ x: 1050, y: 540 }); // col 2, row 2
   });
 });

@@ -15,8 +15,8 @@ export function placeGrid(
   const rows = Math.ceil(items.length / cols);
   const cellW = maxW + gap;
   const cellH = maxH + gap;
-  const clusterW = items.length === 1 ? maxW : cols * cellW;
-  const clusterH = items.length === 1 ? maxH : rows * cellH;
+  const clusterW = cols * maxW + (cols - 1) * gap;
+  const clusterH = rows * maxH + (rows - 1) * gap;
   const originX = anchor.worldX - clusterW / 2;
   const originY = anchor.worldY - clusterH / 2;
 
