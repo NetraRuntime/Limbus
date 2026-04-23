@@ -14,10 +14,11 @@ describe('scaleBboxToBake', () => {
 
   it('respects independent x/y scaling', () => {
     const r = scaleBboxToBake([10, 20, 30, 40], 100, 200, 200, 400);
-    expect(r.x).toBe(20);
-    expect(r.y).toBe(40);
-    expect(r.w).toBe(40);
-    expect(r.h).toBe(40);
+    expect(r).not.toBeNull();
+    expect(r!.x).toBe(20);
+    expect(r!.y).toBe(40);
+    expect(r!.w).toBe(40);
+    expect(r!.h).toBe(40);
   });
 
   it('returns null when bbox is null', () => {
