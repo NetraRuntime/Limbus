@@ -201,7 +201,7 @@ describe('capDims', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run dims.test.ts`
+Run: `pnpm --filter @netrart/app test dims.test.ts`
 Expected: FAIL — cannot find module `./dims`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -231,7 +231,7 @@ export function capDims(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run dims.test.ts`
+Run: `pnpm --filter @netrart/app test dims.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -290,7 +290,7 @@ describe('scaleBboxToBake', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run bbox.test.ts`
+Run: `pnpm --filter @netrart/app test bbox.test.ts`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -325,7 +325,7 @@ export function scaleBboxToBake(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run bbox.test.ts`
+Run: `pnpm --filter @netrart/app test bbox.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -371,7 +371,7 @@ describe('strokeWidthFor', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run stroke.test.ts`
+Run: `pnpm --filter @netrart/app test stroke.test.ts`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -393,7 +393,7 @@ export function strokeWidthFor(bakeW: number, bakeH: number): number {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run stroke.test.ts`
+Run: `pnpm --filter @netrart/app test stroke.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -496,7 +496,7 @@ describe('buildIdMap', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run idMap.test.ts`
+Run: `pnpm --filter @netrart/app test idMap.test.ts`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -548,7 +548,7 @@ export function buildIdMap(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run idMap.test.ts`
+Run: `pnpm --filter @netrart/app test idMap.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -620,7 +620,7 @@ describe('computeSignature', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run signature.test.ts`
+Run: `pnpm --filter @netrart/app test signature.test.ts`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -659,7 +659,7 @@ export function computeSignature(masks: SignatureInput): string {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run signature.test.ts`
+Run: `pnpm --filter @netrart/app test signature.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -723,7 +723,7 @@ describe('hitTestAtPointer', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run hitTest.test.ts`
+Run: `pnpm --filter @netrart/app test hitTest.test.ts`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -758,7 +758,7 @@ export function hitTestAtPointer(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run hitTest.test.ts`
+Run: `pnpm --filter @netrart/app test hitTest.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -845,7 +845,7 @@ describe('createDecodeCache', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run decodeCache.test.ts`
+Run: `pnpm --filter @netrart/app test decodeCache.test.ts`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -924,7 +924,7 @@ export function createDecodeCache<B = ImageBitmap>(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @netra/app test --run decodeCache.test.ts`
+Run: `pnpm --filter @netrart/app test decodeCache.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1063,7 +1063,7 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `pnpm --filter @netra/app exec tsc --noEmit`
+Run: `pnpm --filter @netrart/app exec tsc --noEmit`
 Expected: no errors.
 
 - [ ] **Step 3: Commit**
@@ -1182,7 +1182,7 @@ describe('useSegmentBake', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run bakeCache.test.tsx`
+Run: `pnpm --filter @netrart/app test bakeCache.test.tsx`
 Expected: FAIL — cannot find module `./bakeCache`.
 
 - [ ] **Step 3: Write the hook**
@@ -1351,10 +1351,10 @@ call site with plain `decodeCache` (it already exposes `get`).
 
 - [ ] **Step 5: Run tests to verify**
 
-Run: `pnpm --filter @netra/app test --run bakeCache.test.tsx`
+Run: `pnpm --filter @netrart/app test bakeCache.test.tsx`
 Expected: PASS.
 
-Run: `pnpm --filter @netra/app exec tsc --noEmit`
+Run: `pnpm --filter @netrart/app exec tsc --noEmit`
 Expected: no errors.
 
 - [ ] **Step 6: Commit**
@@ -1393,7 +1393,7 @@ export const deleteSegmentationByImageTag = async (
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `pnpm --filter @netra/app exec tsc --noEmit`
+Run: `pnpm --filter @netrart/app exec tsc --noEmit`
 Expected: no errors.
 
 - [ ] **Step 3: Commit**
@@ -1522,7 +1522,7 @@ describe('SegmentBakeLayer', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @netra/app test --run SegmentBakeLayer.test.tsx`
+Run: `pnpm --filter @netrart/app test SegmentBakeLayer.test.tsx`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write the component**
@@ -1631,10 +1631,10 @@ export function SegmentBakeLayer({
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm --filter @netra/app test --run SegmentBakeLayer.test.tsx`
+Run: `pnpm --filter @netrart/app test SegmentBakeLayer.test.tsx`
 Expected: PASS.
 
-Run: `pnpm --filter @netra/app exec tsc --noEmit`
+Run: `pnpm --filter @netrart/app exec tsc --noEmit`
 Expected: no errors.
 
 - [ ] **Step 5: Export from barrel**
