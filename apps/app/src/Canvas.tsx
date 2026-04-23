@@ -416,7 +416,7 @@ export function Canvas() {
 
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [lodCache, setLodCache] = useState<LodCache | null>(null);
-  const lodWorkerRef = useRef<MipWorkerClient | null>(null);
+  const [lodWorker, setLodWorker] = useState<MipWorkerClient | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -425,11 +425,12 @@ export function Canvas() {
         if (!cancelled) setLodCache(c);
       })
       .catch((err) => console.warn('[lod] cache open failed', err));
-    lodWorkerRef.current = createMipWorkerClient();
+    const worker = createMipWorkerClient();
+    setLodWorker(worker);
     return () => {
       cancelled = true;
-      lodWorkerRef.current?.terminate();
-      lodWorkerRef.current = null;
+      worker?.terminate();
+      setLodWorker(null);
     };
   }, []);
 
@@ -655,7 +656,7 @@ export function Canvas() {
   useLodHydration({
     items: hydrationItems,
     cache: lodCache,
-    worker: lodWorkerRef.current,
+    worker: lodWorker,
     onLevelReady: handleLevelReady,
     onAssetReady: handleAssetReady,
   });
