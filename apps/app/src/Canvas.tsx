@@ -659,6 +659,34 @@ export function Canvas() {
     };
   }, []);
 
+  // Launch-time sweep: hard-delete PB records soft-deleted more than 1 hour
+  // ago. Catches sessions that ended before an entry could be evicted from
+  // the history stack (quits, crashes, or idle closes).
+  useEffect(() => {
+    let cancelled = false;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    void listTrashed({ olderThanMs: ONE_HOUR_MS })
+      .then(({ images, videos }) => {
+        if (cancelled) return;
+        for (const img of images) {
+          void hardDeleteImage(img.id).catch((err) => {
+            console.warn('[history] sweep hardDeleteImage failed', img.id, err);
+          });
+        }
+        for (const vid of videos) {
+          void hardDeleteVideo(vid.id).catch((err) => {
+            console.warn('[history] sweep hardDeleteVideo failed', vid.id, err);
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('[history] trash sweep failed', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const mediaRef = useRef(media);
   mediaRef.current = media;
   const selectedIdsRef = useRef(selectedIds);
