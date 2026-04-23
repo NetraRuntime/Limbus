@@ -14,7 +14,6 @@ import {
   createVideo,
   deleteAllSegmentationsForImage,
   deleteImage,
-  deleteSegmentationsForImage,
   deleteVideo,
   hardDeleteImage,
   hardDeleteVideo,
@@ -1214,27 +1213,24 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       }
       const seq = (segmentSeqRef.current[m.id] ?? 0) + 1;
       segmentSeqRef.current[m.id] = seq;
-      // Preserve already-ready entries so their masks don't flash to a
-      // spinner on re-submit. Only re-invoke tags that are new, errored,
-      // or still loading (the seq bump invalidates old in-flight invokes).
-      const priorByKey = new Map<string, TagSegment>();
+      // Submits are incremental — merge new tags onto existing masks.
+      // Preserve existing ready entries so their masks stay rendered;
+      // drop prior loading/error entries whose old invoke would be
+      // orphaned by the seq bump, and re-invoke any that reappear in
+      // the new tag set.
+      const mergedByKey = new Map<string, TagSegment>();
       for (const e of segments[m.id]?.entries ?? []) {
-        priorByKey.set(e.tag.toLowerCase(), e);
+        if (e.status === 'ready') mergedByKey.set(e.tag.toLowerCase(), e);
       }
       const tagsToInvoke: string[] = [];
-      const nextEntries: TagSegment[] = cleaned.map((tag) => {
-        const prior = priorByKey.get(tag.toLowerCase());
-        if (prior && prior.status === 'ready') return prior;
+      for (const tag of cleaned) {
+        const key = tag.toLowerCase();
+        if (mergedByKey.has(key)) continue;
+        mergedByKey.set(key, { tag, status: 'loading' });
         tagsToInvoke.push(tag);
-        return { tag, status: 'loading' };
-      });
+      }
+      const nextEntries: TagSegment[] = Array.from(mergedByKey.values());
       setSegments((prev) => ({ ...prev, [m.id]: { entries: nextEntries } }));
-      // Drop any persisted rows for tags that are no longer in the set.
-      // Fire-and-forget — races with in-flight upserts are fine because the
-      // unique (image, lower(tag)) index prevents duplicate rows.
-      deleteSegmentationsForImage(m.id, cleaned).catch((e) =>
-        console.warn('[sam3] prune failed', m.id, e),
-      );
 
       const updateTag = (tag: string, patch: TagSegment) => {
         if (segmentSeqRef.current[m.id] !== seq) return;
@@ -2328,10 +2324,9 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           key={activeMedia.id}
           rect={activeRect}
           tags={highlightInputs[activeMedia.id] ?? (EMPTY_TAGS as string[])}
-          onTagsChange={(next) => {
-            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: next }));
-            if (next.length === 0) clearSegment(activeMedia.id);
-          }}
+          onTagsChange={(next) =>
+            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: next }))
+          }
           onMouseEnter={clearHideTimer}
           onMouseLeave={scheduleHide}
           onFocus={() => {
@@ -2348,7 +2343,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             clearSelection();
             scheduleHide();
           }}
-          onSubmit={(next) => submitSegment(activeMedia, next)}
+          onSubmit={(next) => {
+            submitSegment(activeMedia, next);
+            setHighlightInputs((prev) =>
+              activeMedia.id in prev
+                ? { ...prev, [activeMedia.id]: EMPTY_TAGS as string[] }
+                : prev,
+            );
+          }}
           onDeleteWhenEmpty={deleteSelection}
           autoFocus={selectedIds.has(activeMedia.id)}
         />
