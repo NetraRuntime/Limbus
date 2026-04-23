@@ -42,6 +42,16 @@ import {
   type LabelPlacement,
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
+import {
+  buildDescriptorFromFile,
+  captureDataTransfer,
+  dropContainsFolderOrZip,
+  type MediaDescriptor,
+  type ScanInput,
+} from './lib/mediaIngest';
+import { placeGrid } from './lib/gridPlacement';
+import { useImportPreview } from './hooks/useImportPreview';
+import { ImportPreviewModal } from './components/ImportPreviewModal';
 import './App.css';
 
 type CanvasMedia = {
@@ -225,6 +235,17 @@ const writeStoredStackOrder = (order: string[]) => {
 
   }
 };
+
+function describeDrop(captured: ScanInput): string {
+  const firstDir = captured.entries.find((e) => e && e.isDirectory)?.name;
+  if (firstDir) return firstDir;
+  const firstZip = captured.fallbackFiles.find((f) => /\.zip$/i.test(f.name))?.name;
+  if (firstZip) return firstZip;
+  const first = captured.entries[0]?.name ?? captured.fallbackFiles[0]?.name;
+  const count = captured.entries.length + captured.fallbackFiles.length;
+  if (count <= 1 && first) return first;
+  return `${count} sources`;
+}
 
 const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
   if (items.length === 0) return null;
@@ -952,57 +973,103 @@ export function Canvas() {
   const handleChange = useCallback((v: View) => setView(v), []);
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
 
-  const handleFilesDrop = useCallback(async (files: File[], point: WorldPoint) => {
-    const classify = (f: File): MediaKind | null => {
-      if (f.type.startsWith('video/')) return 'video';
-      if (f.type.startsWith('image/')) return 'image';
-      const name = f.name.toLowerCase();
-      if (/\.(mp4|webm|mov|m4v|mkv|ogv|avi|3gp)$/.test(name)) return 'video';
-      if (/\.(png|jpe?g|gif|webp|svg|avif|bmp|heic|heif)$/.test(name))
-        return 'image';
-      return null;
-    };
-    const accepted = files
-      .map((f) => ({ file: f, kind: classify(f) }))
-      .filter((e): e is { file: File; kind: MediaKind } => e.kind !== null);
-    if (!accepted.length) return;
+  const importDescriptors = useCallback(
+    async (descriptors: MediaDescriptor[], point: WorldPoint) => {
+      const files: { file: File; kind: 'image' | 'video' }[] = [];
+      for (const d of descriptors) {
+        try {
+          const f = await d.load();
+          files.push({ file: f, kind: d.kind });
+        } catch (err) {
+          console.error('[ingest] load failed', d.relativePath, err);
+        }
+      }
+      if (!files.length) return;
 
-    const loaded = await Promise.all(
-      accepted.map(async ({ file, kind }) => {
-        const dims = await (kind === 'video' ? loadVideo(file) : loadImage(file));
-        return { file, kind, ...dims };
-      }),
-    );
+      const loaded = await Promise.all(
+        files.map(async ({ file, kind }) => {
+          const dims = await (kind === 'video' ? loadVideo(file) : loadImage(file));
+          return { file, kind, ...dims };
+        }),
+      );
 
-    const gap = 32;
-    const first = loaded[0];
-    if (!first) return;
-    let cursorX = point.worldX - first.width / 2;
-    const baseY = point.worldY - first.height / 2;
+      const gap = 32;
+      const placements = placeGrid(
+        loaded.map((l) => ({ width: l.width, height: l.height })),
+        point,
+        gap,
+      );
 
-    const plan: UploadPlan[] = [];
-    for (const l of loaded) {
-      const meta = { x: cursorX, y: baseY, width: l.width, height: l.height, name: l.file.name };
-      plan.push({
-        draft: { id: uid(), kind: l.kind, src: l.src, pending: true, ...meta },
-        file: l.file,
-        meta,
+      const plan: UploadPlan[] = loaded.map((l, i) => {
+        const r = placements[i]!;
+        const meta = {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          name: l.file.name,
+        };
+        return {
+          draft: { id: uid(), kind: l.kind, src: l.src, pending: true, ...meta },
+          file: l.file,
+          meta,
+        };
       });
-      cursorX += l.width + gap;
-    }
 
-    const minX = Math.min(...plan.map((p) => p.draft.x));
-    const minY = Math.min(...plan.map((p) => p.draft.y));
-    const maxX = Math.max(...plan.map((p) => p.draft.x + p.draft.width));
-    const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
+      const minX = Math.min(...plan.map((p) => p.draft.x));
+      const minY = Math.min(...plan.map((p) => p.draft.y));
+      const maxX = Math.max(...plan.map((p) => p.draft.x + p.draft.width));
+      const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
 
-    const uploading = runUploadPlan(plan);
-    canvasRef.current?.focusOn(
-      { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-      { bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-    );
-    await uploading;
-  }, [runUploadPlan]);
+      const uploading = runUploadPlan(plan);
+      canvasRef.current?.focusOn(
+        { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+        { bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
+      );
+      await uploading;
+    },
+    [runUploadPlan],
+  );
+
+  const pendingPointRef = useRef<WorldPoint | null>(null);
+  const preview = useImportPreview();
+
+  const handleDrop = useCallback(
+    (dt: DataTransfer, point: WorldPoint) => {
+      const captured = captureDataTransfer(dt);
+      if (captured.entries.length === 0 && captured.fallbackFiles.length === 0) {
+        return;
+      }
+      if (!dropContainsFolderOrZip(captured)) {
+        void (async () => {
+          const budget = { bytesUsed: 0, limit: Number.MAX_SAFE_INTEGER };
+          const descs: MediaDescriptor[] = [];
+          for (const f of captured.fallbackFiles) {
+            const d = await buildDescriptorFromFile(f, f.name, budget);
+            descs.push(...d);
+          }
+          if (descs.length) await importDescriptors(descs, point);
+        })();
+        return;
+      }
+
+      pendingPointRef.current = point;
+      void preview.start({
+        kind: 'data-transfer',
+        captured,
+        label: describeDrop(captured),
+      });
+    },
+    [importDescriptors, preview],
+  );
+
+  const onConfirmImport = useCallback(() => {
+    const point = pendingPointRef.current;
+    pendingPointRef.current = null;
+    const descs = preview.state.descriptors;
+    preview.cancel();
+    if (point && descs.length) void importDescriptors(descs, point);
+  }, [importDescriptors, preview]);
 
   const handleBackgroundPointerDown = useCallback((p: BackgroundPointerDown) => {
     marqueeRef.current = {
@@ -1309,7 +1376,7 @@ export function Canvas() {
         initial={initial}
         onChange={handleChange}
         onPointerWorld={handlePointerWorld}
-        onFilesDrop={handleFilesDrop}
+        onDataTransferDrop={handleDrop}
         onBackgroundPointerDown={handleBackgroundPointerDown}
         zoomSensitivity={settings.zoomSensitivity}
         panSpeed={settings.panSpeed}
@@ -1663,6 +1730,12 @@ export function Canvas() {
         onChange={updateSetting}
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
+      />
+
+      <ImportPreviewModal
+        state={preview.state}
+        onCancel={preview.cancel}
+        onImport={onConfirmImport}
       />
 
       <SearchPalette
