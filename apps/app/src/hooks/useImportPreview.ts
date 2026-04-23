@@ -42,12 +42,31 @@ const EMPTY: ImportState = {
 export function useImportPreview() {
   const [state, setState] = useState<ImportState>(EMPTY);
   const controllerRef = useRef<AbortController | null>(null);
+  const pendingPointRef = useRef<{ worldX: number; worldY: number } | null>(null);
+
+  const close = useCallback(() => {
+    pendingPointRef.current = null;
+    setState(EMPTY);
+  }, []);
 
   const cancel = useCallback(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
+    pendingPointRef.current = null;
     setState(EMPTY);
   }, []);
+
+  const setPendingPoint = useCallback(
+    (p: { worldX: number; worldY: number } | null) => {
+      pendingPointRef.current = p;
+    },
+    [],
+  );
+
+  const getPendingPoint = useCallback(
+    () => pendingPointRef.current,
+    [],
+  );
 
   const start = useCallback(async (source: ScanSource) => {
     controllerRef.current?.abort();
@@ -84,7 +103,7 @@ export function useImportPreview() {
     }
   }, []);
 
-  return { state, start, cancel };
+  return { state, start, cancel, close, setPendingPoint, getPendingPoint };
 }
 
 function applyEvent(prev: ImportState, event: ScanEvent): ImportState {

@@ -51,7 +51,6 @@ import {
   type ScanInput,
 } from './lib/mediaIngest';
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
-import { invoke } from '@tauri-apps/api/core';
 import { placeGrid } from './lib/gridPlacement';
 import { useImportPreview } from './hooks/useImportPreview';
 import { ImportPreviewModal } from './components/ImportPreviewModal';
@@ -1034,7 +1033,6 @@ export function Canvas() {
     [runUploadPlan],
   );
 
-  const pendingPointRef = useRef<WorldPoint | null>(null);
   const preview = useImportPreview();
 
   const handleDrop = useCallback(
@@ -1056,7 +1054,7 @@ export function Canvas() {
         return;
       }
 
-      pendingPointRef.current = point;
+      preview.setPendingPoint(point);
       void preview.start({
         kind: 'data-transfer',
         captured,
@@ -1067,10 +1065,9 @@ export function Canvas() {
   );
 
   const onConfirmImport = useCallback(() => {
-    const point = pendingPointRef.current;
-    pendingPointRef.current = null;
+    const point = preview.getPendingPoint();
     const descs = preview.state.descriptors;
-    preview.cancel();
+    preview.close();
     if (point && descs.length) void importDescriptors(descs, point);
   }, [importDescriptors, preview]);
 
@@ -1086,35 +1083,10 @@ export function Canvas() {
       const worldX = (clientX - rect.left - view.x) / view.scale;
       const worldY = (clientY - rect.top - view.y) / view.scale;
       const point: WorldPoint = { worldX, worldY };
-      pendingPointRef.current = point;
+      preview.setPendingPoint(point);
 
-      const looksLikeFolderOrZip =
-        paths.length > 1 ||
-        paths.some((p) => {
-          const leaf = p.split(/[\\/]/).pop() ?? p;
-          const ext = leaf.includes('.')
-            ? leaf.slice(leaf.lastIndexOf('.') + 1).toLowerCase()
-            : '';
-          return ext === '' || ext === 'zip';
-        });
-
-      if (!looksLikeFolderOrZip) {
-        // Single plain file — bypass preview.
-        void (async () => {
-          const path = paths[0]!;
-          const bytes = (await invoke<number[] | Uint8Array>('read_file_bytes', {
-            path,
-          })) as unknown as ArrayLike<number>;
-          const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-          const leaf = path.split(/[\\/]/).pop() ?? path;
-          const file = new File([u8 as BlobPart], leaf);
-          const budget = { bytesUsed: 0, limit: Number.MAX_SAFE_INTEGER };
-          const descs = await buildDescriptorFromFile(file, leaf, budget);
-          if (descs.length) await importDescriptors(descs, point);
-        })();
-        return;
-      }
-
+      // Tauri drops always go through scanTauriPaths — scan_paths classifies
+      // files vs folders reliably (no extension-heuristic misroutes).
       const label =
         paths.length === 1
           ? (paths[0]!.split(/[\\/]/).pop() ?? paths[0]!)

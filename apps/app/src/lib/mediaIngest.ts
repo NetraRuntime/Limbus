@@ -412,15 +412,10 @@ export async function* scanTauriPaths(
         })) as unknown as ArrayLike<number>;
         const u8 =
           rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
-        budget.bytesUsed += u8.byteLength;
-        if (budget.bytesUsed > budget.limit) {
-          yield {
-            type: 'error',
-            code: 'cap-hard',
-            message: `Archive exceeds the ${(budget.limit / 1024 ** 3).toFixed(0)} GB uncompressed limit.`,
-          };
-          return;
-        }
+        // Note: we do NOT add u8.byteLength to budget.bytesUsed here —
+        // extractZipRecursive accounts for each uncompressed entry's size
+        // against the same budget. Adding the compressed bytes too would
+        // double-count and trip the cap too eagerly on legitimate archives.
         const inner = extractZipRecursive(u8, entry.relativePath, 1, budget);
         for (const d of inner) {
           scanned++;
@@ -462,6 +457,10 @@ export async function* scanTauriPaths(
     }
     yield { type: 'done' };
   } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      yield { type: 'error', code: 'aborted', message: 'scan cancelled' };
+      return;
+    }
     if (err instanceof DepthCapExceededError) {
       yield {
         type: 'error',
