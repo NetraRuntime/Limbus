@@ -102,4 +102,34 @@ describe('createHistoryController', () => {
     expect(b.evictSpy).toHaveBeenCalledTimes(1);
     expect(c.getSnapshot()).toEqual({ canUndo: false, canRedo: false });
   });
+
+  it('serializes overlapping undo calls in order', async () => {
+    const c = createHistoryController();
+    const order: string[] = [];
+    const delayedUndo = (label: string, ms: number) => () =>
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          order.push(label);
+          resolve();
+        }, ms);
+      });
+
+    c.push(
+      { label: 'a', do: () => {}, undo: delayedUndo('a', 40) },
+      { alreadyApplied: true },
+    );
+    c.push(
+      { label: 'b', do: () => {}, undo: delayedUndo('b', 10) },
+      { alreadyApplied: true },
+    );
+
+    // Fire two undos back-to-back without awaiting the first.
+    const p1 = c.undo();
+    const p2 = c.undo();
+    await Promise.all([p1, p2]);
+
+    // Without serialization, 'a' (10ms) would finish before 'b' (40ms).
+    // With serialization, 'b' must complete before 'a' starts.
+    expect(order).toEqual(['b', 'a']);
+  });
 });
