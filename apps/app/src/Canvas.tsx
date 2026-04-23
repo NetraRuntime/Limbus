@@ -13,8 +13,11 @@ import {
   createVideo,
   deleteImage,
   deleteVideo,
+  hardDeleteImage,
+  hardDeleteVideo,
   imageFileUrl,
   listImages,
+  listTrashed,
   listVideos,
   updateImagePosition,
   updateVideoPosition,
@@ -43,6 +46,14 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import { isTypingContext } from './lib/dom/isTypingContext';
+import { useHistory, useHistoryShortcuts } from './lib/history';
+import {
+  moveEntry,
+  deleteEntry,
+  createEntry,
+  type CanvasActionMeta,
+  type HistoryMedia,
+} from './lib/canvasHistory';
 import './App.css';
 
 type CanvasMedia = {
@@ -417,6 +428,14 @@ export function Canvas() {
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [tool, setTool] = useState<CanvasTool>('drag');
+
+  const history = useHistory<CanvasActionMeta>({
+    limit: 100,
+    onError: (err, phase) => {
+      console.warn(`[history] ${phase} failed`, err);
+    },
+  });
+  useHistoryShortcuts(history);
 
   const dragRef = useRef<DragState | null>(null);
   const shiftToggledRef = useRef(false);
