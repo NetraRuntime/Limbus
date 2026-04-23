@@ -272,6 +272,8 @@ const VIEW_PERSIST_DEBOUNCE_MS = 200;
 const STACK_ORDER_STORAGE_KEY = 'netrart:canvas:stack-order:v1';
 const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
 
+const EMPTY_TAGS: readonly string[] = Object.freeze([]);
+
 const CULL_BUFFER_FACTOR = 0.5;
 
 const StoredViewSchema = z.object({
@@ -614,8 +616,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
-  const [highlightInputs, setHighlightInputs] = useState<Record<string, string>>({});
-  const [multiHighlightInput, setMultiHighlightInput] = useState('');
+  const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
+  const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
   const hideTimer = useRef<number | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<{
     minX: number; minY: number; maxX: number; maxY: number;
@@ -710,7 +712,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     return Array.from(selectedIds).sort().join(' ');
   }, [selectedIds]);
   useEffect(() => {
-    setMultiHighlightInput('');
+    setMultiHighlightInput([]);
   }, [multiSelectKey]);
 
   const [viewport, setViewport] = useState<{ w: number; h: number }>(() => ({
@@ -2183,10 +2185,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         <HighlightInput
           key={activeMedia.id}
           rect={activeRect}
-          value={highlightInputs[activeMedia.id] ?? ''}
-          onChange={(v) => {
-            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: v }));
-            if (v.trim() === '') clearSegment(activeMedia.id);
+          tags={highlightInputs[activeMedia.id] ?? (EMPTY_TAGS as string[])}
+          onTagsChange={(next) => {
+            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: next }));
+            if (next.length === 0) clearSegment(activeMedia.id);
           }}
           onMouseEnter={clearHideTimer}
           onMouseLeave={scheduleHide}
@@ -2196,15 +2198,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             setLastSelectedId(activeMedia.id);
           }}
           onBlur={() => {
-            const v = highlightInputs[activeMedia.id] ?? '';
-            if (!v) clearSelection();
+            const current = highlightInputs[activeMedia.id] ?? [];
+            if (current.length === 0) clearSelection();
             scheduleHide();
           }}
           onEscape={() => {
             clearSelection();
             scheduleHide();
           }}
-          onSubmit={(v) => submitSegment(activeMedia, v)}
+          onSubmit={(next) => submitSegment(activeMedia, next.join(', '))}
           onDeleteWhenEmpty={deleteSelection}
           autoFocus={selectedIds.has(activeMedia.id)}
         />
@@ -2253,14 +2255,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
       {selectionBBox && !marqueeRect && (
         <HighlightInput
+          key={multiSelectKey}
           rect={{
             x: selectionBBox.minX * view.scale + view.x,
             y: selectionBBox.minY * view.scale + view.y,
             width: Math.max(0, (selectionBBox.maxX - selectionBBox.minX) * view.scale),
             height: Math.max(0, (selectionBBox.maxY - selectionBBox.minY) * view.scale),
           }}
-          value={multiHighlightInput}
-          onChange={setMultiHighlightInput}
+          tags={multiHighlightInput}
+          onTagsChange={setMultiHighlightInput}
           onEscape={clearSelection}
           onDeleteWhenEmpty={deleteSelection}
         />
