@@ -1,7 +1,28 @@
 const SOCIALS = [
-  { id: 'github', label: 'GitHub (coming soon)', icon: 'ri-github-fill' },
-  { id: 'x', label: 'X (coming soon)', icon: 'ri-twitter-x-line' },
-  { id: 'linkedin', label: 'LinkedIn (coming soon)', icon: 'ri-linkedin-fill' },
+  {
+    id: 'github',
+    label: 'GitHub',
+    icon: 'ri-github-fill',
+    href: 'https://github.com/rifkybujana',
+  },
+  {
+    id: 'threads',
+    label: 'Threads',
+    icon: 'ri-threads-fill',
+    href: 'https://www.threads.com/@rifkybujanabisri',
+  },
+  {
+    id: 'x',
+    label: 'X',
+    icon: 'ri-twitter-x-line',
+    href: 'https://x.com/BisriRifky',
+  },
+  {
+    id: 'linkedin',
+    label: 'LinkedIn',
+    icon: 'ri-linkedin-fill',
+    href: 'https://www.linkedin.com/in/rifkybujana/',
+  },
 ] as const;
 
 export function Footer() {
@@ -15,14 +36,15 @@ export function Footer() {
             <p>Vision AI, as easy as text. On any device.</p>
             <div className="footer-socials">
               {SOCIALS.map((s) => (
-                <button
+                <a
                   key={s.id}
-                  type="button"
+                  href={s.href}
                   aria-label={s.label}
-                  disabled
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   <i className={s.icon} aria-hidden />
-                </button>
+                </a>
               ))}
             </div>
           </div>
@@ -34,7 +56,7 @@ export function Footer() {
             </div>
             <div>
               <h4>Contact</h4>
-              <a href="mailto:hello@netra.dev">hello@netra.dev</a>
+              <a href="mailto:hello@netrart.com">hello@netrart.com</a>
               <button type="button" disabled aria-label="Press (coming soon)">
                 Press
               </button>

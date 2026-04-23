@@ -57,7 +57,7 @@ export function Header() {
         <div className="header-actions">
           <a
             className="btn btn-outline btn-sm"
-            href="https://github.com"
+            href="https://github.com/rifkybujana/sam3.c"
             target="_blank"
             rel="noreferrer"
           >
@@ -100,7 +100,7 @@ export function Header() {
           <div className="menu-divider" aria-hidden />
           <a
             className="btn btn-outline btn-md"
-            href="https://github.com"
+            href="https://github.com/rifkybujana/sam3.c"
             target="_blank"
             rel="noreferrer"
             onClick={close}
