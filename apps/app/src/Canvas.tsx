@@ -956,34 +956,56 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   // Launch-time sweep: hard-delete PB records soft-deleted more than 1 hour
   // ago. Catches sessions that ended before an entry could be evicted from
   // the history stack (quits, crashes, or idle closes).
+  //
+  // Gated on `conn` reaching a terminal state so the sweep doesn't contend
+  // with initial hydration for network/main-thread time, and deferred to an
+  // idle callback so it never delays first paint.
+  const didSweepRef = useRef(false);
   useEffect(() => {
+    if (conn === 'connecting') return;
+    if (didSweepRef.current) return;
+    didSweepRef.current = true;
+
     let cancelled = false;
-    const ONE_HOUR_MS = 60 * 60 * 1000;
-    void listTrashed({ olderThanMs: ONE_HOUR_MS })
-      .then(({ images, videos }) => {
-        if (cancelled) return;
-        for (const img of images) {
-          void hardDeleteImage(img.id)
-            .then(() => {
-              void deleteImageEncoding(img.id);
-            })
-            .catch((err) => {
-              console.warn('[history] sweep hardDeleteImage failed', img.id, err);
+    const runSweep = () => {
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      void listTrashed({ olderThanMs: ONE_HOUR_MS })
+        .then(({ images, videos }) => {
+          if (cancelled) return;
+          for (const img of images) {
+            void hardDeleteImage(img.id)
+              .then(() => {
+                void deleteImageEncoding(img.id);
+              })
+              .catch((err) => {
+                console.warn('[history] sweep hardDeleteImage failed', img.id, err);
+              });
+          }
+          for (const vid of videos) {
+            void hardDeleteVideo(vid.id).catch((err) => {
+              console.warn('[history] sweep hardDeleteVideo failed', vid.id, err);
             });
-        }
-        for (const vid of videos) {
-          void hardDeleteVideo(vid.id).catch((err) => {
-            console.warn('[history] sweep hardDeleteVideo failed', vid.id, err);
-          });
-        }
-      })
-      .catch((err) => {
-        console.warn('[history] trash sweep failed', err);
-      });
+          }
+        })
+        .catch((err) => {
+          console.warn('[history] trash sweep failed', err);
+        });
+    };
+
+    let cancelSchedule: () => void;
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(runSweep);
+      cancelSchedule = () => window.cancelIdleCallback(handle);
+    } else {
+      const handle = window.setTimeout(runSweep, 0);
+      cancelSchedule = () => window.clearTimeout(handle);
+    }
+
     return () => {
       cancelled = true;
+      cancelSchedule();
     };
-  }, []);
+  }, [conn]);
 
   const mediaRef = useRef(media);
   mediaRef.current = media;
