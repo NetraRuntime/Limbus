@@ -55,36 +55,44 @@ export function createHistoryController<M = unknown>(
     emit();
   };
 
-  const undo = async (): Promise<void> => {
-    const entry = past[past.length - 1];
-    if (!entry) return;
-    past = past.slice(0, -1);
-    future.push(entry);
-    emit();
-    const ok = await runSafe(entry.undo, 'undo');
-    if (!ok) {
-      // Roll back the move so a retry re-attempts the undo.
-      const idx = future.lastIndexOf(entry);
-      if (idx !== -1) future.splice(idx, 1);
-      past.push(entry);
-      emit();
-    }
+  let busy: Promise<void> = Promise.resolve();
+  const queue = (fn: () => Promise<void>): Promise<void> => {
+    const next = busy.then(fn, fn);
+    busy = next.catch(() => {});
+    return next;
   };
 
-  const redo = async (): Promise<void> => {
-    const entry = future[future.length - 1];
-    if (!entry) return;
-    future = future.slice(0, -1);
-    past.push(entry);
-    emit();
-    const ok = await runSafe(entry.do, 'do');
-    if (!ok) {
-      const idx = past.lastIndexOf(entry);
-      if (idx !== -1) past.splice(idx, 1);
+  const undo = (): Promise<void> =>
+    queue(async () => {
+      const entry = past[past.length - 1];
+      if (!entry) return;
+      past = past.slice(0, -1);
       future.push(entry);
       emit();
-    }
-  };
+      const ok = await runSafe(entry.undo, 'undo');
+      if (!ok) {
+        const idx = future.lastIndexOf(entry);
+        if (idx !== -1) future.splice(idx, 1);
+        past.push(entry);
+        emit();
+      }
+    });
+
+  const redo = (): Promise<void> =>
+    queue(async () => {
+      const entry = future[future.length - 1];
+      if (!entry) return;
+      future = future.slice(0, -1);
+      past.push(entry);
+      emit();
+      const ok = await runSafe(entry.do, 'do');
+      if (!ok) {
+        const idx = past.lastIndexOf(entry);
+        if (idx !== -1) past.splice(idx, 1);
+        future.push(entry);
+        emit();
+      }
+    });
 
   const clear = (): void => {
     const drained = [...past, ...future];

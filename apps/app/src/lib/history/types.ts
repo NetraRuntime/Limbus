@@ -29,8 +29,8 @@ export type HistorySnapshot = {
 
 export type HistoryController<M = unknown> = {
   push: (entry: HistoryEntry<M>, opts?: { alreadyApplied?: boolean }) => void;
-  undo: () => void;
-  redo: () => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
   clear: () => void;
   /** Subscription API — used by the React hook, not by product code. */
   subscribe: (listener: () => void) => () => void;
