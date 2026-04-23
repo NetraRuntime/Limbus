@@ -120,20 +120,19 @@ export function extractZipRecursive(
 
     const leaf = name.split('/').pop() ?? name;
     const mime = mimeFromExtension(leaf);
-    const capturedBytes = bytes;
     const descriptor: MediaDescriptor = {
       relativePath,
       name: leaf,
       size: bytes.byteLength,
       kind,
       mime,
-      source: { type: 'zip-blob', bytes: capturedBytes },
+      source: { type: 'zip-blob', bytes },
+      // fflate's `Unzipped` types entries as `Uint8Array<ArrayBufferLike>`,
+      // which DOM's BlobPart (ArrayBufferView<ArrayBuffer>) does not accept
+      // without a boundary narrowing in TS 5.9+. The underlying value is
+      // always a plain ArrayBuffer at runtime.
       load: async () =>
-        new File(
-          [capturedBytes as BlobPart],
-          leaf,
-          mime ? { type: mime } : undefined,
-        ),
+        new File([bytes as BlobPart], leaf, mime ? { type: mime } : undefined),
     };
     out.push(descriptor);
   }

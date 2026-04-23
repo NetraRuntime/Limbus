@@ -145,4 +145,52 @@ describe('extractZipRecursive', () => {
     const buf = new Uint8Array(await f.arrayBuffer());
     expect(Array.from(buf)).toEqual(Array.from(tinyPng()));
   });
+
+  it('exactly MAX_ZIP_DEPTH nesting succeeds without throwing', () => {
+    // MAX_ZIP_DEPTH wrappings over a leaf zip → deepest recursion enters
+    // at depth MAX_ZIP_DEPTH, which does NOT throw.
+    let current = buildZip({ 'leaf.png': tinyPng() });
+    for (let i = 0; i < MAX_ZIP_DEPTH; i++) {
+      current = buildZip({ 'nested.zip': current });
+    }
+    const out = extractZipRecursive(current, 'root.zip', 0, {
+      bytesUsed: 0,
+      limit: MAX_UNCOMPRESSED_BYTES,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.name).toBe('leaf.png');
+  });
+
+  it('exactly at size cap succeeds; one byte over throws', () => {
+    const zip = buildZip({ 'a.png': tinyPng() });
+    const entryBytes = tinyPng().byteLength;
+
+    // Construct a limit such that this single entry brings us exactly to it.
+    const exactBudget = {
+      bytesUsed: 0,
+      limit: entryBytes,
+    };
+    const out = extractZipRecursive(zip, 'root.zip', 0, exactBudget);
+    expect(out).toHaveLength(1);
+
+    const overBudget = {
+      bytesUsed: 1,
+      limit: entryBytes,
+    };
+    expect(() =>
+      extractZipRecursive(zip, 'root.zip', 0, overBudget),
+    ).toThrow(SizeCapExceededError);
+  });
+
+  it('throws on malformed zip bytes', () => {
+    // Task 5's scanDataTransfer will wrap this and translate to a
+    // 'zip-malformed' ScanEvent; Task 2's contract is: throw, don't swallow.
+    const garbage = new Uint8Array([0, 0, 0, 0, 1, 2, 3]);
+    expect(() =>
+      extractZipRecursive(garbage, 'root.zip', 0, {
+        bytesUsed: 0,
+        limit: MAX_UNCOMPRESSED_BYTES,
+      }),
+    ).toThrow();
+  });
 });
