@@ -1021,6 +1021,112 @@
 }
 
 
+/* Right-side list of tags contained in the active image. Mirror of
+   .media-toolbar positioning — same glass bezel, just stacked pills
+   instead of tool buttons. */
+.media-tag-list {
+  position: fixed;
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 24px -12px rgb(0 0 0 / 0.25),
+    0 0 0 1px color-mix(in srgb, var(--color-text) 4%, transparent);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  pointer-events: auto;
+  animation: highlightInputIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.media-tag-row {
+  /* Rendered as <button> for keyboard focus / select-to-delete; reset
+     the user-agent defaults that would otherwise fight the palette
+     colors applied inline. */
+  appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  min-height: 24px;
+  cursor: pointer;
+  text-align: left;
+  transition: opacity 120ms ease, box-shadow 120ms ease;
+}
+
+.media-tag-row:focus {
+  outline: none;
+}
+
+.media-tag-row:focus-visible {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, currentColor 70%, transparent),
+    0 0 0 4px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.media-tag-row.is-loading {
+  opacity: 0.7;
+}
+
+.media-tag-row.is-error {
+  opacity: 0.8;
+  border-style: dashed;
+}
+
+.media-tag-row-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.media-tag-row-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.media-tag-row-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: mediaTagSpin 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes mediaTagSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-tag-list {
+    animation: none;
+  }
+  .media-tag-row-spinner {
+    animation: none;
+  }
+}
+
+
 /* Box tool: swap the world-media cursor to crosshair globally and draw
    precision guides clipped to the active media's screen rect. */
 body[data-canvas-tool="box"] .world-image,
