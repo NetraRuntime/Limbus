@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CountUp } from '../components/CountUp';
 
 const TOTAL_SPOTS = 500;
-const CLAIMED = 312;
+const CLAIMED = 0;
 const FILL_PCT = (CLAIMED / TOTAL_SPOTS) * 100;
 
 const EmailSchema = z.string().trim().email();
@@ -149,13 +149,26 @@ export function Waitlist() {
               </div>
               <div className="wl-row">
                 <dt className="mono">04 · Price</dt>
-                <dd>Free for the cohort. Open-source core, forever.</dd>
+                <dd>
+                  <span className="wl-price">
+                    <span className="wl-price-now">$20</span>
+                    <s className="wl-price-was" aria-label="regular price $100">$100</s>
+                    <span className="wl-price-tag">lifetime</span>
+                  </span>
+                  Updates + Discord included. SAM3.c core stays free.
+                </dd>
               </div>
             </dl>
 
             <div className="wl-index-foot">
               <span className="mono-12px wl-spots">
-                <CountUp className="wl-spots-num" to={CLAIMED} durationMs={1600} />
+                <CountUp
+                  className="wl-spots-num"
+                  to={CLAIMED}
+                  durationMs={1600}
+                  padTo={3}
+                  group={false}
+                />
                 <span className="wl-spots-label">/ {TOTAL_SPOTS} SPOTS CLAIMED</span>
               </span>
               <div

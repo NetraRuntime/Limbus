@@ -15,10 +15,11 @@ type Props = {
   suffix?: string;
   
   group?: boolean;
-  
+
   threshold?: number;
-  
+
   startDelayMs?: number;
+  padTo?: number;
   className?: string;
 };
 
@@ -32,6 +33,7 @@ export function CountUp({
   group = true,
   threshold = 0.3,
   startDelayMs = 0,
+  padTo = 0,
   className,
 }: Props) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -88,12 +90,15 @@ export function CountUp({
     };
   }, [to, from, durationMs, startDelayMs, threshold]);
 
+  const rounded = Math.round(value);
   const formatted =
     decimals > 0
       ? value.toFixed(decimals)
-      : group
-        ? Math.round(value).toLocaleString('en-US')
-        : Math.round(value).toString();
+      : padTo > 0
+        ? rounded.toString().padStart(padTo, '0')
+        : group
+          ? rounded.toLocaleString('en-US')
+          : rounded.toString();
 
   return (
     <span ref={ref} className={className} style={{ fontVariantNumeric: 'tabular-nums' }}>
