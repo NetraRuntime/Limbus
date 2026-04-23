@@ -283,6 +283,7 @@ export async function* scanDataTransfer(
     // during the drain; for folders with thousands of files, HARD_ITEM_CAP
     // and SOFT_ITEM_CAP trip here.
     for (const d of queue) {
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
       yield { type: 'descriptor', descriptor: d };
       if (scanned > HARD_ITEM_CAP) {
         yield {
