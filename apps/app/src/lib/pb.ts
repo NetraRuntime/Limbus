@@ -40,6 +40,9 @@ export type MediaKind = 'image' | 'video';
 
 const SegMaskSchema = z.object({
   png_base64: z.string(),
+  // Optional so rows persisted before the edge-outline feature still
+  // parse; frontend falls back to fill-only when absent.
+  edge_png_base64: z.string().optional(),
   width: z.number(),
   height: z.number(),
   score: z.number(),

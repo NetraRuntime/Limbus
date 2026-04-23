@@ -1,5 +1,9 @@
 export type SegMask = {
   png_base64: string;
+  /** Optional 1-pixel edge ring PNG. Absent on rows persisted before
+   *  the edge-outline feature landed; frontend skips the outline when
+   *  missing. */
+  edge_png_base64?: string;
   width: number;
   height: number;
   score: number;

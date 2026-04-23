@@ -13,6 +13,7 @@ import {
   createImage,
   createVideo,
   deleteAllSegmentationsForImage,
+  deleteSegmentationsForImage,
   deleteImage,
   deleteVideo,
   hardDeleteImage,
@@ -44,6 +45,7 @@ import { Sam3VersionBadge } from './components/Sam3VersionBadge';
 import { SavedTagsPopover } from './components/SavedTagsPopover';
 import { SearchPalette, type SearchItem } from './components/SearchPalette';
 import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
+import { MediaTagList } from './components/MediaTagList';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
@@ -230,6 +232,7 @@ type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
 
 type SegMask = {
   png_base64: string;
+  edge_png_base64?: string;
   width: number;
   height: number;
   score: number;
@@ -1184,6 +1187,42 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     deleteAllSegmentationsForImage(id).catch((e) =>
       console.warn('[sam3] clear-persist failed', id, e),
     );
+  }, []);
+
+  const removeSegmentTag = useCallback((id: string, tag: string) => {
+    const key = tag.toLowerCase();
+    let remainingTags: string[] = [];
+    let nothingLeft = false;
+    let removed = false;
+    setSegments((prev) => {
+      const current = prev[id];
+      if (!current) return prev;
+      const remaining = current.entries.filter((e) => e.tag.toLowerCase() !== key);
+      if (remaining.length === current.entries.length) return prev;
+      removed = true;
+      remainingTags = remaining.map((e) => e.tag);
+      if (remaining.length === 0) {
+        nothingLeft = true;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: { entries: remaining } };
+    });
+    if (!removed) return;
+    // A late in-flight response for this exact tag is harmless: updateTag
+    // maps over existing entries and will no-op once the tag is gone.
+    // Other tags on the same image may still be loading — do NOT bump the
+    // sequence or their responses would be dropped too.
+    if (nothingLeft) {
+      deleteAllSegmentationsForImage(id).catch((e) =>
+        console.warn('[sam3] tag-remove persist failed', id, tag, e),
+      );
+    } else {
+      deleteSegmentationsForImage(id, remainingTags).catch((e) =>
+        console.warn('[sam3] tag-remove persist failed', id, tag, e),
+      );
+    }
   }, []);
 
   const submitSegment = useCallback(
@@ -2162,7 +2201,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             const { accent } = colorForTag(entry.tag);
             entry.response.masks.forEach((mask, idx) => {
               const maskKey = `${base}-${entry.tag}-mask-${idx}`;
-              const maskUrl = `url(data:image/png;base64,${mask.png_base64})`;
+              const fillUrl = `url(data:image/png;base64,${mask.png_base64})`;
               nodes.push(
                 <div
                   key={maskKey}
@@ -2174,8 +2213,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
                     height: rh,
                     backgroundColor: accent,
                     opacity: 0.5,
-                    WebkitMaskImage: maskUrl,
-                    maskImage: maskUrl,
+                    WebkitMaskImage: fillUrl,
+                    maskImage: fillUrl,
                     WebkitMaskSize: '100% 100%',
                     maskSize: '100% 100%',
                     WebkitMaskRepeat: 'no-repeat',
@@ -2184,30 +2223,32 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
                   aria-hidden
                 />,
               );
-              // White outline layer — same PNG, but consumed via the
-              // luminance channel where the Rust worker wrote a 1-pixel
-              // ring along the binary mask boundary.
-              nodes.push(
-                <div
-                  key={`${maskKey}-edge`}
-                  className="segment-mask-edge"
-                  style={{
-                    left: rx,
-                    top: ry,
-                    width: rw,
-                    height: rh,
-                    backgroundColor: '#fff',
-                    WebkitMaskImage: maskUrl,
-                    maskImage: maskUrl,
-                    WebkitMaskSize: '100% 100%',
-                    maskSize: '100% 100%',
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskRepeat: 'no-repeat',
-                    maskMode: 'luminance',
-                  }}
-                  aria-hidden
-                />,
-              );
+              // White outline — separate edge-only PNG so the default
+              // alpha-masking path draws it. Skipped for masks persisted
+              // before the edge PNG existed.
+              if (mask.edge_png_base64) {
+                const edgeUrl = `url(data:image/png;base64,${mask.edge_png_base64})`;
+                nodes.push(
+                  <div
+                    key={`${maskKey}-edge`}
+                    className="segment-mask-edge"
+                    style={{
+                      left: rx,
+                      top: ry,
+                      width: rw,
+                      height: rh,
+                      backgroundColor: '#fff',
+                      WebkitMaskImage: edgeUrl,
+                      maskImage: edgeUrl,
+                      WebkitMaskSize: '100% 100%',
+                      maskSize: '100% 100%',
+                      WebkitMaskRepeat: 'no-repeat',
+                      maskRepeat: 'no-repeat',
+                    }}
+                    aria-hidden
+                  />,
+                );
+              }
               // Bounding box is in mask-pixel coordinates; translate to
               // screen coordinates via the mask's own width/height so it
               // rides the image through pan/zoom.
@@ -2343,6 +2384,22 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           onMouseLeave={scheduleHide}
         />
       )}
+
+      {activeMedia &&
+        activeRect &&
+        activeMedia.kind === 'image' &&
+        (segments[activeMedia.id]?.entries.length ?? 0) > 0 && (
+          <MediaTagList
+            rect={activeRect}
+            entries={segments[activeMedia.id]!.entries.map((e) => ({
+              tag: e.tag,
+              status: e.status,
+            }))}
+            onRemove={(tag) => removeSegmentTag(activeMedia.id, tag)}
+            onMouseEnter={clearHideTimer}
+            onMouseLeave={scheduleHide}
+          />
+        )}
 
       {activeMedia && activeRect && (
         <HighlightInput
