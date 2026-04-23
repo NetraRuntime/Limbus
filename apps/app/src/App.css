@@ -1068,13 +1068,15 @@
 }
 
 .media-tag-row:focus {
+  /* Selected state — fires on both mouse click and keyboard focus so
+     the user can see which tag Delete will remove. Two-stop shadow
+     forms a crisp white gap + currentColor halo, like a finder-style
+     selection. z-index lifts it above neighbor rows' borders. */
   outline: none;
-}
-
-.media-tag-row:focus-visible {
+  z-index: 1;
   box-shadow:
-    0 0 0 2px color-mix(in srgb, currentColor 70%, transparent),
-    0 0 0 4px color-mix(in srgb, currentColor 18%, transparent);
+    0 0 0 2px var(--bg),
+    0 0 0 4px currentColor;
 }
 
 .media-tag-row.is-loading {
