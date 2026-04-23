@@ -104,35 +104,44 @@ describe('createHistoryController', () => {
   });
 
   it('serializes overlapping undo calls in order', async () => {
-    const c = createHistoryController();
-    const order: string[] = [];
-    const delayedUndo = (label: string, ms: number) => () =>
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          order.push(label);
-          resolve();
-        }, ms);
-      });
+    vi.useFakeTimers();
+    try {
+      const c = createHistoryController();
+      const order: string[] = [];
+      const delayedUndo = (label: string, ms: number) => () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            order.push(label);
+            resolve();
+          }, ms);
+        });
 
-    // 'a' pushed first (shorter delay), 'b' pushed second (longer delay).
-    // The first undo pops 'b' — its 40ms timer should finish before 'a' runs.
-    // Without serialization, 'a' (10ms) would finish first and order would
-    // come out ['a', 'b']. The queue forces ['b', 'a'].
-    c.push(
-      { label: 'a', do: () => {}, undo: delayedUndo('a', 10) },
-      { alreadyApplied: true },
-    );
-    c.push(
-      { label: 'b', do: () => {}, undo: delayedUndo('b', 40) },
-      { alreadyApplied: true },
-    );
+      // 'a' pushed first (shorter delay), 'b' pushed second (longer delay).
+      // The first undo pops 'b'. Without serialization, a's 10ms timer would
+      // fire before b's 40ms timer and order would come out ['a', 'b']. The
+      // queue forces b to complete before a starts → ['b', 'a'].
+      c.push(
+        { label: 'a', do: () => {}, undo: delayedUndo('a', 10) },
+        { alreadyApplied: true },
+      );
+      c.push(
+        { label: 'b', do: () => {}, undo: delayedUndo('b', 40) },
+        { alreadyApplied: true },
+      );
 
-    // Fire two undos back-to-back without awaiting the first.
-    const p1 = c.undo();
-    const p2 = c.undo();
-    await Promise.all([p1, p2]);
+      const p1 = c.undo();
+      const p2 = c.undo();
+      // Flush all virtual timers and intermediate microtasks. runAllTimersAsync
+      // advances the virtual clock until no timers are pending, yielding to the
+      // microtask queue between firings so serialization's "queue next after
+      // previous resolves" logic has a chance to schedule a's timer.
+      await vi.runAllTimersAsync();
+      await Promise.all([p1, p2]);
 
-    expect(order).toEqual(['b', 'a']);
+      expect(order).toEqual(['b', 'a']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('surfaces undo errors via onError and rolls the entry back to past', async () => {
