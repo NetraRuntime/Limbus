@@ -1,5 +1,6 @@
 import PocketBase from 'pocketbase';
 import { z } from 'zod';
+import { findSegByTag, segIdsToPrune } from './segmentations';
 
 const EnvSchema = z.object({
   VITE_PB_URL: z.string().optional(),
@@ -35,6 +36,30 @@ const PlacementRecordSchema = z.object({
 export type ImageRecord = z.infer<typeof PlacementRecordSchema>;
 export type VideoRecord = z.infer<typeof PlacementRecordSchema>;
 export type MediaKind = 'image' | 'video';
+
+const SegMaskSchema = z.object({
+  png_base64: z.string(),
+  width: z.number(),
+  height: z.number(),
+  score: z.number(),
+  bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]).nullable(),
+});
+
+const SegmentationRecordSchema = z.object({
+  id: z.string(),
+  collectionId: z.string(),
+  collectionName: z.string(),
+  created: z.string(),
+  updated: z.string(),
+  image: z.string(),
+  tag: z.string(),
+  masks: z.array(SegMaskSchema),
+  source_width: z.number(),
+  source_height: z.number(),
+});
+
+export type SegMask = z.infer<typeof SegMaskSchema>;
+export type SegmentationRecord = z.infer<typeof SegmentationRecordSchema>;
 
 const fileUrl = (record: { collectionId: string; id: string; file: string }): string =>
   `${PB_URL}/api/files/${record.collectionId}/${record.id}/${encodeURIComponent(record.file)}`;
@@ -76,6 +101,56 @@ export const listVideos = async (): Promise<VideoRecord[]> => {
     .getFullList({ sort: 'created', filter: ACTIVE_FILTER });
   return parseList(PlacementRecordSchema, raw);
 };
+
+export const listSegmentations = async (): Promise<SegmentationRecord[]> => {
+  const raw = await pb.collection('segmentations').getFullList({ sort: 'created' });
+  return parseList(SegmentationRecordSchema, raw);
+};
+
+export const upsertSegmentation = async (input: {
+  image: string;
+  tag: string;
+  masks: SegMask[];
+  source_width: number;
+  source_height: number;
+}): Promise<SegmentationRecord> => {
+  // Fetch this image's rows, find any existing tag match case-insensitively.
+  // Row counts per image are small (one per tag), so getFullList is cheap.
+  const raw = await pb
+    .collection('segmentations')
+    .getFullList({ filter: `image="${input.image}"` });
+  const existing = parseList(SegmentationRecordSchema, raw);
+  const match = findSegByTag(existing, input.tag);
+  const payload = {
+    image: input.image,
+    tag: input.tag,
+    masks: input.masks,
+    source_width: input.source_width,
+    source_height: input.source_height,
+  };
+  const record = match
+    ? await pb.collection('segmentations').update(match.id, payload)
+    : await pb.collection('segmentations').create(payload);
+  return SegmentationRecordSchema.parse(record);
+};
+
+export const deleteSegmentationsForImage = async (
+  imageId: string,
+  tagsToKeep: readonly string[],
+): Promise<void> => {
+  const raw = await pb
+    .collection('segmentations')
+    .getFullList({ filter: `image="${imageId}"` });
+  const existing = parseList(SegmentationRecordSchema, raw);
+  const ids = segIdsToPrune(existing, tagsToKeep);
+  await Promise.all(
+    ids.map((id) => pb.collection('segmentations').delete(id)),
+  );
+};
+
+export const deleteAllSegmentationsForImage = (
+  imageId: string,
+): Promise<void> => deleteSegmentationsForImage(imageId, []);
 
 export const updateImagePosition = async (
   id: string,

@@ -12,19 +12,24 @@ import {
 import {
   createImage,
   createVideo,
+  deleteAllSegmentationsForImage,
   deleteImage,
+  deleteSegmentationsForImage,
   deleteVideo,
   hardDeleteImage,
   hardDeleteVideo,
   imageFileUrl,
   listImages,
+  listSegmentations,
   listTrashed,
   listVideos,
   updateImagePosition,
   updateVideoPosition,
+  upsertSegmentation,
   videoFileUrl,
   type ImageRecord,
   type MediaKind,
+  type SegmentationRecord,
   type VideoRecord,
 } from './lib/pb';
 import {
@@ -48,6 +53,7 @@ import {
   type LabelPlacement,
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
+import { groupSegmentationsByImage } from './lib/segmentations';
 import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
@@ -885,7 +891,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           return { ok: false as const, records: [] as VideoRecord[] };
         },
       ),
-    ]).then(([imgRes, vidRes]) => {
+      listSegmentations().then(
+        (r) => r,
+        (err) => {
+          console.warn('[pb] failed to load segmentations:', err);
+          return [] as SegmentationRecord[];
+        },
+      ),
+    ]).then(([imgRes, vidRes, segRows]) => {
       if (cancelled) return;
       const merged: CanvasMedia[] = [
         ...imgRes.records.map(fromImageRecord),
@@ -893,6 +906,25 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       ];
       merged.sort((a, b) => a.id.localeCompare(b.id));
       setMedia(merged);
+
+      const grouped = groupSegmentationsByImage(segRows);
+      if (grouped.size > 0) {
+        const initial: Record<string, SegmentState> = {};
+        for (const [imageId, rows] of grouped) {
+          initial[imageId] = {
+            entries: rows.map((r) => ({
+              tag: r.tag,
+              status: 'ready' as const,
+              response: {
+                masks: r.masks,
+                source_width: r.source_width,
+                source_height: r.source_height,
+              },
+            })),
+          };
+        }
+        setSegments((prev) => ({ ...initial, ...prev }));
+      }
       // Only flip the "loaded" gate when we actually heard back from PB; if
       // both collections errored out we don't know the true membership, so
       // leaving stackOrder alone is safer than reconciling against `[]`.
@@ -1128,6 +1160,9 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       delete next[id];
       return next;
     });
+    deleteAllSegmentationsForImage(id).catch((e) =>
+      console.warn('[sam3] clear-persist failed', id, e),
+    );
   }, []);
 
   const submitSegment = useCallback(
@@ -1161,6 +1196,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         ...prev,
         [m.id]: { entries: cleaned.map((tag) => ({ tag, status: 'loading' })) },
       }));
+      // Drop any persisted rows for tags that are no longer in the set.
+      // Fire-and-forget — races with in-flight upserts are fine because the
+      // unique (image, lower(tag)) index prevents duplicate rows.
+      deleteSegmentationsForImage(m.id, cleaned).catch((e) =>
+        console.warn('[sam3] prune failed', m.id, e),
+      );
 
       const updateTag = (tag: string, patch: TagSegment) => {
         if (segmentSeqRef.current[m.id] !== seq) return;
@@ -1189,6 +1230,16 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         })
           .then((response) => {
             updateTag(tag, { tag, status: 'ready', response });
+            // Fire-and-forget: persist the mask to PB so it rehydrates after
+            // reload. UI state is authoritative within a session; PB is
+            // authoritative across sessions.
+            upsertSegmentation({
+              image: m.id,
+              tag,
+              masks: response.masks,
+              source_width: response.source_width,
+              source_height: response.source_height,
+            }).catch((e) => console.warn('[sam3] persist failed', tag, e));
           })
           .catch((err: unknown) => {
             const message = err instanceof Error ? err.message : String(err);
