@@ -24,12 +24,19 @@ const DEFAULT_MODEL_IMAGE_SIZE: u32 = 1008;
 
 /// One segmentation mask returned from a text-prompt segment call.
 ///
-/// `png_base64` is a single-channel PNG with 0 for background and 255 for
-/// foreground. Frontend decodes it with `new Image()` and draws onto a
-/// canvas sized to the displayed image.
+/// Two PNGs per mask, mirroring the C CLI's `write_overlay` fill-and-
+/// outline pass:
+/// - `png_base64`: alpha = 255 inside the thresholded mask, 0 outside.
+///   The frontend paints this as a tinted translucent layer.
+/// - `edge_png_base64`: alpha = 255 on pixels that are foreground *and*
+///   have at least one 4-neighbor in the background, 0 elsewhere. The
+///   frontend paints this as a solid-white 1-pixel outline stacked over
+///   the fill. Both consume the default alpha channel for CSS mask-image
+///   so no `mask-mode: luminance` gymnastics are needed.
 #[derive(Debug, Serialize)]
 pub struct SegMask {
     pub png_base64: String,
+    pub edge_png_base64: String,
     pub width: u32,
     pub height: u32,
     pub score: f32,
@@ -331,9 +338,10 @@ fn segment_text(
             Some(s) => s,
             None => continue,
         };
-        let png_base64 = encode_soft_mask_png(slice, mask_w, mask_h)?;
+        let (png_base64, edge_png_base64) = encode_mask_pngs(slice, mask_w, mask_h)?;
         masks.push(SegMask {
             png_base64,
+            edge_png_base64,
             width: mask_w,
             height: mask_h,
             score: scores.get(i).copied().unwrap_or(0.0),
@@ -348,23 +356,24 @@ fn segment_text(
     })
 }
 
-/// PNG-encode mask logits as a 2-channel luma+alpha image that drives
-/// two stacked layers in the frontend:
+/// PNG-encode mask logits as two separate alpha-mask PNGs, matching
+/// the CLI `write_overlay` fill-and-outline pass exactly.
 ///
-/// - **Alpha channel (soft fill):** sigmoid of the logits quantized to
-///   8 bits. CSS `mask-image` bilinearly upscales this cleanly, whereas
-///   a binary source stair-steps at the mask-pixel grid when displayed
-///   over the full-res image. Matches the visual intent of the CLI's
-///   resize-then-threshold path without paying the storage cost of
-///   upsampling each mask to image resolution before persistence.
-/// - **Luma channel (edge ring):** 255 on pixels that are foreground
-///   (logit > 0) *and* have at least one 4-neighbor that is background.
-///   The frontend renders this as a white outline via a second div with
-///   `mask-mode: luminance`, matching the CLI `write_overlay` aesthetic.
+/// Returns `(fill_base64, edge_base64)`:
+/// - **Fill PNG:** alpha = 255 where logit > 0 (foreground), 0 else.
+///   Frontend paints through a tinted translucent div.
+/// - **Edge PNG:** alpha = 255 on foreground pixels with any 4-neighbor
+///   in the background (the CLI's edge rule verbatim), 0 elsewhere.
+///   Frontend paints through a solid-white div stacked over the fill.
 ///
-/// Base64 transport keeps the payload compact vs. Vec<u8> (which
-/// serializes as a JSON number array).
-fn encode_soft_mask_png(logits: &[f32], width: u32, height: u32) -> Result<String, String> {
+/// Both PNGs drive the default alpha channel for CSS `mask-image` — no
+/// `mask-mode: luminance` gymnastics. Base64 transport keeps the payload
+/// compact vs. Vec<u8> (which serializes as a JSON number array).
+fn encode_mask_pngs(
+    logits: &[f32],
+    width: u32,
+    height: u32,
+) -> Result<(String, String), String> {
     let w = width as usize;
     let h = height as usize;
     let n = w
@@ -373,14 +382,12 @@ fn encode_soft_mask_png(logits: &[f32], width: u32, height: u32) -> Result<Strin
     if logits.len() < n {
         return Err(format!("mask shorter than {width}x{height}"));
     }
-    let mut la = Vec::with_capacity(n * 2);
+    let mut fill = Vec::with_capacity(n * 2);
+    let mut edge = Vec::with_capacity(n * 2);
     for y in 0..h {
         for x in 0..w {
             let i = y * w + x;
-            let v = logits[i];
-            let a = 1.0_f32 / (1.0_f32 + (-v).exp());
-            let a8 = (a * 255.0).clamp(0.0, 255.0).round() as u8;
-            let fg = v > 0.0;
+            let fg = logits[i] > 0.0;
             let is_edge = fg
                 && (x == 0
                     || logits[i - 1] <= 0.0
@@ -390,11 +397,21 @@ fn encode_soft_mask_png(logits: &[f32], width: u32, height: u32) -> Result<Strin
                     || logits[i - w] <= 0.0
                     || y == h - 1
                     || logits[i + w] <= 0.0);
-            la.push(if is_edge { 255u8 } else { 0u8 }); // luma = edge ring
-            la.push(a8); // alpha = soft fill
+            let fa = if fg { 255u8 } else { 0u8 };
+            let ea = if is_edge { 255u8 } else { 0u8 };
+            fill.push(fa);
+            fill.push(fa);
+            edge.push(ea);
+            edge.push(ea);
         }
     }
+    Ok((
+        encode_la8_png(&fill, width, height)?,
+        encode_la8_png(&edge, width, height)?,
+    ))
+}
 
+fn encode_la8_png(la: &[u8], width: u32, height: u32) -> Result<String, String> {
     let mut png_bytes: Vec<u8> = Vec::new();
     let encoder = PngEncoder::new_with_quality(
         &mut png_bytes,
@@ -402,7 +419,7 @@ fn encode_soft_mask_png(logits: &[f32], width: u32, height: u32) -> Result<Strin
         PngFilterType::Adaptive,
     );
     encoder
-        .write_image(&la, width, height, ExtendedColorType::La8)
+        .write_image(la, width, height, ExtendedColorType::La8)
         .map_err(|e| format!("png encode: {e}"))?;
 
     Ok(STANDARD_NO_PAD.encode(&png_bytes))
