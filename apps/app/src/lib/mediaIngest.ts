@@ -1,5 +1,7 @@
 // apps/app/src/lib/mediaIngest.ts
 
+import { unzipSync } from 'fflate';
+
 export const SOFT_ITEM_CAP = 500;
 export const HARD_ITEM_CAP = 5000;
 export const SOFT_SIZE_BYTES = 1 * 1024 ** 3;
@@ -69,4 +71,72 @@ export function mimeFromExtension(name: string): string {
     avi: 'video/x-msvideo', '3gp': 'video/3gpp',
   };
   return map[ext] ?? '';
+}
+
+export class SizeCapExceededError extends Error {
+  constructor(public bytesUsed: number, public limit: number) {
+    super(`uncompressed size cap exceeded: ${bytesUsed} > ${limit}`);
+    this.name = 'SizeCapExceededError';
+  }
+}
+
+export class DepthCapExceededError extends Error {
+  constructor(public depth: number) {
+    super(`zip depth cap exceeded (depth ${depth} > ${MAX_ZIP_DEPTH})`);
+    this.name = 'DepthCapExceededError';
+  }
+}
+
+export type SizeBudget = { bytesUsed: number; limit: number };
+
+export function extractZipRecursive(
+  zipBytes: Uint8Array,
+  pathPrefix: string,
+  depth: number,
+  budget: SizeBudget,
+): MediaDescriptor[] {
+  if (depth > MAX_ZIP_DEPTH) throw new DepthCapExceededError(depth);
+
+  const entries = unzipSync(zipBytes);
+  const out: MediaDescriptor[] = [];
+
+  for (const [name, bytes] of Object.entries(entries)) {
+    // Directory entries appear as empty zero-length entries ending with '/'.
+    if (name.endsWith('/')) continue;
+
+    budget.bytesUsed += bytes.byteLength;
+    if (budget.bytesUsed > budget.limit) {
+      throw new SizeCapExceededError(budget.bytesUsed, budget.limit);
+    }
+
+    const kind = classifyByExtension(name);
+    const relativePath = `${pathPrefix}/${name}`;
+
+    if (kind === 'zip') {
+      out.push(...extractZipRecursive(bytes, relativePath, depth + 1, budget));
+      continue;
+    }
+    if (kind !== 'image' && kind !== 'video') continue;
+
+    const leaf = name.split('/').pop() ?? name;
+    const mime = mimeFromExtension(leaf);
+    const capturedBytes = bytes;
+    const descriptor: MediaDescriptor = {
+      relativePath,
+      name: leaf,
+      size: bytes.byteLength,
+      kind,
+      mime,
+      source: { type: 'zip-blob', bytes: capturedBytes },
+      load: async () =>
+        new File(
+          [capturedBytes as BlobPart],
+          leaf,
+          mime ? { type: mime } : undefined,
+        ),
+    };
+    out.push(descriptor);
+  }
+
+  return out;
 }
