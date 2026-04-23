@@ -2162,6 +2162,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             const { accent } = colorForTag(entry.tag);
             entry.response.masks.forEach((mask, idx) => {
               const maskKey = `${base}-${entry.tag}-mask-${idx}`;
+              const maskUrl = `url(data:image/png;base64,${mask.png_base64})`;
               nodes.push(
                 <div
                   key={maskKey}
@@ -2173,12 +2174,36 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
                     height: rh,
                     backgroundColor: accent,
                     opacity: 0.5,
-                    WebkitMaskImage: `url(data:image/png;base64,${mask.png_base64})`,
-                    maskImage: `url(data:image/png;base64,${mask.png_base64})`,
+                    WebkitMaskImage: maskUrl,
+                    maskImage: maskUrl,
                     WebkitMaskSize: '100% 100%',
                     maskSize: '100% 100%',
                     WebkitMaskRepeat: 'no-repeat',
                     maskRepeat: 'no-repeat',
+                  }}
+                  aria-hidden
+                />,
+              );
+              // White outline layer — same PNG, but consumed via the
+              // luminance channel where the Rust worker wrote a 1-pixel
+              // ring along the binary mask boundary.
+              nodes.push(
+                <div
+                  key={`${maskKey}-edge`}
+                  className="segment-mask-edge"
+                  style={{
+                    left: rx,
+                    top: ry,
+                    width: rw,
+                    height: rh,
+                    backgroundColor: '#fff',
+                    WebkitMaskImage: maskUrl,
+                    maskImage: maskUrl,
+                    WebkitMaskSize: '100% 100%',
+                    maskSize: '100% 100%',
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    maskMode: 'luminance',
                   }}
                   aria-hidden
                 />,

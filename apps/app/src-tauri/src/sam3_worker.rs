@@ -348,33 +348,51 @@ fn segment_text(
     })
 }
 
-/// PNG-encode mask logits as a 2-channel luma+alpha image with *soft*
-/// edges. Applies a sigmoid to the logits so the transition zone around
-/// each object boundary spans multiple grayscale levels instead of a
-/// hard 0/255 step. CSS `mask-image` bilinearly upscales the PNG to the
-/// displayed image size — a soft-alpha source scales cleanly, whereas a
-/// binary source stair-steps at the mask-pixel grid. The CLI achieves
-/// the same effect by resizing the float logits to image resolution
-/// before thresholding; we keep the mask at source resolution and let
-/// the renderer do the upscaling, which avoids bloating the IPC and DB
-/// payload for every mask.
+/// PNG-encode mask logits as a 2-channel luma+alpha image that drives
+/// two stacked layers in the frontend:
+///
+/// - **Alpha channel (soft fill):** sigmoid of the logits quantized to
+///   8 bits. CSS `mask-image` bilinearly upscales this cleanly, whereas
+///   a binary source stair-steps at the mask-pixel grid when displayed
+///   over the full-res image. Matches the visual intent of the CLI's
+///   resize-then-threshold path without paying the storage cost of
+///   upsampling each mask to image resolution before persistence.
+/// - **Luma channel (edge ring):** 255 on pixels that are foreground
+///   (logit > 0) *and* have at least one 4-neighbor that is background.
+///   The frontend renders this as a white outline via a second div with
+///   `mask-mode: luminance`, matching the CLI `write_overlay` aesthetic.
 ///
 /// Base64 transport keeps the payload compact vs. Vec<u8> (which
 /// serializes as a JSON number array).
 fn encode_soft_mask_png(logits: &[f32], width: u32, height: u32) -> Result<String, String> {
-    let n = (width as usize)
-        .checked_mul(height as usize)
+    let w = width as usize;
+    let h = height as usize;
+    let n = w
+        .checked_mul(h)
         .ok_or_else(|| "mask dims overflow".to_string())?;
     if logits.len() < n {
         return Err(format!("mask shorter than {width}x{height}"));
     }
     let mut la = Vec::with_capacity(n * 2);
-    for v in &logits[..n] {
-        // sigmoid(v) in [0,1]; quantize to 8-bit alpha.
-        let a = 1.0_f32 / (1.0_f32 + (-*v).exp());
-        let a8 = (a * 255.0).clamp(0.0, 255.0).round() as u8;
-        la.push(255u8); // luma — ignored by alpha-source mask-image
-        la.push(a8); // alpha drives the soft edge
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * w + x;
+            let v = logits[i];
+            let a = 1.0_f32 / (1.0_f32 + (-v).exp());
+            let a8 = (a * 255.0).clamp(0.0, 255.0).round() as u8;
+            let fg = v > 0.0;
+            let is_edge = fg
+                && (x == 0
+                    || logits[i - 1] <= 0.0
+                    || x == w - 1
+                    || logits[i + 1] <= 0.0
+                    || y == 0
+                    || logits[i - w] <= 0.0
+                    || y == h - 1
+                    || logits[i + w] <= 0.0);
+            la.push(if is_edge { 255u8 } else { 0u8 }); // luma = edge ring
+            la.push(a8); // alpha = soft fill
+        }
     }
 
     let mut png_bytes: Vec<u8> = Vec::new();
