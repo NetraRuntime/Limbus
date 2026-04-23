@@ -18,12 +18,13 @@ export const pb = new PocketBase(PB_URL || '/');
 
 pb.autoCancellation(false);
 
+// Bookkeeping fields (`collectionName`, `created`, `updated`) are excluded
+// from the schema — validating them on every row in bulk hydration burns
+// ~200–500 ms at 10k without the app ever reading them. `collectionId` is
+// kept because `fileUrl` uses it.
 const PlacementRecordSchema = z.object({
   id: z.string(),
   collectionId: z.string(),
-  collectionName: z.string(),
-  created: z.string(),
-  updated: z.string(),
   file: z.string(),
   name: z.string(),
   x: z.number(),
@@ -48,9 +49,6 @@ const SegMaskSchema = z.object({
 const SegmentationRecordSchema = z.object({
   id: z.string(),
   collectionId: z.string(),
-  collectionName: z.string(),
-  created: z.string(),
-  updated: z.string(),
   image: z.string(),
   tag: z.string(),
   masks: z.array(SegMaskSchema),
