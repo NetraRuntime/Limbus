@@ -48,7 +48,7 @@ export function useLodSources({
   reportDims: (assetId: string, naturalWidth: number, naturalHeight: number) => void;
   dropAsset: (assetId: string) => void;
 } {
-  const [, forceRender] = useState(0);
+  const [renderTick, forceRender] = useState(0);
   const store = useRef<Store>({
     urls: new Map(),
     dims: new Map(),
@@ -152,7 +152,7 @@ export function useLodSources({
       out.set(item.id, final);
     }
     return out;
-  }, [items, viewScale, dpr, cache, reportLevelBlob]);
+  }, [items, viewScale, dpr, cache, reportLevelBlob, renderTick]);
 
   return { sources, reportLevelBlob, reportDims, dropAsset };
 }
