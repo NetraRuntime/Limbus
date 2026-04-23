@@ -114,12 +114,16 @@ describe('createHistoryController', () => {
         }, ms);
       });
 
+    // 'a' pushed first (shorter delay), 'b' pushed second (longer delay).
+    // The first undo pops 'b' — its 40ms timer should finish before 'a' runs.
+    // Without serialization, 'a' (10ms) would finish first and order would
+    // come out ['a', 'b']. The queue forces ['b', 'a'].
     c.push(
-      { label: 'a', do: () => {}, undo: delayedUndo('a', 40) },
+      { label: 'a', do: () => {}, undo: delayedUndo('a', 10) },
       { alreadyApplied: true },
     );
     c.push(
-      { label: 'b', do: () => {}, undo: delayedUndo('b', 10) },
+      { label: 'b', do: () => {}, undo: delayedUndo('b', 40) },
       { alreadyApplied: true },
     );
 
@@ -128,8 +132,6 @@ describe('createHistoryController', () => {
     const p2 = c.undo();
     await Promise.all([p1, p2]);
 
-    // Without serialization, 'a' (10ms) would finish before 'b' (40ms).
-    // With serialization, 'b' must complete before 'a' starts.
     expect(order).toEqual(['b', 'a']);
   });
 });
