@@ -29,6 +29,7 @@ const PlacementRecordSchema = z.object({
   y: z.number(),
   width: z.number(),
   height: z.number(),
+  deleted_at: z.string().nullable().optional(),
 });
 
 export type ImageRecord = z.infer<typeof PlacementRecordSchema>;
@@ -59,12 +60,16 @@ const parseList = <T>(schema: z.ZodType<T>, raw: unknown): T[] => {
 };
 
 export const listImages = async (): Promise<ImageRecord[]> => {
-  const raw = await pb.collection('images').getFullList({ sort: 'created' });
+  const raw = await pb
+    .collection('images')
+    .getFullList({ sort: 'created', filter: 'deleted_at = ""' });
   return parseList(PlacementRecordSchema, raw);
 };
 
 export const listVideos = async (): Promise<VideoRecord[]> => {
-  const raw = await pb.collection('videos').getFullList({ sort: 'created' });
+  const raw = await pb
+    .collection('videos')
+    .getFullList({ sort: 'created', filter: 'deleted_at = ""' });
   return parseList(PlacementRecordSchema, raw);
 };
 
@@ -200,8 +205,47 @@ export const createVideo = async (
   return PlacementRecordSchema.parse(raw);
 };
 
-export const deleteImage = (id: string): Promise<boolean> =>
+export const deleteImage = async (id: string): Promise<ImageRecord> => {
+  const raw = await pb
+    .collection('images')
+    .update(id, { deleted_at: new Date().toISOString() });
+  return PlacementRecordSchema.parse(raw);
+};
+
+export const deleteVideo = async (id: string): Promise<VideoRecord> => {
+  const raw = await pb
+    .collection('videos')
+    .update(id, { deleted_at: new Date().toISOString() });
+  return PlacementRecordSchema.parse(raw);
+};
+
+export const restoreImage = async (id: string): Promise<ImageRecord> => {
+  const raw = await pb.collection('images').update(id, { deleted_at: null });
+  return PlacementRecordSchema.parse(raw);
+};
+
+export const restoreVideo = async (id: string): Promise<VideoRecord> => {
+  const raw = await pb.collection('videos').update(id, { deleted_at: null });
+  return PlacementRecordSchema.parse(raw);
+};
+
+export const hardDeleteImage = (id: string): Promise<boolean> =>
   pb.collection('images').delete(id);
 
-export const deleteVideo = (id: string): Promise<boolean> =>
+export const hardDeleteVideo = (id: string): Promise<boolean> =>
   pb.collection('videos').delete(id);
+
+export const listTrashed = async (opts: {
+  olderThanMs: number;
+}): Promise<{ images: ImageRecord[]; videos: VideoRecord[] }> => {
+  const cutoff = new Date(Date.now() - opts.olderThanMs).toISOString();
+  const filter = `deleted_at != "" && deleted_at < "${cutoff}"`;
+  const [imgs, vids] = await Promise.all([
+    pb.collection('images').getFullList({ filter }),
+    pb.collection('videos').getFullList({ filter }),
+  ]);
+  return {
+    images: parseList(PlacementRecordSchema, imgs),
+    videos: parseList(PlacementRecordSchema, vids),
+  };
+};
