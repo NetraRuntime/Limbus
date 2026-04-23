@@ -339,6 +339,7 @@ const MediaItem = memo(function MediaItem({
             onPointerDown={handleDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
           />
           {label}
         </>
