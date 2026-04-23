@@ -1550,6 +1550,19 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             const d = await buildDescriptorFromFile(f, f.name, budget);
             descs.push(...d);
           }
+          // Most browsers expose drops via `webkitGetAsEntry`, populating
+          // `entries` instead of `fallbackFiles`. The folder/zip gate above
+          // already excluded directory entries, so anything left here is a
+          // single FileSystemFileEntry we can resolve to a File directly.
+          for (const entry of captured.entries) {
+            if (!entry || !entry.isFile) continue;
+            const fileEntry = entry as FileSystemFileEntry;
+            const file = await new Promise<File>((resolve, reject) =>
+              fileEntry.file(resolve, reject),
+            );
+            const d = await buildDescriptorFromFile(file, file.name, budget);
+            descs.push(...d);
+          }
           if (descs.length) await importDescriptors(descs, point);
         })();
         return;
