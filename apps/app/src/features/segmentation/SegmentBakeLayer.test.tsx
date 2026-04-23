@@ -1,0 +1,102 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
+import { SegmentBakeLayer, type SegmentBakeLayerProps } from './SegmentBakeLayer';
+import * as bakeCache from './bakeCache';
+import type { BakeEntry } from './types';
+
+const mkBake = (overrides: Partial<BakeEntry> = {}): BakeEntry => {
+  const idMap = new Uint16Array(2 * 2);
+  idMap[0] = 1; // top-left pixel hits mask id 1
+  return {
+    signature: 'sig',
+    bitmap: { width: 2, height: 2, close: () => {} } as unknown as ImageBitmap,
+    idMap,
+    idToMask: [{ tag: 'cat', maskIndex: 0 }],
+    width: 2,
+    height: 2,
+    ...overrides,
+  };
+};
+
+const mkProps = (overrides: Partial<SegmentBakeLayerProps> = {}): SegmentBakeLayerProps => ({
+  imageId: 'img1',
+  worldX: 100,
+  worldY: 200,
+  worldWidth: 400,
+  worldHeight: 400,
+  sourceW: 400,
+  sourceH: 400,
+  masks: [
+    {
+      tag: 'cat',
+      maskIndex: 0,
+      png_base64: 'AAAA',
+      maskW: 400,
+      maskH: 400,
+      bbox: null,
+      accent: '#ff0000',
+    },
+  ],
+  onMaskSelect: vi.fn(),
+  onEmptyPointerDown: vi.fn(),
+  ...overrides,
+});
+
+beforeEach(() => {
+  // Return a stable fake bake synchronously via the hook shim.
+  vi.spyOn(bakeCache, 'useSegmentBake').mockReturnValue({ bake: mkBake() });
+  // Stub the canvas getContext('bitmaprenderer'); jsdom lacks it.
+  HTMLCanvasElement.prototype.getContext = vi.fn(
+    () => ({ transferFromImageBitmap: () => {} }),
+  ) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+});
+
+describe('SegmentBakeLayer', () => {
+  it('renders a canvas at the image world rect', () => {
+    const { container } = render(<SegmentBakeLayer {...mkProps()} />);
+    const canvas = container.querySelector('canvas');
+    expect(canvas).toBeTruthy();
+    expect(canvas!.style.left).toBe('100px');
+    expect(canvas!.style.top).toBe('200px');
+    expect(canvas!.style.width).toBe('400px');
+    expect(canvas!.style.height).toBe('400px');
+    // Intrinsic bake dims flow to the canvas attrs.
+    expect(canvas!.width).toBe(2);
+    expect(canvas!.height).toBe(2);
+  });
+
+  it('calls onMaskSelect on pointerdown over a mask pixel', () => {
+    const onMaskSelect = vi.fn();
+    const onEmptyPointerDown = vi.fn();
+    const { container } = render(
+      <SegmentBakeLayer {...mkProps({ onMaskSelect, onEmptyPointerDown })} />,
+    );
+    const canvas = container.querySelector('canvas')!;
+    // Stub getBoundingClientRect to align with worldX/Y/size (jsdom returns 0s).
+    canvas.getBoundingClientRect = () =>
+      ({ left: 100, top: 200, right: 500, bottom: 600, width: 400, height: 400, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
+    // Pointer near top-left → image-local (1,1) → bake pixel (0,0) → id 1.
+    fireEvent.pointerDown(canvas, { clientX: 101, clientY: 201 });
+    expect(onMaskSelect).toHaveBeenCalledWith({
+      imageId: 'img1',
+      tag: 'cat',
+      maskIndex: 0,
+    });
+    expect(onEmptyPointerDown).not.toHaveBeenCalled();
+  });
+
+  it('forwards to onEmptyPointerDown when pointer hits an empty pixel', () => {
+    const onMaskSelect = vi.fn();
+    const onEmptyPointerDown = vi.fn();
+    const { container } = render(
+      <SegmentBakeLayer {...mkProps({ onMaskSelect, onEmptyPointerDown })} />,
+    );
+    const canvas = container.querySelector('canvas')!;
+    canvas.getBoundingClientRect = () =>
+      ({ left: 100, top: 200, right: 500, bottom: 600, width: 400, height: 400, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
+    // Pointer near bottom-right → pixel (1,1) in 2x2 idMap → 0.
+    fireEvent.pointerDown(canvas, { clientX: 499, clientY: 599 });
+    expect(onMaskSelect).not.toHaveBeenCalled();
+    expect(onEmptyPointerDown).toHaveBeenCalled();
+  });
+});
