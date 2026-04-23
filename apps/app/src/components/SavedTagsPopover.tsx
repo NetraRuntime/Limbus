@@ -22,11 +22,14 @@ export function SavedTagsPopover({ className }: Props = {}) {
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const glass = useAutoLiquidGlassFilter({ radius: 12 });
+  // Separate filter for the popover dialog — it has a different size
+  // and radius than the trigger button.
+  const popoverGlass = useAutoLiquidGlassFilter({ radius: 16 });
 
   // Click-outside / Escape while the popover is open.
   useEffect(() => {
@@ -147,13 +150,18 @@ export function SavedTagsPopover({ className }: Props = {}) {
         </button>
       </div>
 
+      {open && popoverGlass.filterSvg}
       {open && (
         <div
-          ref={popoverRef}
-          className="saved-tags-popover"
+          ref={(el) => {
+            popoverRef.current = el;
+            popoverGlass.ref(el);
+          }}
+          className="saved-tags-popover is-liquid-glass"
           role="dialog"
           aria-label="Saved tags"
           onPointerDown={(e) => e.stopPropagation()}
+          style={popoverGlass.style}
         >
           <div className="saved-tags-header">
             <span className="saved-tags-title">Saved tags</span>
@@ -238,12 +246,22 @@ export function SavedTagsPopover({ className }: Props = {}) {
                         autoComplete="off"
                       />
                     ) : (
+                      // Double-click to edit matches native file-manager /
+                      // spreadsheet rename affordance — avoids accidental
+                      // edits on a single click while still being reachable
+                      // via keyboard (Enter / F2 when the label is focused).
                       <button
                         type="button"
                         className="saved-tags-label"
-                        onClick={() => startEdit(tag)}
-                        aria-label={`Rename "${tag}"`}
-                        title="Click to rename"
+                        onDoubleClick={() => startEdit(tag)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === 'F2') {
+                            e.preventDefault();
+                            startEdit(tag);
+                          }
+                        }}
+                        aria-label={`${tag} (double-click to rename)`}
+                        title="Double-click to rename"
                       >
                         {tag}
                       </button>
