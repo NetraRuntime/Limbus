@@ -1668,7 +1668,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       if (!m || e.pointerId !== m.pointerId) return;
       marqueeRef.current = null;
       if (!m.moved) {
-        if (!m.additive) clearSelection();
+        // Suppress clearSelection when the pointer ends on a floating
+        // overlay (media-toolbar, highlight-input, popover). The toolbar
+        // animates in over the cursor after pointerdown, so a stationary
+        // click that started on the canvas and ended on the toolbar
+        // should let the toolbar's own click handler run — not deselect
+        // the image. Overlays live outside .ic-root.
+        const target = e.target instanceof Element ? e.target : null;
+        const endedOnOverlay = !!target && !target.closest('.ic-root');
+        if (!m.additive && !endedOnOverlay) clearSelection();
         setMarqueeRect(null);
         return;
       }
