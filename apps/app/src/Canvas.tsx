@@ -969,6 +969,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   mediaRef.current = media;
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
+  const lastSelectedIdRef = useRef(lastSelectedId);
+  lastSelectedIdRef.current = lastSelectedId;
 
   // Keep `stackOrder` in step with `media` membership: new items get appended
   // to the top of the stack, deleted items fall out. The relative order of
@@ -1350,6 +1352,48 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         clearSelection();
         return;
       }
+      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // The HighlightInput autofocuses when a single item is selected, so
+        // cycling lands us back in a typing context on every other press.
+        // Treat it as a navigation companion — Tab there still cycles.
+        const tgt = e.target instanceof Element ? e.target : null;
+        const activeEl =
+          document.activeElement instanceof Element ? document.activeElement : null;
+        const inHighlightInput =
+          tgt?.closest('.highlight-input') != null ||
+          activeEl?.closest('.highlight-input') != null;
+        if (!inHighlightInput && isTypingContext(e)) return;
+        const list = mediaRef.current.filter((m) => !m.pending);
+        if (list.length === 0) return;
+        e.preventDefault();
+        const selIds = selectedIdsRef.current;
+        const anchorId =
+          (lastSelectedIdRef.current && selIds.has(lastSelectedIdRef.current)
+            ? lastSelectedIdRef.current
+            : null) ??
+          (selIds.size > 0 ? Array.from(selIds).pop() ?? null : null);
+        const currentIndex = anchorId
+          ? list.findIndex((m) => m.id === anchorId)
+          : -1;
+        const dir = e.shiftKey ? -1 : 1;
+        const nextIndex =
+          currentIndex === -1
+            ? dir === 1
+              ? 0
+              : list.length - 1
+            : (currentIndex + dir + list.length) % list.length;
+        const target = list[nextIndex];
+        if (!target) return;
+        clearHideTimer();
+        setSelectedIds(new Set([target.id]));
+        setLastSelectedId(target.id);
+        setHoverId(target.id);
+        canvasRef.current?.focusOn(
+          { x: target.x, y: target.y, width: target.width, height: target.height },
+          { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
+        );
+        return;
+      }
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.altKey &&
@@ -1380,7 +1424,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [clearSelection, deleteSelection, selectAll, duplicateSelection]);
+  }, [clearSelection, deleteSelection, selectAll, duplicateSelection, clearHideTimer]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
