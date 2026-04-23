@@ -30,7 +30,8 @@
 .btn-cluster.is-liquid-glass,
 .status-pill.is-liquid-glass,
 .wordmark.is-liquid-glass,
-.floating-sidebar-inner.is-liquid-glass {
+.floating-sidebar-inner.is-liquid-glass,
+.saved-tags-popover.is-liquid-glass {
   background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
   border-color: color-mix(in srgb, var(--color-neutral) 60%, transparent);
 }
@@ -182,14 +183,15 @@
   flex-direction: column;
   padding: 6px;
   pointer-events: auto;
-  background: color-mix(in srgb, var(--color-neutral) 30%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  /* Background + border come from the .is-liquid-glass rule so the
+     refraction reads cleanly; backdrop-filter is applied inline by the
+     useAutoLiquidGlassFilter hook. */
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
   border-radius: var(--radius-lg);
   box-shadow:
     0 12px 24px -12px rgb(0 0 0 / 0.3),
     0 0 0 1px color-mix(in srgb, var(--color-text) 4%, transparent);
-  backdrop-filter: saturate(140%) blur(10px);
-  -webkit-backdrop-filter: saturate(140%) blur(10px);
   animation: highlightInputIn 140ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -309,11 +311,12 @@
   padding: 0;
   text-align: left;
   font: inherit;
-  cursor: text;
+  cursor: default;
   letter-spacing: -0.1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: none;
 }
 
 .saved-tags-edit-input {
