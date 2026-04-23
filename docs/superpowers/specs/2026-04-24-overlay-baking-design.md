@@ -201,7 +201,11 @@ bitmap pixel hash and the idMap; no DOM needed.
 ### 5. Deletion
 
 - Keybinding: `Delete` / `Backspace` when `selectedMask` is set.
-- Also: a small `×` chip rendered next to the selection ring.
+  Input-field focus is respected (`INPUT`, `TEXTAREA`, contentEditable
+  targets are ignored). A visible delete affordance (e.g., a small
+  `×` chip anchored to the ring) is a sensible follow-up if
+  keyboard-only proves undiscoverable; deferred to avoid shipping UX
+  that may not be needed.
 - `deleteMask({ imageId, tag, maskIndex })`:
   1. Update `segments` state: remove the mask from that tag's
      `response.masks[]`. If the tag now has `masks.length === 0`, drop
