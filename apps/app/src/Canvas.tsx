@@ -453,6 +453,11 @@ type MediaItemProps = {
   onPointerUp: (e: MediaPointerEvent) => void;
 };
 
+// Survives MediaItem unmount/remount. Viewport culling in Canvas unmounts
+// off-screen items; on zoom-back they remount fresh, and without this set
+// would flash through the pop-in animation every time.
+const loadedMediaIds = new Set<string>();
+
 const MediaItem = memo(function MediaItem({
   m,
   isActive,
@@ -468,7 +473,7 @@ const MediaItem = memo(function MediaItem({
   onPointerMove,
   onPointerUp,
 }: MediaItemProps) {
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => loadedMediaIds.has(m.id));
   const imgRef = useRef<HTMLImageElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -477,16 +482,26 @@ const MediaItem = memo(function MediaItem({
     // event never fires on remount. Reconcile against the DOM state once.
     const img = imgRef.current;
     if (img && img.complete && img.naturalWidth > 0) {
+      loadedMediaIds.add(m.id);
       setLoaded(true);
       return;
     }
     const vid = videoRef.current;
-    if (vid && vid.readyState >= 2) setLoaded(true);
-  }, []);
+    if (vid && vid.readyState >= 2) {
+      loadedMediaIds.add(m.id);
+      setLoaded(true);
+    }
+  }, [m.id]);
 
-  const handleLoaded = () => setLoaded(true);
+  const handleLoaded = () => {
+    loadedMediaIds.add(m.id);
+    setLoaded(true);
+  };
   // Flip visible on error too, otherwise the broken-image icon stays hidden.
-  const handleError = () => setLoaded(true);
+  const handleError = () => {
+    loadedMediaIds.add(m.id);
+    setLoaded(true);
+  };
 
   const cls = `world-image ${m.pending ? 'is-pending' : ''} ${isActive ? 'is-active' : ''} ${loaded ? 'is-loaded' : ''}`;
   const style = { left: m.x, top: m.y, width: m.width, height: m.height };
@@ -2639,7 +2654,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     // unselected item won't fire click (moved=true suppresses it), so the
     // selectedIds-driven raise effect wouldn't run. Raise here too.
     bringToFront(ids);
-  }, [bringToFront]);
+  }, [bringToFront, dispatchBoxPrompt]);
 
   const handleMediaPointerMove = useCallback((e: MediaPointerEvent) => {
     const d = dragRef.current;
@@ -3064,9 +3079,16 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const state = segments[m.id]!;
           const base = `segment-${m.id}`;
 
-          const loadingTags = state.entries.filter((e) => e.status === 'loading');
+          // Box-derived segments are visualized by the user-drawn box overlay
+          // itself (and their masks render via BakeForImage); skip them in the
+          // text-tag chip stack so loading/error feedback for boxes doesn't
+          // surface raw `__box__<id>` strings.
+          const loadingTags = state.entries.filter(
+            (e) => e.status === 'loading' && e.kind !== 'box',
+          );
           const errorTags = state.entries.filter(
-            (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
+            (e): e is Extract<TagSegment, { status: 'error' }> & { kind?: 'box' } =>
+              e.status === 'error' && e.kind !== 'box',
           );
 
           if (loadingTags.length === 0 && errorTags.length === 0) return [];
