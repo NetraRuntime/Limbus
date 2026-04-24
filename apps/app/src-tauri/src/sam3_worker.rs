@@ -15,7 +15,7 @@ use base64::Engine as _;
 use image::codecs::png::{CompressionType, FilterType as PngFilterType, PngEncoder};
 use image::imageops::FilterType;
 use image::{ExtendedColorType, ImageEncoder, ImageReader};
-use sam3::{Ctx, Prompt};
+use sam3::{Box as Sam3Box, Ctx, Prompt, SegmentResult};
 use serde::Serialize;
 
 /// Image side length libsam3 falls back to when the config reports 0.
@@ -91,6 +91,16 @@ pub enum Job {
         text: String,
         reply: Sender<Result<SegmentResponse, String>>,
     },
+    /// Run box-prompt segmentation against an image. `bbox` is
+    /// `[x1, y1, x2, y2]` in **normalized** `[0, 1]` coordinates relative
+    /// to the source image; the worker scales it to libsam3's prompt
+    /// coordinate space (the resized image fed to `set_image_rgb`).
+    SegmentBox {
+        id: String,
+        src_path: PathBuf,
+        bbox: [f32; 4],
+        reply: Sender<Result<SegmentResponse, String>>,
+    },
 }
 
 /// Handle that Tauri commands use to dispatch jobs.
@@ -159,6 +169,28 @@ impl WorkerHandle {
                 id,
                 src_path,
                 text,
+                reply,
+            })
+            .map_err(|_| "sam3 worker is not running".to_string())?;
+        rx.recv()
+            .map_err(|_| "sam3 worker dropped reply".to_string())?
+    }
+
+    /// Submit a `SegmentBox` job and wait synchronously for the reply.
+    ///
+    /// `bbox` is `[x1, y1, x2, y2]` in normalized `[0, 1]` coordinates.
+    pub fn segment_box_blocking(
+        &self,
+        id: String,
+        src_path: PathBuf,
+        bbox: [f32; 4],
+    ) -> Result<SegmentResponse, String> {
+        let (reply, rx) = mpsc::channel();
+        self.tx
+            .send(Job::SegmentBox {
+                id,
+                src_path,
+                bbox,
                 reply,
             })
             .map_err(|_| "sam3 worker is not running".to_string())?;
@@ -244,6 +276,16 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                     .and_then(|ctx| segment_text(ctx, &cfg.cache_dir, &id, &src_path, &text));
                 let _ = reply.send(res);
             }
+            Job::SegmentBox {
+                id,
+                src_path,
+                bbox,
+                reply,
+            } => {
+                let res = ensure_ctx(&mut ctx, &cfg)
+                    .and_then(|ctx| segment_box(ctx, &cfg.cache_dir, &id, &src_path, bbox));
+                let _ = reply.send(res);
+            }
         }
     }
 }
@@ -301,11 +343,46 @@ fn segment_text(
     text: &str,
 ) -> Result<SegmentResponse, String> {
     let (src_w, src_h) = ensure_image_loaded(ctx, cache_dir, id, src_path)?;
-
     let result = ctx
         .segment(&[Prompt::Text(text)])
         .map_err(|e| format!("segment: {e}"))?;
+    build_segment_response(result, src_w, src_h)
+}
 
+/// Run a single box prompt. `bbox` is normalized `[x1, y1, x2, y2]` in `[0, 1]`
+/// relative to the source image; the caller validates that range. Here we scale
+/// to the image coordinate space libsam3 actually sees (the `src_w × src_h`
+/// dimensions returned by `ensure_image_loaded`).
+fn segment_box(
+    ctx: &mut Ctx,
+    cache_dir: &Path,
+    id: &str,
+    src_path: &Path,
+    bbox: [f32; 4],
+) -> Result<SegmentResponse, String> {
+    let (src_w, src_h) = ensure_image_loaded(ctx, cache_dir, id, src_path)?;
+    let w = src_w as f32;
+    let h = src_h as f32;
+    let box_prompt = Sam3Box {
+        x1: bbox[0] * w,
+        y1: bbox[1] * h,
+        x2: bbox[2] * w,
+        y2: bbox[3] * h,
+    };
+    let result = ctx
+        .segment(&[Prompt::Box(box_prompt)])
+        .map_err(|e| format!("segment: {e}"))?;
+    build_segment_response(result, src_w, src_h)
+}
+
+/// Reduce (NMS), sort best-first, PNG-encode masks, and bundle with the
+/// source dimensions the frontend uses for placement. Shared between every
+/// prompt variant so response shape stays identical regardless of prompt type.
+fn build_segment_response(
+    result: SegmentResult,
+    src_w: u32,
+    src_h: u32,
+) -> Result<SegmentResponse, String> {
     let reduced = if result.iou_valid() && result.n_masks() > 0 {
         result.nms(0.5, 0.5, 0.8).unwrap_or(result)
     } else {

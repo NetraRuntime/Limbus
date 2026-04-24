@@ -202,6 +202,43 @@ async fn sam3_segment_text(
     result
 }
 
+/// Segment using a bounding-box prompt. `bbox` is `[x1, y1, x2, y2]` in
+/// **normalized `[0, 1]` coordinates** relative to the source image — the
+/// worker scales them to libsam3's prompt coordinate space. Normalized input
+/// keeps the frontend decoupled from libsam3's internal resize dimensions.
+#[tauri::command]
+async fn sam3_segment_box(
+    app: AppHandle,
+    worker: State<'_, WorkerHandle>,
+    id: String,
+    collection_id: String,
+    file: String,
+    bbox: [f32; 4],
+) -> Result<SegmentResponse, String> {
+    let [x1, y1, x2, y2] = bbox;
+    for (label, v) in [("x1", x1), ("y1", y1), ("x2", x2), ("y2", y2)] {
+        if !v.is_finite() || !(0.0..=1.0).contains(&v) {
+            return Err(format!("bbox {label} out of [0, 1]: {v}"));
+        }
+    }
+    if x2 <= x1 || y2 <= y1 {
+        return Err(format!("bbox has non-positive extent: [{x1}, {y1}, {x2}, {y2}]"));
+    }
+    let src_path = resolve_pb_file_path(&app, &id, &collection_id, &file)?;
+    eprintln!("[sam3] segment box: id={id} bbox=[{x1:.3}, {y1:.3}, {x2:.3}, {y2:.3}]");
+    let w = worker.inner().clone();
+    let id_log = id.clone();
+    let result =
+        tauri::async_runtime::spawn_blocking(move || w.segment_box_blocking(id, src_path, bbox))
+            .await
+            .map_err(|e| format!("join worker: {e}"))?;
+    match &result {
+        Ok(r) => eprintln!("[sam3] segment box done: id={id_log} masks={}", r.masks.len()),
+        Err(e) => eprintln!("[sam3] segment box failed: id={id_log}: {e}"),
+    }
+    result
+}
+
 /// Ordered list of model-file candidates tried on first use.
 ///
 /// 1. `SAM3_MODEL_PATH` env override.
@@ -348,6 +385,7 @@ pub fn run() {
             sam3_delete_image_cache,
             sam3_cache_status,
             sam3_segment_text,
+            sam3_segment_box,
             scan_paths,
             read_file_bytes,
         ])
