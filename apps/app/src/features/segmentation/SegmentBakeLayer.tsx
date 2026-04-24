@@ -1,4 +1,10 @@
-import { memo, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  memo,
+  useEffect,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useSegmentBake, type BakeHookInput } from './bakeCache';
 import { hitTestAtPointer } from './hitTest';
 import type { MaskIdentity } from './types';
@@ -17,6 +23,17 @@ export type SegmentBakeLayerProps = {
   // Pointer routing.
   onMaskSelect: (mask: MaskIdentity) => void;
   onEmptyPointerDown: (e: ReactPointerEvent<HTMLCanvasElement>) => void;
+  // Fires as the pointer moves across the bake: the hit-tested mask, or null
+  // when over empty pixels or after the cursor leaves the layer. De-duped:
+  // only fires on transitions, not every pointermove.
+  onMaskHover?: (mask: MaskIdentity | null) => void;
+  // The overlay sits over the image with pointer-events: auto, so it absorbs
+  // hover/drag events that would otherwise reach the <img>. Forward them so
+  // the image's hover highlight and in-progress drags work on the image body.
+  onMouseEnter?: (e: ReactMouseEvent<HTMLCanvasElement>) => void;
+  onMouseLeave?: (e: ReactMouseEvent<HTMLCanvasElement>) => void;
+  onPointerMove?: (e: ReactPointerEvent<HTMLCanvasElement>) => void;
+  onPointerUp?: (e: ReactPointerEvent<HTMLCanvasElement>) => void;
 };
 
 function SegmentBakeLayerImpl({
@@ -30,9 +47,17 @@ function SegmentBakeLayerImpl({
   masks,
   onMaskSelect,
   onEmptyPointerDown,
+  onMaskHover,
+  onMouseEnter,
+  onMouseLeave,
+  onPointerMove,
+  onPointerUp,
 }: SegmentBakeLayerProps) {
   const { bake } = useSegmentBake({ imageId, sourceW, sourceH, masks });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // De-dupe hover transitions so onMaskHover fires only when the hit changes,
+  // not on every pointermove sample.
+  const lastHoverIdRef = useRef<number>(0);
 
   // Publish the latest bitmap into the canvas (zero-copy).
   useEffect(() => {
@@ -74,6 +99,38 @@ function SegmentBakeLayerImpl({
     onMaskSelect({ imageId, tag: m.tag, maskIndex: m.maskIndex });
   };
 
+  const handlePointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (canvas && onMaskHover) {
+      const rect = canvas.getBoundingClientRect();
+      const id = hitTestAtPointer(
+        { pointerX: e.clientX, pointerY: e.clientY },
+        rect,
+        bake.idMap,
+        bake.width,
+        bake.height,
+      );
+      if (id !== lastHoverIdRef.current) {
+        lastHoverIdRef.current = id;
+        if (id === 0) {
+          onMaskHover(null);
+        } else {
+          const m = bake.idToMask[id - 1];
+          onMaskHover(m ? { imageId, tag: m.tag, maskIndex: m.maskIndex } : null);
+        }
+      }
+    }
+    onPointerMove?.(e);
+  };
+
+  const handleMouseLeave = (e: ReactMouseEvent<HTMLCanvasElement>) => {
+    if (lastHoverIdRef.current !== 0 && onMaskHover) {
+      lastHoverIdRef.current = 0;
+      onMaskHover(null);
+    }
+    onMouseLeave?.(e);
+  };
+
   return (
     <canvas
       ref={canvasRef}
@@ -88,6 +145,11 @@ function SegmentBakeLayerImpl({
         height: worldHeight,
       }}
       onPointerDown={onPointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={handleMouseLeave}
       aria-hidden
     />
   );

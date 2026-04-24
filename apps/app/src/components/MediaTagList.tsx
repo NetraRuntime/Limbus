@@ -1,4 +1,8 @@
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { colorForTag } from './savedTags';
 
 type ScreenRect = { x: number; y: number; width: number; height: number };
@@ -12,6 +16,8 @@ type Props = {
   rect: ScreenRect;
   entries: TagListEntry[];
   onRemove: (tag: string) => void;
+  onSelect?: (tag: string) => void;
+  soloTag?: string | null;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 };
@@ -29,10 +35,13 @@ export function MediaTagList({
   rect,
   entries,
   onRemove,
+  onSelect,
+  soloTag,
   onMouseEnter,
   onMouseLeave,
 }: Props) {
   if (entries.length === 0) return null;
+  const soloLower = soloTag ? soloTag.toLowerCase() : null;
 
   const viewportWidth =
     typeof window === 'undefined' ? rect.x + rect.width + LIST_WIDTH : window.innerWidth;
@@ -62,18 +71,27 @@ export function MediaTagList({
         const palette = colorForTag(entry.tag);
         const isLoading = entry.status === 'loading';
         const isError = entry.status === 'error';
+        const tagLower = entry.tag.toLowerCase();
+        const isSolo = soloLower !== null && soloLower === tagLower;
+        const isDimmed = soloLower !== null && soloLower !== tagLower;
+        const selectable = onSelect && entry.status === 'ready';
         return (
           <button
             type="button"
             key={entry.tag}
-            className={`media-tag-row${isLoading ? ' is-loading' : ''}${isError ? ' is-error' : ''}`}
+            className={`media-tag-row${isLoading ? ' is-loading' : ''}${isError ? ' is-error' : ''}${isSolo ? ' is-solo' : ''}${isDimmed ? ' is-dimmed' : ''}`}
             role="listitem"
             aria-label={`${entry.tag} — press Delete to remove`}
-            style={{
-              background: palette.bg,
-              color: palette.fg,
-              borderColor: palette.border,
-            }}
+            aria-pressed={selectable ? isSolo : undefined}
+            style={
+              {
+                background: palette.bg,
+                color: palette.fg,
+                borderColor: palette.border,
+                '--tag-accent': palette.accent,
+              } as CSSProperties
+            }
+            onClick={selectable ? () => onSelect!(entry.tag) : undefined}
             onKeyDown={(e) => handleKeyDown(e, entry.tag)}
           >
             <span className="media-tag-row-dot" style={{ background: palette.accent }} aria-hidden />

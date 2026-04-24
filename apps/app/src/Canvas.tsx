@@ -56,7 +56,14 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import { groupSegmentationsByImage } from './lib/segmentations';
-import { SegmentBakeLayer, evictBake, type MaskIdentity } from './features/segmentation';
+import {
+  SegmentBakeLayer,
+  evictBake,
+  deleteMaskEntry,
+  resizeBboxEntry,
+  type MaskIdentity,
+  type ReadyMaskEntry,
+} from './features/segmentation';
 import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
@@ -558,15 +565,29 @@ type CanvasProps = {
 type BakeForImageProps = {
   m: CanvasMedia;
   state: SegmentState;
+  // View filter: when set, only masks for this tag are baked. Passed as
+  // `null` for non-active images so their memoized bake never re-runs.
+  soloTag: string | null;
   onMaskSelect: (id: { imageId: string; tag: string; maskIndex: number }) => void;
+  onMaskHover: (id: MaskIdentity | null) => void;
   onEmptyPointerDown: (e: MediaPointerEvent, m: CanvasMedia) => void;
+  onEnter: (id: string) => void;
+  onLeave: () => void;
+  onPointerMove: (e: MediaPointerEvent) => void;
+  onPointerUp: (e: MediaPointerEvent) => void;
 };
 
 const BakeForImage = memo(function BakeForImage({
   m,
   state,
+  soloTag,
   onMaskSelect,
+  onMaskHover,
   onEmptyPointerDown,
+  onEnter,
+  onLeave,
+  onPointerMove,
+  onPointerUp,
 }: BakeForImageProps) {
   const { masksInput, first } = useMemo(() => {
     const readyEntries = state.entries.filter(
@@ -575,21 +596,29 @@ const BakeForImage = memo(function BakeForImage({
     if (readyEntries.length === 0) {
       return { masksInput: null, first: null };
     }
-    const built = readyEntries.flatMap((entry) => {
+    const soloLower = soloTag ? soloTag.toLowerCase() : null;
+    const visibleEntries = soloLower
+      ? readyEntries.filter((e) => e.tag.toLowerCase() === soloLower)
+      : readyEntries;
+    if (visibleEntries.length === 0) {
+      // Solo'd tag has no matching ready entry (shouldn't happen in practice
+      // since the list is driven by ready entries, but guard anyway).
+      return { masksInput: null, first: readyEntries[0]!.response };
+    }
+    const built = visibleEntries.flatMap((entry) => {
       const { accent } = colorForTag(entry.tag);
       return entry.response.masks.map((mask, idx) => ({
         tag: entry.tag,
         maskIndex: idx,
         png_base64: mask.png_base64,
-        edge_png_base64: mask.edge_png_base64,
         maskW: mask.width,
         maskH: mask.height,
         bbox: mask.bbox,
         accent,
       }));
     });
-    return { masksInput: built, first: readyEntries[0]!.response };
-  }, [state]);
+    return { masksInput: built, first: visibleEntries[0]!.response };
+  }, [state, soloTag]);
 
   const handleEmpty = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -597,6 +626,7 @@ const BakeForImage = memo(function BakeForImage({
     },
     [m, onEmptyPointerDown],
   );
+  const handleEnter = useCallback(() => onEnter(m.id), [m.id, onEnter]);
 
   if (!masksInput || !first) return null;
 
@@ -611,7 +641,12 @@ const BakeForImage = memo(function BakeForImage({
       sourceH={first.source_height}
       masks={masksInput}
       onMaskSelect={onMaskSelect}
+      onMaskHover={onMaskHover}
       onEmptyPointerDown={handleEmpty}
+      onMouseEnter={handleEnter}
+      onMouseLeave={onLeave}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
     />
   );
 });
@@ -672,6 +707,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const [encodingIds, setEncodingIds] = useState<Set<string>>(() => new Set());
   const [segments, setSegments] = useState<Record<string, SegmentState>>({});
   const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
+  const [hoveredMask, setHoveredMask] = useState<MaskIdentity | null>(null);
+  // View filter: when set, only this tag's masks/bboxes render on the active
+  // image. Cleared when the active image changes, on Esc, or on empty-canvas
+  // click (via clearSelection). Scoped implicitly to activeMedia — the tag
+  // list is only shown for that image.
+  const [soloTag, setSoloTag] = useState<string | null>(null);
   const segmentSeqRef = useRef<Record<string, number>>({});
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
@@ -752,6 +793,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     () => (activeId ? media.find((m) => m.id === activeId) ?? null : null),
     [activeId, media],
   );
+
+  // Solo-tag is scoped to the currently active image. When the active image
+  // changes, drop the filter so the next image starts unfiltered.
+  useEffect(() => {
+    setSoloTag(null);
+  }, [activeMedia?.id]);
 
   const selectionBBox = useMemo(() => {
     if (selectedIds.size < 2) return null;
@@ -1102,6 +1149,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   selectedIdsRef.current = selectedIds;
   const lastSelectedIdRef = useRef(lastSelectedId);
   lastSelectedIdRef.current = lastSelectedId;
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
 
   // Keep `stackOrder` in step with `media` membership: new items get appended
   // to the top of the stack, deleted items fall out. The relative order of
@@ -1260,6 +1309,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
     setSelectedMask(null);
+    setSoloTag(null);
   }, []);
 
   useEffect(() => {
@@ -1272,6 +1322,22 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
     setSelectedMask(id);
+  }, []);
+
+  const handleMaskHover = useCallback((id: MaskIdentity | null) => {
+    setHoveredMask((prev) => {
+      if (id === prev) return prev;
+      if (
+        id &&
+        prev &&
+        id.imageId === prev.imageId &&
+        id.tag === prev.tag &&
+        id.maskIndex === prev.maskIndex
+      ) {
+        return prev;
+      }
+      return id;
+    });
   }, []);
 
   const clearSegment = useCallback((id: string) => {
@@ -1290,65 +1356,89 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     evictBake(id);
   }, []);
 
+  const replaceReadyTag = useCallback(
+    (imageId: string, tag: string, entry: ReadyMaskEntry | null) => {
+      const key = tag.toLowerCase();
+      setSegments((prev) => {
+        const cur = prev[imageId];
+        if (!cur) {
+          if (!entry) return prev;
+          return { ...prev, [imageId]: { entries: [entry] } };
+        }
+        const next: TagSegment[] = [];
+        let replaced = false;
+        for (const e of cur.entries) {
+          if (e.tag.toLowerCase() === key) {
+            if (entry) {
+              next.push(entry);
+              replaced = true;
+            }
+            continue;
+          }
+          next.push(e);
+        }
+        if (!replaced && entry) next.push(entry);
+        if (next.length === 0) {
+          const copy = { ...prev };
+          delete copy[imageId];
+          return copy;
+        }
+        return { ...prev, [imageId]: { entries: next } };
+      });
+    },
+    [],
+  );
+
   const deleteMask = useCallback(
     (target: MaskIdentity) => {
       const current = segments[target.imageId];
       if (!current) return;
-      const nextEntries: typeof current.entries = [];
-      let touched = false;
-      let tagStillPresent = false;
-      for (const entry of current.entries) {
-        if (entry.status !== 'ready' || entry.tag.toLowerCase() !== target.tag.toLowerCase()) {
-          nextEntries.push(entry);
-          continue;
-        }
-        touched = true;
-        const nextMasks = entry.response.masks.filter((_, idx) => idx !== target.maskIndex);
-        if (nextMasks.length > 0) {
-          nextEntries.push({
-            ...entry,
-            response: { ...entry.response, masks: nextMasks },
-          });
-          tagStillPresent = true;
-        }
+      const key = target.tag.toLowerCase();
+      const ready = current.entries.find(
+        (e): e is TagSegment & { status: 'ready' } =>
+          e.status === 'ready' && e.tag.toLowerCase() === key,
+      );
+      if (!ready) return;
+      if (
+        target.maskIndex < 0 ||
+        target.maskIndex >= ready.response.masks.length
+      ) {
+        return;
       }
-      if (!touched) return;
 
-      setSegments((prev) => {
-        const cur = prev[target.imageId];
-        if (!cur) return prev;
-        if (nextEntries.length === 0) {
-          const next = { ...prev };
-          delete next[target.imageId];
-          return next;
-        }
-        return { ...prev, [target.imageId]: { entries: nextEntries } };
+      const before: ReadyMaskEntry = {
+        tag: ready.tag,
+        status: 'ready',
+        response: {
+          ...ready.response,
+          masks: [...ready.response.masks],
+        },
+      };
+      const remaining = ready.response.masks.filter(
+        (_, idx) => idx !== target.maskIndex,
+      );
+      const after: ReadyMaskEntry | null =
+        remaining.length > 0
+          ? {
+              tag: ready.tag,
+              status: 'ready',
+              response: { ...ready.response, masks: remaining },
+            }
+          : null;
+
+      const entry = deleteMaskEntry({
+        imageId: target.imageId,
+        tag: ready.tag,
+        before,
+        after,
+        replaceTag: replaceReadyTag,
+        onConn: setConn,
       });
       setSelectedMask(null);
-
-      // Persist.
-      const remainingTagEntry = nextEntries.find(
-        (e) => e.status === 'ready' && e.tag.toLowerCase() === target.tag.toLowerCase(),
-      );
-      if (
-        remainingTagEntry &&
-        remainingTagEntry.status === 'ready' &&
-        tagStillPresent
-      ) {
-        upsertSegmentation({
-          image: target.imageId,
-          tag: remainingTagEntry.tag,
-          masks: remainingTagEntry.response.masks,
-          source_width: remainingTagEntry.response.source_width,
-          source_height: remainingTagEntry.response.source_height,
-        }).catch((e) => console.warn('[sam3] delete-persist failed', e));
-      } else {
-        deleteSegmentationByImageTag(target.imageId, target.tag).catch((e) =>
-          console.warn('[sam3] delete-tag-persist failed', e),
-        );
-      }
+      entry.do();
+      history.push(entry, { alreadyApplied: true });
     },
-    [segments],
+    [segments, replaceReadyTag, history],
   );
 
   const removeSegmentTag = useCallback((id: string, tag: string) => {
@@ -2249,6 +2339,199 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     [history],
   );
 
+  // Bbox drag-resize on the selected mask. Live edits run through setSegments
+  // for instant visual feedback; history is pushed once on pointerup so an
+  // entire drag is a single undo step.
+  type BboxResizeDragState = {
+    pointerId: number;
+    handle: 'tl' | 'tr' | 'bl' | 'br';
+    imageId: string;
+    tag: string;
+    maskIndex: number;
+    startBbox: [number, number, number, number];
+    startClientX: number;
+    startClientY: number;
+    fx: number;
+    fy: number;
+    maskW: number;
+    maskH: number;
+    before: ReadyMaskEntry;
+    moved: boolean;
+  };
+  const bboxResizeRef = useRef<BboxResizeDragState | null>(null);
+
+  const applyBboxToSegments = useCallback(
+    (
+      imageId: string,
+      tag: string,
+      maskIndex: number,
+      nextBbox: [number, number, number, number],
+    ) => {
+      const key = tag.toLowerCase();
+      setSegments((prev) => {
+        const cur = prev[imageId];
+        if (!cur) return prev;
+        let changed = false;
+        const nextEntries = cur.entries.map((e) => {
+          if (e.status !== 'ready' || e.tag.toLowerCase() !== key) return e;
+          const masks = e.response.masks.map((mm, i) => {
+            if (i !== maskIndex) return mm;
+            const prevBbox = mm.bbox;
+            if (
+              prevBbox &&
+              prevBbox[0] === nextBbox[0] &&
+              prevBbox[1] === nextBbox[1] &&
+              prevBbox[2] === nextBbox[2] &&
+              prevBbox[3] === nextBbox[3]
+            ) {
+              return mm;
+            }
+            changed = true;
+            return { ...mm, bbox: nextBbox };
+          });
+          return changed
+            ? { ...e, response: { ...e.response, masks } }
+            : e;
+        });
+        if (!changed) return prev;
+        return { ...prev, [imageId]: { entries: nextEntries } };
+      });
+    },
+    [],
+  );
+
+  const computeResizedBbox = (
+    s: BboxResizeDragState,
+    clientX: number,
+    clientY: number,
+  ): [number, number, number, number] => {
+    const scale = viewRef.current.scale;
+    const dxMask = (clientX - s.startClientX) / scale / s.fx;
+    const dyMask = (clientY - s.startClientY) / scale / s.fy;
+    let [x1, y1, x2, y2] = s.startBbox;
+    const dragsLeft = s.handle === 'tl' || s.handle === 'bl';
+    const dragsRight = s.handle === 'tr' || s.handle === 'br';
+    const dragsTop = s.handle === 'tl' || s.handle === 'tr';
+    const dragsBottom = s.handle === 'bl' || s.handle === 'br';
+    if (dragsLeft) x1 = Math.max(0, Math.min(x2 - 1, x1 + dxMask));
+    if (dragsRight) x2 = Math.min(s.maskW, Math.max(x1 + 1, x2 + dxMask));
+    if (dragsTop) y1 = Math.max(0, Math.min(y2 - 1, y1 + dyMask));
+    if (dragsBottom) y2 = Math.min(s.maskH, Math.max(y1 + 1, y2 + dyMask));
+    return [x1, y1, x2, y2];
+  };
+
+  const handleBboxResizePointerDown = useCallback(
+    (
+      e: React.PointerEvent<HTMLSpanElement>,
+      id: MaskIdentity,
+      handle: 'tl' | 'tr' | 'bl' | 'br',
+    ) => {
+      if (e.button !== 0) return;
+      const current = segmentsRef.current[id.imageId];
+      if (!current) return;
+      const ready = current.entries.find(
+        (x): x is TagSegment & { status: 'ready' } =>
+          x.status === 'ready' && x.tag.toLowerCase() === id.tag.toLowerCase(),
+      );
+      if (!ready) return;
+      const mask = ready.response.masks[id.maskIndex];
+      if (!mask || !mask.bbox) return;
+      const mediaItem = mediaRef.current.find((m) => m.id === id.imageId);
+      if (!mediaItem || mediaItem.kind !== 'image') return;
+      const fx = mediaItem.width / mask.width;
+      const fy = mediaItem.height / mask.height;
+      const before: ReadyMaskEntry = {
+        tag: ready.tag,
+        status: 'ready',
+        response: {
+          ...ready.response,
+          masks: ready.response.masks.map((mm) => ({ ...mm })),
+        },
+      };
+      bboxResizeRef.current = {
+        pointerId: e.pointerId,
+        handle,
+        imageId: id.imageId,
+        tag: ready.tag,
+        maskIndex: id.maskIndex,
+        startBbox: [...mask.bbox] as [number, number, number, number],
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        fx,
+        fy,
+        maskW: mask.width,
+        maskH: mask.height,
+        before,
+        moved: false,
+      };
+      try {
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      } catch {
+        // pointer capture can fail mid-transition; drag still tracked via ref.
+      }
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    [],
+  );
+
+  const handleBboxResizePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLSpanElement>) => {
+      const s = bboxResizeRef.current;
+      if (!s || s.pointerId !== e.pointerId) return;
+      const next = computeResizedBbox(s, e.clientX, e.clientY);
+      if (!s.moved) {
+        const dx = Math.abs(e.clientX - s.startClientX);
+        const dy = Math.abs(e.clientY - s.startClientY);
+        if (dx < 1 && dy < 1) return;
+        s.moved = true;
+      }
+      applyBboxToSegments(s.imageId, s.tag, s.maskIndex, next);
+    },
+    [applyBboxToSegments],
+  );
+
+  const handleBboxResizePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLSpanElement>) => {
+      const s = bboxResizeRef.current;
+      if (!s || s.pointerId !== e.pointerId) return;
+      try {
+        (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+      } catch {
+        // Already released or the element is gone; nothing to do.
+      }
+      bboxResizeRef.current = null;
+      if (!s.moved) return;
+      const finalBbox = computeResizedBbox(s, e.clientX, e.clientY);
+      const before = s.before;
+      const after: ReadyMaskEntry = {
+        tag: before.tag,
+        status: 'ready',
+        response: {
+          ...before.response,
+          masks: before.response.masks.map((mm, i) =>
+            i === s.maskIndex ? { ...mm, bbox: finalBbox } : mm,
+          ),
+        },
+      };
+      // Segments already reflect `after` from the last pointermove, so do()
+      // reapplies an equivalent state but still triggers the upsert — mirrors
+      // the deleteMaskEntry call site which does the same alreadyApplied dance.
+      const entry = resizeBboxEntry({
+        imageId: s.imageId,
+        tag: s.tag,
+        maskIndex: s.maskIndex,
+        before,
+        after,
+        replaceTag: replaceReadyTag,
+        onConn: setConn,
+      });
+      entry.do();
+      history.push(entry, { alreadyApplied: true });
+    },
+    [history, replaceReadyTag],
+  );
+
   const initial = useMemo<Partial<View>>(() => getInitialView(), []);
 
   const isEmpty = media.length === 0 && conn !== 'connecting';
@@ -2302,43 +2585,16 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
               key={`bake-${m.id}`}
               m={m}
               state={segments[m.id]!}
+              soloTag={activeMedia?.id === m.id ? soloTag : null}
               onMaskSelect={handleMaskSelect}
+              onMaskHover={handleMaskHover}
               onEmptyPointerDown={handleMediaPointerDown}
+              onEnter={handleMediaEnter}
+              onLeave={handleMediaLeave}
+              onPointerMove={handleMediaPointerMove}
+              onPointerUp={handleMediaPointerUp}
             />
           ))}
-        {selectedMask && (() => {
-          const m = paintMedia.find((x) => x.id === selectedMask.imageId);
-          if (!m || m.kind !== 'image') return null;
-          const state = segments[selectedMask.imageId];
-          if (!state) return null;
-          const entry = state.entries.find(
-            (e) =>
-              e.status === 'ready' &&
-              e.tag.toLowerCase() === selectedMask.tag.toLowerCase(),
-          );
-          if (!entry || entry.status !== 'ready') return null;
-          const mask = entry.response.masks[selectedMask.maskIndex];
-          if (!mask || !mask.bbox) return null;
-          const [x1, y1, x2, y2] = mask.bbox;
-          const fx = m.width / mask.width;
-          const fy = m.height / mask.height;
-          const { accent } = colorForTag(entry.tag);
-          return (
-            <div
-              key={`selected-${selectedMask.imageId}-${selectedMask.tag}-${selectedMask.maskIndex}`}
-              className="segment-mask-selected"
-              style={{
-                left: m.x + x1 * fx,
-                top: m.y + y1 * fy,
-                width: Math.max(1, (x2 - x1) * fx),
-                height: Math.max(1, (y2 - y1) * fy),
-                borderColor: accent,
-                boxShadow: `0 0 0 2px ${accent}33`,
-              }}
-              aria-hidden
-            />
-          );
-        })()}
       </InfiniteCanvas>
 
       {visibleMedia
@@ -2537,6 +2793,13 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
               status: e.status,
             }))}
             onRemove={(tag) => removeSegmentTag(activeMedia.id, tag)}
+            onSelect={(tag) => {
+              // Toggle: re-clicking the current solo tag clears the filter.
+              setSoloTag((prev) =>
+                prev && prev.toLowerCase() === tag.toLowerCase() ? null : tag,
+              );
+            }}
+            soloTag={soloTag}
             onMouseEnter={clearHideTimer}
             onMouseLeave={scheduleHide}
           />
@@ -2591,6 +2854,206 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           }}
         />
       )}
+
+      {(() => {
+        // Dim "at-rest" bbox for every ready mask on every visible image. The
+        // active (selected/hovered) mask is skipped here and rendered by the
+        // block below with full chrome. Pointer-events: none so clicks fall
+        // through to the bake canvas underneath.
+        const sel = selectedMask;
+        const hov = hoveredMask;
+        const activeId = activeMedia?.id ?? null;
+        const soloLower = soloTag ? soloTag.toLowerCase() : null;
+        const rects: Array<{
+          key: string;
+          left: number;
+          top: number;
+          width: number;
+          height: number;
+          accent: string;
+        }> = [];
+        for (const m of paintMedia) {
+          if (m.kind !== 'image') continue;
+          const state = segments[m.id];
+          if (!state) continue;
+          for (const entry of state.entries) {
+            if (entry.status !== 'ready') continue;
+            const tagLower = entry.tag.toLowerCase();
+            // Solo only applies to the active image; other images render all
+            // their bboxes as usual.
+            if (soloLower && m.id === activeId && tagLower !== soloLower) continue;
+            const { accent } = colorForTag(entry.tag);
+            for (let i = 0; i < entry.response.masks.length; i += 1) {
+              const mask = entry.response.masks[i];
+              if (!mask || !mask.bbox) continue;
+              const isSel =
+                sel &&
+                sel.imageId === m.id &&
+                sel.tag.toLowerCase() === tagLower &&
+                sel.maskIndex === i;
+              const isHov =
+                hov &&
+                hov.imageId === m.id &&
+                hov.tag.toLowerCase() === tagLower &&
+                hov.maskIndex === i;
+              if (isSel || isHov) continue;
+              const [x1, y1, x2, y2] = mask.bbox;
+              const fx = m.width / mask.width;
+              const fy = m.height / mask.height;
+              rects.push({
+                key: `${m.id}-${entry.tag}-${i}`,
+                left: (m.x + x1 * fx) * view.scale + view.x,
+                top: (m.y + y1 * fy) * view.scale + view.y,
+                width: Math.max(1, (x2 - x1) * fx) * view.scale,
+                height: Math.max(1, (y2 - y1) * fy) * view.scale,
+                accent,
+              });
+            }
+          }
+        }
+        return rects.map((r) => (
+          <div
+            key={`bbox-${r.key}`}
+            className="segment-mask-bbox"
+            aria-hidden
+            style={
+              {
+                left: r.left,
+                top: r.top,
+                width: r.width,
+                height: r.height,
+                '--seg-accent': r.accent,
+              } as React.CSSProperties
+            }
+          >
+            <span className="segment-mask-bbox-tick tl" />
+            <span className="segment-mask-bbox-tick tr" />
+            <span className="segment-mask-bbox-tick bl" />
+            <span className="segment-mask-bbox-tick br" />
+          </div>
+        ));
+      })()}
+
+      {(() => {
+        // Viewport-space chrome for the currently-selected and currently-hovered
+        // masks. Rendered outside InfiniteCanvas so border weight, corner handles
+        // and the hover pill stay pixel-crisp at any zoom.
+        const activeId = activeMedia?.id ?? null;
+        const soloLower = soloTag ? soloTag.toLowerCase() : null;
+        const resolve = (id: MaskIdentity) => {
+          // Hide chrome when the mask's tag is filtered out on the active
+          // image. Leaves the underlying state intact — clearing solo will
+          // make the chrome reappear.
+          if (
+            soloLower &&
+            id.imageId === activeId &&
+            id.tag.toLowerCase() !== soloLower
+          ) {
+            return null;
+          }
+          const m = paintMedia.find((x) => x.id === id.imageId);
+          if (!m || m.kind !== 'image') return null;
+          const state = segments[id.imageId];
+          if (!state) return null;
+          const entry = state.entries.find(
+            (e) =>
+              e.status === 'ready' && e.tag.toLowerCase() === id.tag.toLowerCase(),
+          );
+          if (!entry || entry.status !== 'ready') return null;
+          const mask = entry.response.masks[id.maskIndex];
+          if (!mask || !mask.bbox) return null;
+          const [x1, y1, x2, y2] = mask.bbox;
+          const fx = m.width / mask.width;
+          const fy = m.height / mask.height;
+          const wx = m.x + x1 * fx;
+          const wy = m.y + y1 * fy;
+          const ww = Math.max(1, (x2 - x1) * fx);
+          const wh = Math.max(1, (y2 - y1) * fy);
+          const { accent } = colorForTag(entry.tag);
+          return {
+            tag: entry.tag,
+            score: mask.score,
+            accent,
+            left: wx * view.scale + view.x,
+            top: wy * view.scale + view.y,
+            width: ww * view.scale,
+            height: wh * view.scale,
+          };
+        };
+
+        const selected = selectedMask ? resolve(selectedMask) : null;
+        const hoverId =
+          hoveredMask &&
+          (!selectedMask ||
+            hoveredMask.imageId !== selectedMask.imageId ||
+            hoveredMask.tag !== selectedMask.tag ||
+            hoveredMask.maskIndex !== selectedMask.maskIndex)
+            ? hoveredMask
+            : null;
+        const hover = hoverId ? resolve(hoverId) : null;
+
+        return (
+          <>
+            {selected && (
+              <div
+                key={`selected-${selectedMask!.imageId}-${selectedMask!.tag}-${selectedMask!.maskIndex}`}
+                className="segment-mask-selected"
+                style={
+                  {
+                    left: selected.left,
+                    top: selected.top,
+                    width: selected.width,
+                    height: selected.height,
+                    '--seg-accent': selected.accent,
+                  } as React.CSSProperties
+                }
+              >
+                {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+                  <span
+                    key={corner}
+                    className={`segment-mask-handle interactive ${corner}`}
+                    role="button"
+                    aria-label={`Resize ${corner}`}
+                    onPointerDown={(e) =>
+                      handleBboxResizePointerDown(e, selectedMask!, corner)
+                    }
+                    onPointerMove={handleBboxResizePointerMove}
+                    onPointerUp={handleBboxResizePointerUp}
+                    onPointerCancel={handleBboxResizePointerUp}
+                  />
+                ))}
+              </div>
+            )}
+            {hover && (
+              <div
+                key={`hover-${hoverId!.imageId}-${hoverId!.tag}-${hoverId!.maskIndex}`}
+                className="segment-mask-hover"
+                aria-hidden
+                style={
+                  {
+                    left: hover.left,
+                    top: hover.top,
+                    width: hover.width,
+                    height: hover.height,
+                    '--seg-accent': hover.accent,
+                  } as React.CSSProperties
+                }
+              >
+                <span className="segment-mask-handle tl" />
+                <span className="segment-mask-handle tr" />
+                <span className="segment-mask-handle bl" />
+                <span className="segment-mask-handle br" />
+                <span className="segment-mask-hover-pill">
+                  <span className="segment-mask-hover-tag">{hover.tag}</span>
+                  <span className="segment-mask-hover-score">
+                    {hover.score.toFixed(2)}
+                  </span>
+                </span>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {selectionBBox && !marqueeRect && (() => {
         const LABEL_OVERHANG_PX = 26;

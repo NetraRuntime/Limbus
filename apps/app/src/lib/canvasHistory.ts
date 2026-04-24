@@ -31,7 +31,9 @@ export type HistoryMedia = {
 export type CanvasActionMeta =
   | { kind: 'move'; ids: string[] }
   | { kind: 'delete'; ids: string[] }
-  | { kind: 'create'; ids: string[] };
+  | { kind: 'create'; ids: string[] }
+  | { kind: 'delete-mask'; imageId: string; tag: string }
+  | { kind: 'resize-bbox'; imageId: string; tag: string; maskIndex: number };
 
 type SetMedia = Dispatch<SetStateAction<HistoryMedia[]>>;
 type Conn = (c: 'ready' | 'offline') => void;
