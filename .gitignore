@@ -4,6 +4,7 @@ node_modules/
 # Per-app build output
 apps/*/dist/
 apps/*/.vite/
+apps/*/.next/
 packages/*/dist/
 dist/
 .vite/
