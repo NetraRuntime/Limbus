@@ -13,6 +13,7 @@ import {
   createImage,
   createVideo,
   deleteAllSegmentationsForImage,
+  deleteSegmentationByImageTag,
   deleteSegmentationsForImage,
   deleteImage,
   deleteVideo,
@@ -55,6 +56,7 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import { groupSegmentationsByImage } from './lib/segmentations';
+import { SegmentBakeLayer, evictBake, type MaskIdentity } from './features/segmentation';
 import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
@@ -548,6 +550,71 @@ type CanvasProps = {
   sam3Error?: string | null;
 };
 
+// Memoized per-image bake-layer wrapper. Stabilizes the `masksInput` array
+// ref and pointer-handler refs across parent re-renders so the inner
+// SegmentBakeLayer's React.memo actually bails out when nothing material
+// changed. This is the hot path on pan/zoom (Canvas re-renders once per
+// animation frame via the view rAF), so ref stability matters.
+type BakeForImageProps = {
+  m: CanvasMedia;
+  state: SegmentState;
+  onMaskSelect: (id: { imageId: string; tag: string; maskIndex: number }) => void;
+  onEmptyPointerDown: (e: MediaPointerEvent, m: CanvasMedia) => void;
+};
+
+const BakeForImage = memo(function BakeForImage({
+  m,
+  state,
+  onMaskSelect,
+  onEmptyPointerDown,
+}: BakeForImageProps) {
+  const { masksInput, first } = useMemo(() => {
+    const readyEntries = state.entries.filter(
+      (e): e is Extract<typeof e, { status: 'ready' }> => e.status === 'ready',
+    );
+    if (readyEntries.length === 0) {
+      return { masksInput: null, first: null };
+    }
+    const built = readyEntries.flatMap((entry) => {
+      const { accent } = colorForTag(entry.tag);
+      return entry.response.masks.map((mask, idx) => ({
+        tag: entry.tag,
+        maskIndex: idx,
+        png_base64: mask.png_base64,
+        maskW: mask.width,
+        maskH: mask.height,
+        bbox: mask.bbox,
+        accent,
+      }));
+    });
+    return { masksInput: built, first: readyEntries[0]!.response };
+  }, [state]);
+
+  const handleEmpty = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      onEmptyPointerDown(e, m);
+    },
+    [m, onEmptyPointerDown],
+  );
+
+  if (!masksInput || !first) return null;
+
+  return (
+    <SegmentBakeLayer
+      imageId={m.id}
+      worldX={m.x}
+      worldY={m.y}
+      worldWidth={m.width}
+      worldHeight={m.height}
+      sourceW={first.source_width}
+      sourceH={first.source_height}
+      masks={masksInput}
+      onMaskSelect={onMaskSelect}
+      onEmptyPointerDown={handleEmpty}
+    />
+  );
+});
+
 export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const sam3Available = !sam3Error;
   // HUD liquid-glass filters. Each one measures its own element via
@@ -603,6 +670,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
   const [encodingIds, setEncodingIds] = useState<Set<string>>(() => new Set());
   const [segments, setSegments] = useState<Record<string, SegmentState>>({});
+  const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
   const segmentSeqRef = useRef<Record<string, number>>({});
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
@@ -1190,6 +1258,19 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const clearSelection = useCallback(() => {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
+    setSelectedMask(null);
+  }, []);
+
+  useEffect(() => {
+    if (selectedIds.size > 0) setSelectedMask(null);
+  }, [selectedIds]);
+
+  // Stable across renders — BakeForImage's memo depends on this not
+  // changing ref so it can skip re-renders during pan/zoom.
+  const handleMaskSelect = useCallback((id: MaskIdentity) => {
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
+    setLastSelectedId(null);
+    setSelectedMask(id);
   }, []);
 
   const clearSegment = useCallback((id: string) => {
@@ -1205,7 +1286,69 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     deleteAllSegmentationsForImage(id).catch((e) =>
       console.warn('[sam3] clear-persist failed', id, e),
     );
+    evictBake(id);
   }, []);
+
+  const deleteMask = useCallback(
+    (target: MaskIdentity) => {
+      const current = segments[target.imageId];
+      if (!current) return;
+      const nextEntries: typeof current.entries = [];
+      let touched = false;
+      let tagStillPresent = false;
+      for (const entry of current.entries) {
+        if (entry.status !== 'ready' || entry.tag.toLowerCase() !== target.tag.toLowerCase()) {
+          nextEntries.push(entry);
+          continue;
+        }
+        touched = true;
+        const nextMasks = entry.response.masks.filter((_, idx) => idx !== target.maskIndex);
+        if (nextMasks.length > 0) {
+          nextEntries.push({
+            ...entry,
+            response: { ...entry.response, masks: nextMasks },
+          });
+          tagStillPresent = true;
+        }
+      }
+      if (!touched) return;
+
+      setSegments((prev) => {
+        const cur = prev[target.imageId];
+        if (!cur) return prev;
+        if (nextEntries.length === 0) {
+          const next = { ...prev };
+          delete next[target.imageId];
+          return next;
+        }
+        return { ...prev, [target.imageId]: { entries: nextEntries } };
+      });
+      setSelectedMask(null);
+
+      // Persist.
+      const remainingTagEntry = nextEntries.find(
+        (e) => e.status === 'ready' && e.tag.toLowerCase() === target.tag.toLowerCase(),
+      );
+      if (
+        remainingTagEntry &&
+        remainingTagEntry.status === 'ready' &&
+        tagStillPresent
+      ) {
+        upsertSegmentation({
+          image: target.imageId,
+          tag: remainingTagEntry.tag,
+          masks: remainingTagEntry.response.masks,
+          source_width: remainingTagEntry.response.source_width,
+          source_height: remainingTagEntry.response.source_height,
+        }).catch((e) => console.warn('[sam3] delete-persist failed', e));
+      } else {
+        deleteSegmentationByImageTag(target.imageId, target.tag).catch((e) =>
+          console.warn('[sam3] delete-tag-persist failed', e),
+        );
+      }
+    },
+    [segments],
+  );
 
   const removeSegmentTag = useCallback((id: string, tag: string) => {
     const key = tag.toLowerCase();
@@ -1427,6 +1570,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           { alreadyApplied: true },
         );
         if (lodCache) void lodCache.delete(id);
+        evictBake(id);
         dropAsset(id);
       })
       .catch((err) => {
@@ -1578,6 +1722,27 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [clearSelection, deleteSelection, selectAll, duplicateSelection, clearHideTimer]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (!selectedMask) return;
+      // Don't hijack text inputs.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      deleteMask(selectedMask);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedMask, deleteMask]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2129,6 +2294,50 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             />
           );
         })}
+        {paintMedia
+          .filter((m) => m.kind === 'image' && segments[m.id])
+          .map((m) => (
+            <BakeForImage
+              key={`bake-${m.id}`}
+              m={m}
+              state={segments[m.id]!}
+              onMaskSelect={handleMaskSelect}
+              onEmptyPointerDown={handleMediaPointerDown}
+            />
+          ))}
+        {selectedMask && (() => {
+          const m = paintMedia.find((x) => x.id === selectedMask.imageId);
+          if (!m || m.kind !== 'image') return null;
+          const state = segments[selectedMask.imageId];
+          if (!state) return null;
+          const entry = state.entries.find(
+            (e) =>
+              e.status === 'ready' &&
+              e.tag.toLowerCase() === selectedMask.tag.toLowerCase(),
+          );
+          if (!entry || entry.status !== 'ready') return null;
+          const mask = entry.response.masks[selectedMask.maskIndex];
+          if (!mask || !mask.bbox) return null;
+          const [x1, y1, x2, y2] = mask.bbox;
+          const fx = m.width / mask.width;
+          const fy = m.height / mask.height;
+          const { accent } = colorForTag(entry.tag);
+          return (
+            <div
+              key={`selected-${selectedMask.imageId}-${selectedMask.tag}-${selectedMask.maskIndex}`}
+              className="segment-mask-selected"
+              style={{
+                left: m.x + x1 * fx,
+                top: m.y + y1 * fy,
+                width: Math.max(1, (x2 - x1) * fx),
+                height: Math.max(1, (y2 - y1) * fy),
+                borderColor: accent,
+                boxShadow: `0 0 0 2px ${accent}33`,
+              }}
+              aria-hidden
+            />
+          );
+        })()}
       </InfiniteCanvas>
 
       {visibleMedia
@@ -2210,153 +2419,66 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const rh = m.height * view.scale;
           const state = segments[m.id]!;
           const base = `segment-${m.id}`;
-          const nodes: JSX.Element[] = [];
-
-          // Per-tag masks + boxes, each recolored by its tag identity so
-          // the pill, mask fill, and bounding box share one hue.
-          for (const entry of state.entries) {
-            if (entry.status !== 'ready') continue;
-            const { accent } = colorForTag(entry.tag);
-            entry.response.masks.forEach((mask, idx) => {
-              const maskKey = `${base}-${entry.tag}-mask-${idx}`;
-              const fillUrl = `url(data:image/png;base64,${mask.png_base64})`;
-              nodes.push(
-                <div
-                  key={maskKey}
-                  className="segment-mask"
-                  style={{
-                    left: rx,
-                    top: ry,
-                    width: rw,
-                    height: rh,
-                    backgroundColor: accent,
-                    opacity: 0.5,
-                    WebkitMaskImage: fillUrl,
-                    maskImage: fillUrl,
-                    WebkitMaskSize: '100% 100%',
-                    maskSize: '100% 100%',
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskRepeat: 'no-repeat',
-                  }}
-                  aria-hidden
-                />,
-              );
-              // White outline — separate edge-only PNG so the default
-              // alpha-masking path draws it. Skipped for masks persisted
-              // before the edge PNG existed.
-              if (mask.edge_png_base64) {
-                const edgeUrl = `url(data:image/png;base64,${mask.edge_png_base64})`;
-                nodes.push(
-                  <div
-                    key={`${maskKey}-edge`}
-                    className="segment-mask-edge"
-                    style={{
-                      left: rx,
-                      top: ry,
-                      width: rw,
-                      height: rh,
-                      backgroundColor: '#fff',
-                      WebkitMaskImage: edgeUrl,
-                      maskImage: edgeUrl,
-                      WebkitMaskSize: '100% 100%',
-                      maskSize: '100% 100%',
-                      WebkitMaskRepeat: 'no-repeat',
-                      maskRepeat: 'no-repeat',
-                    }}
-                    aria-hidden
-                  />,
-                );
-              }
-              // Bounding box is in mask-pixel coordinates; translate to
-              // screen coordinates via the mask's own width/height so it
-              // rides the image through pan/zoom.
-              if (mask.bbox && mask.width > 0 && mask.height > 0) {
-                const [x1, y1, x2, y2] = mask.bbox;
-                const fx = rw / mask.width;
-                const fy = rh / mask.height;
-                const bx = rx + x1 * fx;
-                const by = ry + y1 * fy;
-                const bw = Math.max(1, (x2 - x1) * fx);
-                const bh = Math.max(1, (y2 - y1) * fy);
-                nodes.push(
-                  <div
-                    key={`${base}-${entry.tag}-box-${idx}`}
-                    className="segment-bbox"
-                    style={{
-                      left: bx,
-                      top: by,
-                      width: bw,
-                      height: bh,
-                      borderColor: accent,
-                    }}
-                    aria-hidden
-                  />,
-                );
-              }
-            });
-          }
 
           const loadingTags = state.entries.filter((e) => e.status === 'loading');
           const errorTags = state.entries.filter(
             (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
           );
 
-          if (loadingTags.length > 0 || errorTags.length > 0) {
-            nodes.push(
-              <div
-                key={`${base}-chips`}
-                className="segment-overlay segment-overlay--chips"
-                style={{ left: rx, top: ry, width: rw, height: rh }}
-                aria-hidden
-              >
-                <div className="segment-chip-stack">
-                  {loadingTags.map((entry) => {
-                    const { bg, fg, border } = colorForTag(entry.tag);
-                    return (
-                      <div
-                        key={`loading-${entry.tag}`}
-                        className="segment-chip"
-                        style={{
-                          background: bg,
-                          color: fg,
-                          borderColor: border,
-                        }}
-                        role="status"
-                        aria-live="polite"
-                        aria-label={`Segmenting "${entry.tag}"`}
-                      >
-                        <span className="encoding-spinner" aria-hidden />
-                        <span className="encoding-label">{entry.tag}</span>
-                      </div>
-                    );
-                  })}
-                  {errorTags.map((entry) => {
-                    const { bg, fg, border } = colorForTag(entry.tag);
-                    return (
-                      <div
-                        key={`error-${entry.tag}`}
-                        className="segment-chip segment-chip--error"
-                        style={{
-                          background: bg,
-                          color: fg,
-                          borderColor: border,
-                        }}
-                        role="alert"
-                        title={entry.message}
-                      >
-                        <i className="ri-error-warning-line" aria-hidden />
-                        <span className="encoding-label">
-                          No match — {entry.tag}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>,
-            );
-          }
+          if (loadingTags.length === 0 && errorTags.length === 0) return [];
 
-          return nodes;
+          return [
+            <div
+              key={`${base}-chips`}
+              className="segment-overlay segment-overlay--chips"
+              style={{ left: rx, top: ry, width: rw, height: rh }}
+              aria-hidden
+            >
+              <div className="segment-chip-stack">
+                {loadingTags.map((entry) => {
+                  const { bg, fg, border } = colorForTag(entry.tag);
+                  return (
+                    <div
+                      key={`loading-${entry.tag}`}
+                      className="segment-chip"
+                      style={{
+                        background: bg,
+                        color: fg,
+                        borderColor: border,
+                      }}
+                      role="status"
+                      aria-live="polite"
+                      aria-label={`Segmenting "${entry.tag}"`}
+                    >
+                      <span className="encoding-spinner" aria-hidden />
+                      <span className="encoding-label">{entry.tag}</span>
+                    </div>
+                  );
+                })}
+                {errorTags.map((entry) => {
+                  const { bg, fg, border } = colorForTag(entry.tag);
+                  return (
+                    <div
+                      key={`error-${entry.tag}`}
+                      className="segment-chip segment-chip--error"
+                      style={{
+                        background: bg,
+                        color: fg,
+                        borderColor: border,
+                      }}
+                      role="alert"
+                      title={entry.message}
+                    >
+                      <i className="ri-error-warning-line" aria-hidden />
+                      <span className="encoding-label">
+                        No match — {entry.tag}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>,
+          ];
         })}
 
       {tool === 'box' && activeMedia && activeRect && cursor && (() => {
