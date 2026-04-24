@@ -877,81 +877,98 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   }, [stackOrder]);
 
   useEffect(() => {
+    // `tauri dev` starts Vite before the Rust binary can boot the
+    // PocketBase sidecar, so the first fetch from this effect often
+    // races and hits ECONNREFUSED. Retry with exponential backoff
+    // (capped at 8s) until we get at least one successful list — at
+    // which point we flip to 'ready' and hydrate. Stops on unmount.
     let cancelled = false;
-    void Promise.all([
-      listImages().then(
-        (r) => ({ ok: true as const, records: r }),
-        (err) => {
-          console.warn('[pb] failed to load images:', err);
-          return { ok: false as const, records: [] as ImageRecord[] };
-        },
-      ),
-      listVideos().then(
-        (r) => ({ ok: true as const, records: r }),
-        (err) => {
-          console.warn('[pb] failed to load videos:', err);
-          return { ok: false as const, records: [] as VideoRecord[] };
-        },
-      ),
-      listSegmentations().then(
-        (r) => r,
-        (err) => {
-          console.warn('[pb] failed to load segmentations:', err);
-          return [] as SegmentationRecord[];
-        },
-      ),
-    ]).then(([imgRes, vidRes, segRows]) => {
-      if (cancelled) return;
-      const merged: CanvasMedia[] = [
-        ...imgRes.records.map(fromImageRecord),
-        ...vidRes.records.map(fromVideoRecord),
-      ];
-      merged.sort((a, b) => a.id.localeCompare(b.id));
-      setMedia(merged);
-
-      const grouped = groupSegmentationsByImage(segRows);
-      if (grouped.size > 0) {
-        const initial: Record<string, SegmentState> = {};
-        for (const [imageId, rows] of grouped) {
-          initial[imageId] = {
-            entries: rows.map((r) => ({
-              tag: r.tag,
-              status: 'ready' as const,
-              response: {
-                masks: r.masks,
-                source_width: r.source_width,
-                source_height: r.source_height,
-              },
-            })),
-          };
+    let retryTimer: number | null = null;
+    let loaded = false;
+    const load = (attempt: number) => {
+      void Promise.all([
+        listImages().then(
+          (r) => ({ ok: true as const, records: r }),
+          (err) => {
+            console.warn('[pb] failed to load images:', err);
+            return { ok: false as const, records: [] as ImageRecord[] };
+          },
+        ),
+        listVideos().then(
+          (r) => ({ ok: true as const, records: r }),
+          (err) => {
+            console.warn('[pb] failed to load videos:', err);
+            return { ok: false as const, records: [] as VideoRecord[] };
+          },
+        ),
+        listSegmentations().then(
+          (r) => r,
+          (err) => {
+            console.warn('[pb] failed to load segmentations:', err);
+            return [] as SegmentationRecord[];
+          },
+        ),
+      ]).then(([imgRes, vidRes, segRows]) => {
+        if (cancelled) return;
+        const anyOk = imgRes.ok || vidRes.ok;
+        if (!anyOk) {
+          setConn('offline');
+          const delay = Math.min(8000, 500 * 2 ** attempt);
+          retryTimer = window.setTimeout(() => load(attempt + 1), delay);
+          return;
         }
-        setSegments((prev) => ({ ...initial, ...prev }));
-      }
-      // Only flip the "loaded" gate when we actually heard back from PB; if
-      // both collections errored out we don't know the true membership, so
-      // leaving stackOrder alone is safer than reconciling against `[]`.
-      if (imgRes.ok || vidRes.ok) initialMediaLoadedRef.current = true;
-      setConn(imgRes.ok || vidRes.ok ? 'ready' : 'offline');
+        if (loaded) return;
+        loaded = true;
+        const merged: CanvasMedia[] = [
+          ...imgRes.records.map(fromImageRecord),
+          ...vidRes.records.map(fromVideoRecord),
+        ];
+        merged.sort((a, b) => a.id.localeCompare(b.id));
+        setMedia(merged);
 
-      if (
-        !initialHadStoredView.current &&
-        !didInitialFitRef.current &&
-        merged.length > 0
-      ) {
-        const bounds = mediaBounds(merged);
-        if (bounds) {
-          didInitialFitRef.current = true;
-          requestAnimationFrame(() => {
-            canvasRef.current?.focusOn(bounds, {
-              animate: false,
-              bottomInset: HIGHLIGHT_BOTTOM_INSET_PX,
+        const grouped = groupSegmentationsByImage(segRows);
+        if (grouped.size > 0) {
+          const initial: Record<string, SegmentState> = {};
+          for (const [imageId, rows] of grouped) {
+            initial[imageId] = {
+              entries: rows.map((r) => ({
+                tag: r.tag,
+                status: 'ready' as const,
+                response: {
+                  masks: r.masks,
+                  source_width: r.source_width,
+                  source_height: r.source_height,
+                },
+              })),
+            };
+          }
+          setSegments((prev) => ({ ...initial, ...prev }));
+        }
+        initialMediaLoadedRef.current = true;
+        setConn('ready');
+
+        if (
+          !initialHadStoredView.current &&
+          !didInitialFitRef.current &&
+          merged.length > 0
+        ) {
+          const bounds = mediaBounds(merged);
+          if (bounds) {
+            didInitialFitRef.current = true;
+            requestAnimationFrame(() => {
+              canvasRef.current?.focusOn(bounds, {
+                animate: false,
+                bottomInset: HIGHLIGHT_BOTTOM_INSET_PX,
+              });
             });
-          });
+          }
         }
-      }
-    });
+      });
+    };
+    load(0);
     return () => {
       cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
   }, []);
 
