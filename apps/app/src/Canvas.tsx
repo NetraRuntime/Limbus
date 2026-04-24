@@ -1903,6 +1903,28 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingContext(e)) return;
+      if (!activeMedia || activeMedia.kind !== 'image') return;
+      if (!soloTag) return;
+      // Defer to the existing mask-delete handler when a specific mask is
+      // selected — that path deletes one mask, not the whole tag.
+      if (selectedMask) return;
+      // The pill's own button-level onKeyDown already handles Delete when a
+      // pill is focused. Skip here to avoid double-firing (and pushing two
+      // history entries) as the native event bubbles to window.
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest('.media-tag-list')) return;
+      e.preventDefault();
+      deleteAllMasksForTag(activeMedia.id, soloTag);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeMedia, soloTag, selectedMask, deleteAllMasksForTag]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.altKey || e.shiftKey) return;
       if (e.key.toLowerCase() !== 'k') return;
