@@ -291,9 +291,9 @@ type SegmentResponse = {
 };
 
 type TagSegment =
-  | { tag: string; status: 'loading' }
-  | { tag: string; status: 'ready'; response: SegmentResponse }
-  | { tag: string; status: 'error'; message: string };
+  | { tag: string; status: 'loading'; kind?: 'box' }
+  | { tag: string; status: 'ready'; response: SegmentResponse; kind?: 'box' }
+  | { tag: string; status: 'error'; message: string; kind?: 'box' };
 
 type SegmentState = { entries: TagSegment[] };
 
@@ -1692,6 +1692,78 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     [clearSegment, sam3Available, segments],
   );
 
+  /** Send a user-drawn box to SAM3 and feed the response into the segment
+   *  pipeline. `relBox` is `[x1, y1, x2, y2]` in image-relative world units
+   *  (offsets of `imageW`/`imageH`); we normalize to `[0, 1]` for the worker.
+   *  Each box gets its own segment entry keyed by `boxId` and tagged
+   *  `kind: 'box'` so it shares the mask renderer with text segments while
+   *  staying out of the text-tag chip stack. */
+  const dispatchBoxPrompt = useCallback(
+    (
+      imageId: string,
+      boxId: string,
+      relBox: [number, number, number, number],
+      imageW: number,
+      imageH: number,
+    ) => {
+      if (!sam3Available) return;
+      const m = mediaRef.current.find((it) => it.id === imageId);
+      if (!m || m.kind !== 'image' || !m.collectionId || !m.file) return;
+      if (imageW <= 0 || imageH <= 0) return;
+      const tag = `__box__${boxId}`;
+      const norm: [number, number, number, number] = [
+        Math.max(0, Math.min(1, relBox[0] / imageW)),
+        Math.max(0, Math.min(1, relBox[1] / imageH)),
+        Math.max(0, Math.min(1, relBox[2] / imageW)),
+        Math.max(0, Math.min(1, relBox[3] / imageH)),
+      ];
+      if (norm[2] <= norm[0] || norm[3] <= norm[1]) return;
+
+      // Snapshot the current sequence so a later clearSegment(imageId) bump
+      // discards this in-flight invoke — same convention as the text path.
+      const seq = segmentSeqRef.current[imageId] ?? 0;
+      const updateEntry = (patch: TagSegment) => {
+        if ((segmentSeqRef.current[imageId] ?? 0) !== seq) return;
+        setSegments((prev) => {
+          const cur = prev[imageId] ?? { entries: [] };
+          const next: TagSegment[] = [];
+          let replaced = false;
+          for (const e of cur.entries) {
+            if (e.tag === tag) {
+              next.push(patch);
+              replaced = true;
+            } else {
+              next.push(e);
+            }
+          }
+          if (!replaced) next.push(patch);
+          return { ...prev, [imageId]: { entries: next } };
+        });
+      };
+
+      updateEntry({ tag, status: 'loading', kind: 'box' });
+
+      invoke<SegmentResponse>('sam3_segment_box', {
+        id: imageId,
+        collectionId: m.collectionId,
+        file: m.file,
+        bbox: norm,
+      })
+        .then((response) => {
+          updateEntry({ tag, status: 'ready', response, kind: 'box' });
+          // Box segments are not persisted — the user-drawn box itself isn't
+          // saved either. Both are session-local for now; revisit when boxes
+          // get a deletion UI and PB schema.
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[sam3] segment box failed for ${imageId} (${boxId})`, err);
+          updateEntry({ tag, status: 'error', message, kind: 'box' });
+        });
+    },
+    [sam3Available],
+  );
+
   const selectAll = useCallback(() => {
     const all = mediaRef.current;
     if (all.length === 0) return;
@@ -2531,10 +2603,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           x2 - b.imageX,
           y2 - b.imageY,
         ];
+        const boxId = genBoxId();
         setUserBoxes((prev) => {
           const list = prev[b.imageId] ?? [];
-          return { ...prev, [b.imageId]: [...list, { id: genBoxId(), box: rel }] };
+          return { ...prev, [b.imageId]: [...list, { id: boxId, box: rel }] };
         });
+        dispatchBoxPrompt(b.imageId, boxId, rel, b.imageW, b.imageH);
       };
 
       window.addEventListener('pointermove', onMove);
