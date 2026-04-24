@@ -99,3 +99,47 @@ function fillRle(
     flat += run;
   }
 }
+
+// ---- Browser-only glue below. ----
+
+/** Encodes RGBA bytes to a base64 PNG string (no `data:` prefix). */
+export async function maskBytesToPngBase64(
+  bytes: Uint8ClampedArray,
+  size: Size,
+): Promise<string> {
+  const canvas: HTMLCanvasElement | OffscreenCanvas =
+    typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(size.width, size.height)
+      : document.createElement('canvas');
+  if (canvas instanceof HTMLCanvasElement) {
+    canvas.width = size.width;
+    canvas.height = size.height;
+  }
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2d context unavailable');
+  const owned = new Uint8ClampedArray(new ArrayBuffer(bytes.byteLength));
+  owned.set(bytes);
+  const image = new ImageData(owned, size.width, size.height);
+  (ctx as CanvasRenderingContext2D).putImageData(image, 0, 0);
+
+  const blob: Blob =
+    canvas instanceof OffscreenCanvas
+      ? await canvas.convertToBlob({ type: 'image/png' })
+      : await new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
+            'image/png',
+          ),
+        );
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  return uint8ArrayToBase64(buf);
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
