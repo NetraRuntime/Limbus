@@ -414,7 +414,7 @@
   position: absolute;
   display: block;
   max-width: none;
-  
+
   pointer-events: auto;
   cursor: grab;
   user-select: none;
@@ -430,9 +430,23 @@
      a re-raster. Default `auto` (browser bilinear) scales cleanly at
      every view.scale. */
   object-fit: cover;
-  transition: opacity 200ms ease, outline-color 160ms ease, box-shadow 160ms ease;
+  /* Pop-in: invisible + slightly shrunken until the bytes are decoded
+     (`.is-loaded`). The overshoot cubic-bezier gives a subtle bounce. */
+  opacity: 0;
+  transform: scale(0.9);
+  transform-origin: center;
+  transition:
+    opacity 220ms ease-out,
+    transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    outline-color 160ms ease,
+    box-shadow 160ms ease;
   outline: 1.5px solid transparent;
   outline-offset: 2px;
+}
+
+.world-image.is-loaded {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .world-image:active {
@@ -447,9 +461,21 @@
     0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-.world-image.is-pending {
+/* Pending uploads hold a dimmed/desaturated look once visible, but still
+   wait for `is-loaded` before fading in — avoids a flash of empty chrome. */
+.world-image.is-loaded.is-pending {
   opacity: 0.75;
   filter: saturate(0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-image {
+    transform: none;
+    transition: opacity 140ms ease-out, outline-color 160ms ease, box-shadow 160ms ease;
+  }
+  .world-image.is-loaded {
+    transform: none;
+  }
 }
 
 
