@@ -16,18 +16,6 @@ services:
     expose:
       - "8090"
 
-  web:
-    build:
-      context: .
-      dockerfile: docker/website.Dockerfile
-    container_name: netrart-web
-    restart: unless-stopped
-    depends_on:
-      pb:
-        condition: service_healthy
-    ports:
-      - "8080:80"
-
   app:
     build:
       context: .

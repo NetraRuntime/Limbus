@@ -19,8 +19,9 @@ exists, vision AI should just work.
 **NetraRT** is the user-facing surface of that platform: an
 infinite-canvas desktop app for running state-of-the-art vision models
 locally — no cloud, no API bills, no frames leaving your hardware.
-This monorepo hosts the public website, the canvas app (Tauri desktop
-+ web debug build), and shared design-system and tooling packages.
+This monorepo hosts the canvas app (Tauri desktop + web debug build)
+and shared design-system and tooling packages. The marketing site
+lives in its own repo: [netrart.com](https://github.com/rifkybujana/netrart.com).
 
 ## Who it's for
 
@@ -33,7 +34,6 @@ This monorepo hosts the public website, the canvas app (Tauri desktop
 
 ```
 apps/
-  website/      # landing page, future payment/license/release server
   app/          # infinite canvas — Tauri desktop + web debug build
 packages/
   design-system/ # tokens, CSS kit, self-hosted fonts, brand assets
@@ -57,15 +57,6 @@ pnpm install
 cp .env.example .env
 ```
 
-## Run the website
-
-```bash
-pnpm db:start     # PocketBase on :8090
-pnpm dev:website  # Vite on :5173
-```
-
-Visit `http://localhost:5173/`.
-
 ## Run the app in the browser (debug)
 
 ```bash
@@ -88,7 +79,7 @@ launches the Tauri webview pinned to the canvas.
 ## Build
 
 ```bash
-pnpm build        # both apps' web bundles → apps/*/dist/
+pnpm build        # canvas web bundle → apps/app/dist/
 pnpm tauri:build  # native installer for the current platform
 ```
 
@@ -98,8 +89,9 @@ pnpm tauri:build  # native installer for the current platform
 docker compose up -d
 ```
 
-Serves the website on `:8080`. PocketBase data persists in the
-`pb_data` named volume. `docker compose down -v` wipes state.
+Serves the canvas web debug build on `:8081` with PocketBase behind
+nginx. Data persists in the `pb_data` named volume; `docker compose
+down -v` wipes state.
 
 ## Database
 

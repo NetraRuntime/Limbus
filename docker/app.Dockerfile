@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Stage 1 — build the canvas app's Vite bundle (the web debug build that
-# the Tauri desktop wraps in production). Same monorepo install pattern as
-# website.Dockerfile so layer caching is symmetric.
+# the Tauri desktop wraps in production).
 FROM node:20-alpine AS build
 
 # pnpm via corepack — pinned in root package.json's "packageManager" field.
@@ -16,7 +15,6 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # the dependency graph before it has the source.
 COPY packages/design-system/package.json ./packages/design-system/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
-COPY apps/website/package.json ./apps/website/
 COPY apps/app/package.json ./apps/app/
 
 RUN pnpm install --frozen-lockfile --filter @netrart/app...
@@ -32,8 +30,6 @@ ENV VITE_PB_URL=""
 RUN pnpm --filter @netrart/app build
 
 # Stage 2 — serve static assets + proxy to PocketBase via nginx.
-# Reuses the website's nginx.conf since both apps need the same /api and
-# /_/ reverse-proxy to the pb sidecar.
 FROM nginx:1.27-alpine
 
 COPY --from=build /repo/apps/app/dist /usr/share/nginx/html

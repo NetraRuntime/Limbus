@@ -14,7 +14,7 @@ Optimized for the edge from day one, so your camera, your drone, your robot, you
 
 ## About NetraRT
 
-NetraRT is the user-facing surface of Netra: an infinite-canvas desktop app (Tauri) and a public website. This monorepo hosts both apps along with shared design-system and tooling packages. See `README.md` for layout, prerequisites, and run scripts.
+NetraRT is the user-facing surface of Netra: an infinite-canvas desktop app (Tauri). This monorepo hosts the desktop app along with shared design-system and tooling packages. The marketing site (netrart.com) lives in its own repo at [github.com/rifkybujana/netrart.com](https://github.com/rifkybujana/netrart.com). See `README.md` for layout, prerequisites, and run scripts.
 
 ---
 
