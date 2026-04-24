@@ -237,6 +237,37 @@ type MarqueeState = {
   moved: boolean;
 };
 
+type DrawBoxState = {
+  imageId: string;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  // World-space corners, clamped to the target image's bounds.
+  startWorldX: number;
+  startWorldY: number;
+  currentWorldX: number;
+  currentWorldY: number;
+  // Image world-bounds captured at drag-start so the clamp stays stable even
+  // if the image is re-rendered during the drag.
+  imageX: number;
+  imageY: number;
+  imageW: number;
+  imageH: number;
+  moved: boolean;
+};
+
+/** A user-drawn bounding box. Stored relative to the image's world top-left
+ *  so it follows the image when dragged. [x1, y1, x2, y2] in the image's
+ *  world units (i.e. offsets of `m.width`/`m.height`). */
+type UserBox = {
+  id: string;
+  box: [number, number, number, number];
+};
+
+const DRAW_BOX_MIN_SIZE_PX = 4;
+const genBoxId = (): string =>
+  `ub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 type UploadPhase = 'sending' | 'finalizing' | 'error';
 type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
 
@@ -759,6 +790,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     minX: number; minY: number; maxX: number; maxY: number;
   } | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
+
+  // Box-tool drawing state. `drawBoxPreview` is the in-flight rect used for
+  // the live overlay; `drawBoxRef` mirrors it for access inside window-level
+  // pointer handlers without chasing stale state closures. `userBoxes` holds
+  // committed rects keyed by image id.
+  const [drawBoxPreview, setDrawBoxPreview] = useState<DrawBoxState | null>(null);
+  const drawBoxRef = useRef<DrawBoxState | null>(null);
+  const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [tool, setTool] = useState<CanvasTool>('drag');
@@ -1995,8 +2034,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
   const importDescriptors = useCallback(
     async (descriptors: MediaDescriptor[], point: WorldPoint) => {
+      const mediaDescriptors = descriptors.filter(
+        (d): d is MediaDescriptor & { kind: 'image' | 'video' } =>
+          d.kind === 'image' || d.kind === 'video',
+      );
       const files: { file: File; kind: 'image' | 'video' }[] = [];
-      for (const d of descriptors) {
+      for (const d of mediaDescriptors) {
         try {
           const f = await d.load();
           files.push({ file: f, kind: d.kind });
@@ -2351,9 +2394,100 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     }
     shiftToggledRef.current = false;
     if (toolRef.current === 'box') {
-      // Box tool disables move-to-drag on media. Selection (via click) still
-      // works because handleMediaClick runs on pointerup with no dragRef set.
-      // Box-drawing pointer logic will hook in here in a follow-up.
+      // Box tool: click-drag on an image draws a new bounding box. Videos
+      // aren't supported yet — fall through to a no-op so they don't drag.
+      if (m.kind !== 'image') return;
+      const v = viewRef.current;
+      // InfiniteCanvas is position:fixed inset:0, so client coords map
+      // directly to its local space; no rect offset needed.
+      const worldX = (e.clientX - v.x) / v.scale;
+      const worldY = (e.clientY - v.y) / v.scale;
+      const cx = Math.max(m.x, Math.min(m.x + m.width, worldX));
+      const cy = Math.max(m.y, Math.min(m.y + m.height, worldY));
+      const state: DrawBoxState = {
+        imageId: m.id,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startWorldX: cx,
+        startWorldY: cy,
+        currentWorldX: cx,
+        currentWorldY: cy,
+        imageX: m.x,
+        imageY: m.y,
+        imageW: m.width,
+        imageH: m.height,
+        moved: false,
+      };
+      drawBoxRef.current = state;
+      setDrawBoxPreview(state);
+      // Keep this image active so the toolbar stays anchored to it while
+      // drawing. Matches handleMediaClick's single-select behavior.
+      if (!selectedIdsRef.current.has(m.id) || selectedIdsRef.current.size !== 1) {
+        setSelectedIds(new Set([m.id]));
+        setLastSelectedId(m.id);
+      }
+
+      const onMove = (ev: PointerEvent) => {
+        const b = drawBoxRef.current;
+        if (!b || ev.pointerId !== b.pointerId) return;
+        const dx = ev.clientX - b.startClientX;
+        const dy = ev.clientY - b.startClientY;
+        if (!b.moved && Math.hypot(dx, dy) < DRAW_BOX_MIN_SIZE_PX) return;
+        const vNow = viewRef.current;
+        const wx = (ev.clientX - vNow.x) / vNow.scale;
+        const wy = (ev.clientY - vNow.y) / vNow.scale;
+        const ccx = Math.max(b.imageX, Math.min(b.imageX + b.imageW, wx));
+        const ccy = Math.max(b.imageY, Math.min(b.imageY + b.imageH, wy));
+        const next: DrawBoxState = {
+          ...b,
+          currentWorldX: ccx,
+          currentWorldY: ccy,
+          moved: true,
+        };
+        drawBoxRef.current = next;
+        setDrawBoxPreview(next);
+      };
+
+      const cleanup = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      };
+
+      const onUp = (ev: PointerEvent) => {
+        const b = drawBoxRef.current;
+        cleanup();
+        if (!b || ev.pointerId !== b.pointerId) return;
+        drawBoxRef.current = null;
+        setDrawBoxPreview(null);
+        if (!b.moved) return;
+        const x1 = Math.min(b.startWorldX, b.currentWorldX);
+        const y1 = Math.min(b.startWorldY, b.currentWorldY);
+        const x2 = Math.max(b.startWorldX, b.currentWorldX);
+        const y2 = Math.max(b.startWorldY, b.currentWorldY);
+        // Reject degenerate boxes (hairline drags). The pixel threshold is
+        // applied in screen space so a zoomed-out drag still needs real
+        // motion to commit.
+        const vNow = viewRef.current;
+        const pxW = (x2 - x1) * vNow.scale;
+        const pxH = (y2 - y1) * vNow.scale;
+        if (pxW < DRAW_BOX_MIN_SIZE_PX || pxH < DRAW_BOX_MIN_SIZE_PX) return;
+        const rel: [number, number, number, number] = [
+          x1 - b.imageX,
+          y1 - b.imageY,
+          x2 - b.imageX,
+          y2 - b.imageY,
+        ];
+        setUserBoxes((prev) => {
+          const list = prev[b.imageId] ?? [];
+          return { ...prev, [b.imageId]: [...list, { id: genBoxId(), box: rel }] };
+        });
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
       return;
     }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -2460,10 +2594,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
   // Bbox drag-resize on the selected mask. Live edits run through setSegments
   // for instant visual feedback; history is pushed once on pointerup so an
-  // entire drag is a single undo step.
+  // entire drag is a single undo step. Eight handles total: four corners for
+  // diagonal resize and four edge midpoints for single-axis resize.
+  type ResizeHandle = 'tl' | 't' | 'tr' | 'r' | 'br' | 'b' | 'bl' | 'l';
   type BboxResizeDragState = {
     pointerId: number;
-    handle: 'tl' | 'tr' | 'bl' | 'br';
+    handle: ResizeHandle;
     imageId: string;
     tag: string;
     maskIndex: number;
@@ -2478,6 +2614,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     moved: boolean;
   };
   const bboxResizeRef = useRef<BboxResizeDragState | null>(null);
+  // Non-null while a drag is actively moving — drives the precision guide
+  // overlay. Kept as state (not a ref) so the overlay re-renders when the
+  // drag starts and when it ends.
+  const [activeResize, setActiveResize] = useState<ResizeHandle | null>(null);
 
   const applyBboxToSegments = useCallback(
     (
@@ -2528,10 +2668,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     const dxMask = (clientX - s.startClientX) / scale / s.fx;
     const dyMask = (clientY - s.startClientY) / scale / s.fy;
     let [x1, y1, x2, y2] = s.startBbox;
-    const dragsLeft = s.handle === 'tl' || s.handle === 'bl';
-    const dragsRight = s.handle === 'tr' || s.handle === 'br';
-    const dragsTop = s.handle === 'tl' || s.handle === 'tr';
-    const dragsBottom = s.handle === 'bl' || s.handle === 'br';
+    const dragsLeft = s.handle === 'tl' || s.handle === 'bl' || s.handle === 'l';
+    const dragsRight = s.handle === 'tr' || s.handle === 'br' || s.handle === 'r';
+    const dragsTop = s.handle === 'tl' || s.handle === 'tr' || s.handle === 't';
+    const dragsBottom = s.handle === 'bl' || s.handle === 'br' || s.handle === 'b';
     if (dragsLeft) x1 = Math.max(0, Math.min(x2 - 1, x1 + dxMask));
     if (dragsRight) x2 = Math.min(s.maskW, Math.max(x1 + 1, x2 + dxMask));
     if (dragsTop) y1 = Math.max(0, Math.min(y2 - 1, y1 + dyMask));
@@ -2543,7 +2683,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     (
       e: React.PointerEvent<HTMLSpanElement>,
       id: MaskIdentity,
-      handle: 'tl' | 'tr' | 'bl' | 'br',
+      handle: ResizeHandle,
     ) => {
       if (e.button !== 0) return;
       const current = segmentsRef.current[id.imageId];
@@ -2604,6 +2744,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         const dy = Math.abs(e.clientY - s.startClientY);
         if (dx < 1 && dy < 1) return;
         s.moved = true;
+        setActiveResize(s.handle);
       }
       applyBboxToSegments(s.imageId, s.tag, s.maskIndex, next);
     },
@@ -2620,6 +2761,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         // Already released or the element is gone; nothing to do.
       }
       bboxResizeRef.current = null;
+      setActiveResize(null);
       if (!s.moved) return;
       const finalBbox = computeResizedBbox(s, e.clientX, e.clientY);
       const before = s.before;
@@ -2974,6 +3116,66 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         />
       )}
 
+      {/* Committed user-drawn boxes. Viewport-space so border weight stays
+          crisp at every zoom level. Only rendered for images currently in
+          paint range to match the segmentation bbox culling. */}
+      {paintMedia
+        .filter((m) => m.kind === 'image' && (userBoxes[m.id]?.length ?? 0) > 0)
+        .flatMap((m) =>
+          userBoxes[m.id]!.map((b) => {
+            const [rx1, ry1, rx2, ry2] = b.box;
+            const wx = m.x + rx1;
+            const wy = m.y + ry1;
+            const ww = Math.max(1, rx2 - rx1);
+            const wh = Math.max(1, ry2 - ry1);
+            return (
+              <div
+                key={`ubox-${m.id}-${b.id}`}
+                className="user-box"
+                aria-hidden
+                style={{
+                  left: wx * view.scale + view.x,
+                  top: wy * view.scale + view.y,
+                  width: ww * view.scale,
+                  height: wh * view.scale,
+                }}
+              >
+                <span className="user-box-tick tl" />
+                <span className="user-box-tick tr" />
+                <span className="user-box-tick bl" />
+                <span className="user-box-tick br" />
+              </div>
+            );
+          }),
+        )}
+
+      {/* Live preview of the box being drawn. Matches the committed style
+          with reduced opacity so release feels like a "snap". */}
+      {drawBoxPreview && drawBoxPreview.moved && (() => {
+        const b = drawBoxPreview;
+        const x1 = Math.min(b.startWorldX, b.currentWorldX);
+        const y1 = Math.min(b.startWorldY, b.currentWorldY);
+        const x2 = Math.max(b.startWorldX, b.currentWorldX);
+        const y2 = Math.max(b.startWorldY, b.currentWorldY);
+        return (
+          <div
+            className="user-box is-drawing"
+            aria-hidden
+            style={{
+              left: x1 * view.scale + view.x,
+              top: y1 * view.scale + view.y,
+              width: Math.max(0, (x2 - x1) * view.scale),
+              height: Math.max(0, (y2 - y1) * view.scale),
+            }}
+          >
+            <span className="user-box-tick tl" />
+            <span className="user-box-tick tr" />
+            <span className="user-box-tick bl" />
+            <span className="user-box-tick br" />
+          </div>
+        );
+      })()}
+
       {(() => {
         // Dim "at-rest" bbox for every ready mask on every visible image. The
         // active (selected/hovered) mask is skipped here and rendered by the
@@ -3114,34 +3316,81 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         return (
           <>
             {selected && (
-              <div
-                key={`selected-${selectedMask!.imageId}-${selectedMask!.tag}-${selectedMask!.maskIndex}`}
-                className="segment-mask-selected"
-                style={
-                  {
-                    left: selected.left,
-                    top: selected.top,
-                    width: selected.width,
-                    height: selected.height,
-                    '--seg-accent': selected.accent,
-                  } as React.CSSProperties
-                }
-              >
-                {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
-                  <span
-                    key={corner}
-                    className={`segment-mask-handle interactive ${corner}`}
-                    role="button"
-                    aria-label={`Resize ${corner}`}
-                    onPointerDown={(e) =>
-                      handleBboxResizePointerDown(e, selectedMask!, corner)
-                    }
-                    onPointerMove={handleBboxResizePointerMove}
-                    onPointerUp={handleBboxResizePointerUp}
-                    onPointerCancel={handleBboxResizePointerUp}
-                  />
-                ))}
-              </div>
+              <>
+                <div
+                  key={`selected-${selectedMask!.imageId}-${selectedMask!.tag}-${selectedMask!.maskIndex}`}
+                  className="segment-mask-selected"
+                  style={
+                    {
+                      left: selected.left,
+                      top: selected.top,
+                      width: selected.width,
+                      height: selected.height,
+                      '--seg-accent': selected.accent,
+                    } as React.CSSProperties
+                  }
+                >
+                  {(['tl', 't', 'tr', 'r', 'br', 'b', 'bl', 'l'] as const).map(
+                    (corner) => (
+                      <span
+                        key={corner}
+                        className={`segment-mask-handle interactive ${corner}`}
+                        role="button"
+                        aria-label={`Resize ${corner}`}
+                        onPointerDown={(e) =>
+                          handleBboxResizePointerDown(e, selectedMask!, corner)
+                        }
+                        onPointerMove={handleBboxResizePointerMove}
+                        onPointerUp={handleBboxResizePointerUp}
+                        onPointerCancel={handleBboxResizePointerUp}
+                      />
+                    ),
+                  )}
+                </div>
+                {activeResize && (() => {
+                  // Precision guides through the edge(s) being dragged. Corner
+                  // handles move two edges and therefore light both axes; edge
+                  // handles move one edge and only light that axis.
+                  const vGuide: number | null =
+                    activeResize === 'tl' ||
+                    activeResize === 'bl' ||
+                    activeResize === 'l'
+                      ? selected.left
+                      : activeResize === 'tr' ||
+                          activeResize === 'br' ||
+                          activeResize === 'r'
+                        ? selected.left + selected.width
+                        : null;
+                  const hGuide: number | null =
+                    activeResize === 'tl' ||
+                    activeResize === 'tr' ||
+                    activeResize === 't'
+                      ? selected.top
+                      : activeResize === 'bl' ||
+                          activeResize === 'br' ||
+                          activeResize === 'b'
+                        ? selected.top + selected.height
+                        : null;
+                  return (
+                    <>
+                      {vGuide !== null && (
+                        <div
+                          className="bbox-resize-guide v"
+                          aria-hidden
+                          style={{ left: vGuide }}
+                        />
+                      )}
+                      {hGuide !== null && (
+                        <div
+                          className="bbox-resize-guide h"
+                          aria-hidden
+                          style={{ top: hGuide }}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
+              </>
             )}
             {hover && (
               <div
