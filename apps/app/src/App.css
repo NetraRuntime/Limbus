@@ -1064,7 +1064,24 @@
   min-height: 24px;
   cursor: pointer;
   text-align: left;
-  transition: opacity 120ms ease, box-shadow 120ms ease;
+  transition:
+    opacity 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease,
+    transform 120ms ease;
+}
+
+/* :hover and :active use filter + transform because palette colors are
+   applied inline via `style={{ background, color, borderColor }}`, which
+   would override any external `background`/`border-color` rule here. */
+.media-tag-row:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.media-tag-row:active {
+  filter: brightness(0.9);
+  transform: translateY(0);
 }
 
 .media-tag-row:focus {
