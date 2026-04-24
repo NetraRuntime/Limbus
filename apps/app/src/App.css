@@ -767,11 +767,17 @@
 .segment-mask-handle.tr { top: -5px; right: -5px; }
 .segment-mask-handle.bl { bottom: -5px; left: -5px; }
 .segment-mask-handle.br { bottom: -5px; right: -5px; }
+/* Edge midpoint handles — each moves one axis only. Centered via 50% + a
+   halved translate so they stay on the ring even as the bbox resizes. */
+.segment-mask-handle.t { top: -5px; left: 50%; transform: translateX(-50%); }
+.segment-mask-handle.b { bottom: -5px; left: 50%; transform: translateX(-50%); }
+.segment-mask-handle.l { left: -5px; top: 50%; transform: translateY(-50%); }
+.segment-mask-handle.r { right: -5px; top: 50%; transform: translateY(-50%); }
 
 /* Handles on the *selected* mask are interactive: they accept pointer events
    (overriding their parent's pointer-events: none) and show a resize cursor
-   that matches the corner. The 4px negative inset expands the clickable hit
-   area without changing the visual footprint. */
+   that matches the corner or edge. The 4px negative inset expands the
+   clickable hit area without changing the visual footprint. */
 .segment-mask-handle.interactive {
   pointer-events: auto;
   touch-action: none;
@@ -787,6 +793,33 @@
 .segment-mask-handle.interactive.br { cursor: nwse-resize; }
 .segment-mask-handle.interactive.tr { cursor: nesw-resize; }
 .segment-mask-handle.interactive.bl { cursor: nesw-resize; }
+.segment-mask-handle.interactive.t { cursor: ns-resize; }
+.segment-mask-handle.interactive.b { cursor: ns-resize; }
+.segment-mask-handle.interactive.l { cursor: ew-resize; }
+.segment-mask-handle.interactive.r { cursor: ew-resize; }
+
+/* Precision guides rendered while a resize drag is active. Each guide is a
+   1px white line spanning the full viewport at the current edge position,
+   giving the user a reference for aligning the bbox against other content. */
+.bbox-resize-guide {
+  position: fixed;
+  z-index: 15;
+  pointer-events: none;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.35);
+}
+
+.bbox-resize-guide.v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.bbox-resize-guide.h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
 
 .segment-mask-hover-pill {
   position: absolute;
@@ -1363,6 +1396,57 @@ body[data-canvas-tool="box"] .media-label {
   right: 0;
   height: 1px;
   transform: translateY(-0.5px);
+}
+
+/* User-drawn bounding box. Viewport-space like .segment-mask-bbox so stroke
+   weight stays crisp at any zoom. The in-flight preview (`.is-drawing`)
+   fades the fill a touch so the rect feels provisional until release. */
+.user-box {
+  position: fixed;
+  z-index: 13;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bg) 85%, transparent);
+}
+
+.user-box.is-drawing {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.user-box-tick {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+}
+
+.user-box-tick.tl {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.user-box-tick.tr {
+  top: -1px;
+  right: -1px;
+  border-left: 0;
+  border-bottom: 0;
+}
+.user-box-tick.bl {
+  bottom: -1px;
+  left: -1px;
+  border-right: 0;
+  border-top: 0;
+}
+.user-box-tick.br {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
 }
 
 
@@ -2155,4 +2239,34 @@ body[data-canvas-tool="box"] .media-label {
 .import-preview-size {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted, #666);
+}
+
+.import-preview-annotations {
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.import-preview-annotations-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.import-preview-annotations-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-muted, rgba(255,255,255,0.7));
+}
+
+.import-preview-annotations-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

@@ -3671,6 +3671,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         state={preview.state}
         onCancel={preview.cancel}
         onImport={onConfirmImport}
+        onChangeFormat={preview.setChosenFormat}
       />
 
       <SearchPalette
