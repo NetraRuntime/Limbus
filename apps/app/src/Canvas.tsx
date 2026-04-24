@@ -879,13 +879,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   useEffect(() => {
     // `tauri dev` starts Vite before the Rust binary can boot the
     // PocketBase sidecar, so the first fetch from this effect often
-    // races and hits ECONNREFUSED. Retry with exponential backoff
-    // (capped at 8s) until we get at least one successful list — at
-    // which point we flip to 'ready' and hydrate. Stops on unmount.
+    // races and hits ECONNREFUSED. Retry on a flat 500ms interval
+    // until we get at least one successful list — PB is local, so
+    // polling is cheap and the user only sees 'offline' for a few
+    // hundred ms after PB is reachable. Stops on unmount.
+    const RETRY_MS = 500;
     let cancelled = false;
     let retryTimer: number | null = null;
     let loaded = false;
-    const load = (attempt: number) => {
+    const load = () => {
       void Promise.all([
         listImages().then(
           (r) => ({ ok: true as const, records: r }),
@@ -913,8 +915,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         const anyOk = imgRes.ok || vidRes.ok;
         if (!anyOk) {
           setConn('offline');
-          const delay = Math.min(8000, 500 * 2 ** attempt);
-          retryTimer = window.setTimeout(() => load(attempt + 1), delay);
+          retryTimer = window.setTimeout(load, RETRY_MS);
           return;
         }
         if (loaded) return;
@@ -965,7 +966,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         }
       });
     };
-    load(0);
+    load();
     return () => {
       cancelled = true;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
