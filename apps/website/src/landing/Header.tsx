@@ -42,7 +42,7 @@ export function Header() {
         <a href="/" className="brand" onClick={close}>
           <span className="brand-wordmark">NetraRT</span>
           <span className="brand-divider" />
-          <span className="brand-tag">The vision layer for every device</span>
+          <span className="brand-tag">Data annotation, without the cloud</span>
         </a>
 
         <nav className="primary-nav">

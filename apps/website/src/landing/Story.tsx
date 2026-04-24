@@ -125,8 +125,8 @@ const CHAPTERS = [
     visual: <VisualWhy />,
     body: (
       <>
-        Vision at the edge is painful — clunky tools, cloud lock-in, per-box bills. So devs pay
-        the cloud tax. Born from{' '}
+        Annotation is the bottleneck of computer vision — clunky tools, cloud lock-in, per-seat
+        bills. So teams pay the annotation tax. Born from{' '}
         <a
           className="story-v2-origin"
           href="https://github.com/rifkybujana/sam3.c"
@@ -153,8 +153,8 @@ const CHAPTERS = [
     visual: <VisualToday />,
     body: (
       <>
-        Start where it hurts most: <strong>data</strong>. Prompt to segment, export clean
-        datasets, prune the result into a model that fits on an Arduino. No cloud. No setup hell.
+        A local, collaborative <strong>annotation platform</strong>. Prompt to segment, refine
+        with a click, export to COCO, YOLO, or Pascal VOC. No cloud. No setup hell.
       </>
     ),
   },
@@ -163,8 +163,8 @@ const CHAPTERS = [
     visual: <VisualTomorrow />,
     body: (
       <>
-        The runtime for vision AI on every camera, drone, robot, phone, and Pi. Vision is the
-        gateway to robotics — and robotics shouldn't be gated by the annotation bill.
+        Your dataset, pruned into a tiny model, shipped to any chip — camera, drone, robot,
+        phone, or Pi. Annotation shouldn't end at export; it should end at deployment.
       </>
     ),
   },
@@ -180,9 +180,11 @@ export function Story() {
             OUR MISSION
           </span>
           <h2 className="story-v2-title">
-            Vision AI, <span className="story-v2-caveat">without the tax</span>
+            Data annotation, <span className="story-v2-caveat">without the tax</span>
           </h2>
-          <p className="story-v2-sub">As accessible as text AI. Small enough to run on a chip.</p>
+          <p className="story-v2-sub">
+            As easy as typing. As small as the chip it ships to.
+          </p>
         </div>
 
         <ol className="story-v2-chapters">
@@ -204,8 +206,8 @@ export function Story() {
         <figure className="story-v2-quote reveal reveal-up" data-delay="4">
           <i className="ri-double-quotes-l story-v2-quote-mark" aria-hidden="true" />
           <blockquote className="story-v2-quote-body">
-            A teenager films a video, auto-segments it, shrinks it to YOLO, flashes it onto a chip
-            — on their laptop.
+            A teenager films a video, auto-annotates every frame, trains a YOLO, and flashes it
+            onto a chip — on their laptop.
           </blockquote>
           <figcaption className="story-v2-quote-cap mono">
             <span className="story-v2-quote-dash" aria-hidden="true" />
