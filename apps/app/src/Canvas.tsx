@@ -2834,7 +2834,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
               tag: e.tag,
               status: e.status,
             }))}
-            onRemove={(tag) => removeSegmentTag(activeMedia.id, tag)}
+            onRemove={(tag) => deleteAllMasksForTag(activeMedia.id, tag)}
             onSelect={(tag) => {
               // Toggle: re-clicking the current solo tag clears the filter.
               setSoloTag((prev) =>
