@@ -433,7 +433,27 @@ const MediaItem = memo(function MediaItem({
   onPointerMove,
   onPointerUp,
 }: MediaItemProps) {
-  const cls = `world-image ${m.pending ? 'is-pending' : ''} ${isActive ? 'is-active' : ''}`;
+  const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    // Cached media can finish loading before React attaches onLoad, so the
+    // event never fires on remount. Reconcile against the DOM state once.
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+      return;
+    }
+    const vid = videoRef.current;
+    if (vid && vid.readyState >= 2) setLoaded(true);
+  }, []);
+
+  const handleLoaded = () => setLoaded(true);
+  // Flip visible on error too, otherwise the broken-image icon stays hidden.
+  const handleError = () => setLoaded(true);
+
+  const cls = `world-image ${m.pending ? 'is-pending' : ''} ${isActive ? 'is-active' : ''} ${loaded ? 'is-loaded' : ''}`;
   const style = { left: m.x, top: m.y, width: m.width, height: m.height };
   const handleEnter = () => onEnter(m.id);
   const handleClick = (e: React.MouseEvent) => onClick(e, m.id);
@@ -476,11 +496,15 @@ const MediaItem = memo(function MediaItem({
         <>
           {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
           <img
+            ref={imgRef}
             src={lodSrc ?? m.src}
             alt={m.name}
             draggable={false}
+            decoding="async"
             className={cls}
             style={style}
+            onLoad={handleLoaded}
+            onError={handleError}
             onMouseEnter={handleEnter}
             onMouseLeave={onLeave}
             onClick={handleClick}
@@ -498,6 +522,7 @@ const MediaItem = memo(function MediaItem({
     return (
       <>
         <video
+          ref={videoRef}
           src={m.src}
           autoPlay
           loop
@@ -506,6 +531,8 @@ const MediaItem = memo(function MediaItem({
           preload="metadata"
           className={cls}
           style={style}
+          onLoadedData={handleLoaded}
+          onError={handleError}
           onMouseEnter={handleEnter}
           onMouseLeave={onLeave}
           onClick={handleClick}
@@ -524,11 +551,15 @@ const MediaItem = memo(function MediaItem({
     <>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
       <img
+        ref={imgRef}
         src={lodSrc ?? m.src}
         alt={m.name}
         draggable={false}
+        decoding="async"
         className={cls}
         style={style}
+        onLoad={handleLoaded}
+        onError={handleError}
         onMouseEnter={handleEnter}
         onMouseLeave={onLeave}
         onClick={handleClick}
