@@ -11,7 +11,6 @@
      this, zooming in then out on WKWebView occasionally drops the whole
      window to blank until another input forces a re-raster. */
   isolation: isolate;
-  contain: layout paint;
 }
 
 .ic-content {
@@ -20,12 +19,7 @@
   left: 0;
   width: 0;
   height: 0;
-  /* `will-change: transform` was promoting .ic-content to a permanent
-     composited layer on WKWebView, and that layer would get dropped on
-     zoom-out from modest scales. translate3d in the transform itself
-     keeps the layer promoted only while animations are active, which
-     is gentler on the WebKit layer budget. */
-  contain: layout paint;
+  will-change: transform;
 }
 
 .ic-grabbing {
