@@ -85,6 +85,8 @@ import {
   type ScanInput,
 } from './lib/mediaIngest';
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
+import { runAnnotationPlan } from './lib/annotations';
+import type { AnnotationFormat, AnnotationPlan } from './lib/annotations';
 import { placeGrid } from './lib/gridPlacement';
 import { useImportPreview } from './hooks/useImportPreview';
 import { ImportPreviewModal } from './components/ImportPreviewModal';
@@ -2039,7 +2041,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
 
   const importDescriptors = useCallback(
-    async (descriptors: MediaDescriptor[], point: WorldPoint) => {
+    async (
+      descriptors: MediaDescriptor[],
+      point: WorldPoint,
+      annotationPlan: AnnotationPlan | null = null,
+      chosenFormat: AnnotationFormat | 'none' = 'none',
+    ) => {
       const mediaDescriptors = descriptors.filter(
         (d): d is MediaDescriptor & { kind: 'image' | 'video' } =>
           d.kind === 'image' || d.kind === 'video',
@@ -2122,6 +2129,28 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         { bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
       );
       await uploading;
+
+      if (annotationPlan && chosenFormat !== 'none' && imageIdByDescriptorPath.size > 0) {
+        try {
+          const { errors } = await runAnnotationPlan({
+            plan: annotationPlan,
+            chosenFormat,
+            descriptors,
+            imageIdByDescriptorPath,
+            upsert: (group) =>
+              upsertSegmentation({
+                image: group.imageId,
+                tag: group.tag,
+                masks: group.masks,
+                source_width: group.sourceWidth,
+                source_height: group.sourceHeight,
+              }).then(() => undefined),
+          });
+          if (errors.length > 0) console.warn('[annotations] errors:', errors);
+        } catch (err) {
+          console.error('[annotations] plan failed', err);
+        }
+      }
     },
     [runUploadPlan],
   );
@@ -2173,8 +2202,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const onConfirmImport = useCallback(() => {
     const point = preview.getPendingPoint();
     const descs = preview.state.descriptors;
+    const plan = preview.state.annotationPlan;
+    const format = preview.state.chosenFormat;
     preview.close();
-    if (point && descs.length) void importDescriptors(descs, point);
+    if (point && descs.length) void importDescriptors(descs, point, plan, format);
   }, [importDescriptors, preview]);
 
   useEffect(() => {
