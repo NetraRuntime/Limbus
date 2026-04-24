@@ -1441,6 +1441,48 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     [segments, replaceReadyTag, history],
   );
 
+  const deleteAllMasksForTag = useCallback(
+    (imageId: string, tag: string) => {
+      const current = segments[imageId];
+      if (!current) return;
+      const key = tag.toLowerCase();
+      const ready = current.entries.find(
+        (e): e is TagSegment & { status: 'ready' } =>
+          e.status === 'ready' && e.tag.toLowerCase() === key,
+      );
+      if (!ready) return;
+
+      const before: ReadyMaskEntry = {
+        tag: ready.tag,
+        status: 'ready',
+        response: {
+          ...ready.response,
+          masks: [...ready.response.masks],
+        },
+      };
+
+      const entry = deleteMaskEntry({
+        imageId,
+        tag: ready.tag,
+        before,
+        after: null,
+        replaceTag: replaceReadyTag,
+        onConn: setConn,
+      });
+      setSoloTag((prev) =>
+        prev && prev.toLowerCase() === key ? null : prev,
+      );
+      setSelectedMask((prev) =>
+        prev && prev.imageId === imageId && prev.tag.toLowerCase() === key
+          ? null
+          : prev,
+      );
+      entry.do();
+      history.push(entry, { alreadyApplied: true });
+    },
+    [segments, replaceReadyTag, history],
+  );
+
   const removeSegmentTag = useCallback((id: string, tag: string) => {
     const key = tag.toLowerCase();
     let remainingTags: string[] = [];
