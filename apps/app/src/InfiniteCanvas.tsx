@@ -24,9 +24,10 @@ export type WorldRect = { x: number; y: number; width: number; height: number };
 // scale(n)` produces a layer matrix outside a narrow range — deep zoom-ins
 // allocate GPU textures the compositor can't back, and the layer stays
 // invalidated after zoom-out (screen goes fully black, dots included).
-// Keep bounds well inside the safe envelope.
-const MIN_SCALE = 1 / 128;
-const MAX_SCALE = 128;
+// 16× in either direction is plenty for normal use and keeps the matrix
+// well within the stable envelope.
+const MIN_SCALE = 1 / 16;
+const MAX_SCALE = 16;
 const ZOOM_INTENSITY = 0.0015;
 const PINCH_ZOOM_MULTIPLIER = 4;
 const LINE_TO_PX = 16;
