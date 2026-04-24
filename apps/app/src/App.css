@@ -626,33 +626,26 @@
   white-space: nowrap;
 }
 
-/* SAM3 text-segmentation mask. Uses CSS mask-image with a single-channel
-   PNG (white = object, black = background); the div's tinted background
-   bleeds through only where the object is. Scales smoothly with zoom. */
-.segment-mask {
-  position: fixed;
+/* Baked per-image segmentation overlay. Lives inside .ic-content and
+   rides pan/zoom via the container transform; intrinsic pixel buffer
+   is the bake resolution, CSS stretches it to the image's world rect. */
+.segment-bake {
+  position: absolute;
   z-index: 12;
-  pointer-events: none;
-  mix-blend-mode: normal;
+  pointer-events: auto;
+  /* Preserve crisp mask edges when the container scales up. */
+  image-rendering: pixelated;
 }
 
-/* White outline layer, stacked over the tinted fill. Rendered from the
-   luma channel of the same mask PNG, which the Rust worker writes as a
-   1-pixel ring along the binary mask boundary. */
-.segment-mask-edge {
-  position: fixed;
-  z-index: 12;
-  pointer-events: none;
-  mix-blend-mode: normal;
-}
-
-.segment-bbox {
-  position: fixed;
-  z-index: 13;
+/* Selection ring around a single selected mask's bbox. World-coord
+   sibling of the image and the bake canvas; scales with the container
+   transform. */
+.segment-mask-selected {
+  position: absolute;
+  z-index: 14;
   pointer-events: none;
   border: 2px solid;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
 .segment-overlay {
