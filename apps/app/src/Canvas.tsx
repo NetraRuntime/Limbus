@@ -1952,12 +1952,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           [p.imageId]: [...list, { id: p.boxId, box: p.relBox, label }],
         };
       });
-      setHighlightInputs((prev) => {
-        const existing = prev[p.imageId] ?? [];
-        const key = label.toLowerCase();
-        if (existing.some((t) => t.toLowerCase() === key)) return prev;
-        return { ...prev, [p.imageId]: [...existing, label] };
-      });
+      // Box labels are NOT added to `highlightInputs` — that input is for
+      // text-prompt tags the user types directly. Box entries still appear
+      // in the MediaTagList (driven by `segments`), just not in the text
+      // chip strip, so the two prompt surfaces stay conceptually separate.
       dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
       setPendingBoxLabel(null);
     },

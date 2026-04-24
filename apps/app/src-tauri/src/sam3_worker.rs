@@ -347,6 +347,8 @@ fn segment_text(
         .segment(&[Prompt::Text(text)])
         .map_err(|e| format!("segment: {e}"))?;
     // Text prompts produce stable quality scores — 0.8 filters noise cleanly.
+    // The shared reducer interprets this as the prob/IoU-score cutoff
+    // (`nms_prob_thresh`), NOT the post-NMS stability threshold.
     build_segment_response(result, src_w, src_h, 0.8)
 }
 
@@ -375,8 +377,7 @@ fn segment_box(
         .map_err(|e| format!("segment: {e}"))?;
     // After the upstream prompt-encoder fix (vendor/sam3.c 894dc93) libsam3
     // scores box-prompt candidates correctly, so NMS + score filtering work
-    // the same way as text prompts. Use 0.8 min_quality — same cutoff as the
-    // text path — so only high-confidence masks are returned.
+    // the same way as text prompts. 0.8 score cutoff — same as text.
     build_segment_response(result, src_w, src_h, 0.8)
 }
 
@@ -384,15 +385,18 @@ fn segment_box(
 /// source dimensions the frontend uses for placement. Shared between text
 /// prompts and any future N-mask variant.
 ///
-/// `min_quality` is the post-NMS stability threshold (see per-caller notes).
+/// `score_thresh` is the IoU-score cutoff applied BEFORE NMS — masks
+/// whose per-mask score is below this are dropped. Not to be confused
+/// with `min_quality` (the post-NMS stability filter), which we leave
+/// disabled (0.0, matching libsam3's CLI default).
 fn build_segment_response(
     result: SegmentResult,
     src_w: u32,
     src_h: u32,
-    min_quality: f32,
+    score_thresh: f32,
 ) -> Result<SegmentResponse, String> {
     let reduced = if result.iou_valid() && result.n_masks() > 0 {
-        result.nms(0.5, 0.5, min_quality).unwrap_or(result)
+        result.nms(score_thresh, 0.5, 0.0).unwrap_or(result)
     } else {
         result
     };
