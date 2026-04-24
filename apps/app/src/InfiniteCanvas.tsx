@@ -20,8 +20,13 @@ export type WorldPoint = { worldX: number; worldY: number };
 
 export type WorldRect = { x: number; y: number; width: number; height: number };
 
-const MIN_SCALE = 1e-4;
-const MAX_SCALE = 1e4;
+// WKWebView's compositor fails to rasterize `.ic-content` when `transform:
+// scale(n)` produces a layer matrix outside a narrow range — deep zoom-ins
+// allocate GPU textures the compositor can't back, and the layer stays
+// invalidated after zoom-out (screen goes fully black, dots included).
+// Keep bounds well inside the safe envelope.
+const MIN_SCALE = 1 / 128;
+const MAX_SCALE = 128;
 const ZOOM_INTENSITY = 0.0015;
 const PINCH_ZOOM_MULTIPLIER = 4;
 const LINE_TO_PX = 16;
