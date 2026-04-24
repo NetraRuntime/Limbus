@@ -3,12 +3,13 @@ import type { BakeEntry, ComposedBake, ComposeInput } from './types';
 import { composeBake as defaultComposeBake } from './compose';
 import { computeSignature } from './signature';
 import { createDecodeCache } from './decodeCache';
+import { createComposeWorker } from './worker/composeWorkerClient';
 
 const DECODE_CAP = 128;
 const BAKE_CAP = 32;
 
-// Module-level caches — survive component remounts (e.g., when an image
-// scrolls out of view and back).
+// Main-thread decode cache. Only used by the fallback path when the
+// worker is unavailable (the worker owns its own cache).
 const decodeCache = createDecodeCache<ImageBitmap>({
   capacity: DECODE_CAP,
   decode: async (b64) => {
@@ -46,8 +47,28 @@ export function evictDecode(png_base64: string): void {
   decodeCache.drop(png_base64);
 }
 
-// Test seam: swap composeBake. Default is the real one.
-let composeFn: (input: ComposeInput) => Promise<ComposedBake> = defaultComposeBake;
+// Lazily create the worker on first use so tests that don't exercise
+// the worker path don't pay for it. If the worker can't be constructed
+// (policy-blocked, tests without a Worker, etc.), fall back to the
+// direct main-thread compose.
+let workerClient: ReturnType<typeof createComposeWorker> = null;
+let workerAttempted = false;
+
+function resolveCompose(): (input: ComposeInput) => Promise<ComposedBake> {
+  if (!workerAttempted) {
+    workerAttempted = true;
+    workerClient = createComposeWorker();
+  }
+  if (workerClient) return workerClient.compose;
+  return defaultComposeBake;
+}
+
+// Test seam: swap composeBake. When `null`, useSegmentBake picks
+// between the worker-backed and main-thread composers via
+// `resolveCompose`. Tests typically inject a synchronous fake to keep
+// the hook deterministic.
+let composeFn: ((input: ComposeInput) => Promise<ComposedBake>) | null = null;
+
 export function __setComposeForTests(
   fn: (input: ComposeInput) => Promise<ComposedBake>,
 ): void {
@@ -56,7 +77,10 @@ export function __setComposeForTests(
 
 export function __resetBakeCacheForTests(): void {
   bakeStore.clear();
-  composeFn = defaultComposeBake;
+  composeFn = null;
+  workerClient?.terminate();
+  workerClient = null;
+  workerAttempted = false;
 }
 
 export type BakeHookInput = {
@@ -99,7 +123,8 @@ export function useSegmentBake(input: BakeHookInput): {
 
     (async () => {
       const current = inputRef.current;
-      const composed = await composeFn({
+      const compose = composeFn ?? resolveCompose();
+      const composed = await compose({
         sourceW: current.sourceW,
         sourceH: current.sourceH,
         masks: current.masks,
