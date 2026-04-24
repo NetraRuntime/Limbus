@@ -9,7 +9,7 @@ export const SOFT_SIZE_BYTES = 1 * 1024 ** 3;
 export const MAX_UNCOMPRESSED_BYTES = 4 * 1024 ** 3;
 export const MAX_ZIP_DEPTH = 4;
 
-export type MediaKind = 'image' | 'video';
+export type MediaKind = 'image' | 'video' | 'annotation';
 
 export type DescriptorSource =
   | { type: 'file'; file: File }
@@ -48,6 +48,9 @@ const IMAGE_EXTS = new Set([
 const VIDEO_EXTS = new Set([
   'mp4', 'webm', 'mov', 'm4v', 'mkv', 'ogv', 'avi', '3gp',
 ]);
+const ANNOTATION_EXTS = new Set([
+  'json', 'txt', 'xml', 'yaml', 'yml', 'names',
+]);
 
 export function classifyByExtension(name: string): MediaKind | 'zip' | null {
   const dot = name.lastIndexOf('.');
@@ -56,6 +59,7 @@ export function classifyByExtension(name: string): MediaKind | 'zip' | null {
   if (ext === 'zip') return 'zip';
   if (IMAGE_EXTS.has(ext)) return 'image';
   if (VIDEO_EXTS.has(ext)) return 'video';
+  if (ANNOTATION_EXTS.has(ext)) return 'annotation';
   return null;
 }
 
@@ -129,7 +133,7 @@ export function extractZipRecursive(
       out.push(...extractZipRecursive(bytes, relativePath, depth + 1, budget));
       continue;
     }
-    if (kind !== 'image' && kind !== 'video') continue;
+    if (kind !== 'image' && kind !== 'video' && kind !== 'annotation') continue;
 
     const leaf = name.split('/').pop() ?? name;
     const mime = mimeFromExtension(leaf);
@@ -167,7 +171,7 @@ export async function buildDescriptorFromFile(
     }
     return extractZipRecursive(bytes, relativePath, 1, budget);
   }
-  if (kind !== 'image' && kind !== 'video') return [];
+  if (kind !== 'image' && kind !== 'video' && kind !== 'annotation') return [];
 
   budget.bytesUsed += file.size;
   if (budget.bytesUsed > budget.limit) {
@@ -361,7 +365,7 @@ function descriptorFromTauriEntry(
   entry: TauriEntryInfo,
 ): MediaDescriptor | null {
   const kind = classifyByExtension(entry.relativePath);
-  if (kind !== 'image' && kind !== 'video') return null;
+  if (kind !== 'image' && kind !== 'video' && kind !== 'annotation') return null;
   const leaf = entry.relativePath.split('/').pop() ?? entry.relativePath;
   const mime = mimeFromExtension(leaf);
   return {

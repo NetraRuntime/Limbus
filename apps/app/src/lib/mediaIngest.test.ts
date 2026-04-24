@@ -34,7 +34,7 @@ describe('classifyByExtension', () => {
   });
 
   it('returns null for unknown or missing extensions', () => {
-    expect(classifyByExtension('a.txt')).toBe(null);
+    expect(classifyByExtension('a.md')).toBe(null);
     expect(classifyByExtension('noext')).toBe(null);
     expect(classifyByExtension('')).toBe(null);
   });
@@ -83,10 +83,10 @@ describe('extractZipRecursive', () => {
     expect(out[0]!.source.type).toBe('zip-blob');
   });
 
-  it('skips non-media entries silently', () => {
+  it('skips non-media, non-annotation entries silently', () => {
     const zip = buildZip({
       'a.png': tinyPng(),
-      'readme.txt': strToU8('hi'),
+      'readme.md': strToU8('hi'),
     });
     const out = extractZipRecursive(zip, 'root', 0, {
       bytesUsed: 0,
@@ -220,10 +220,10 @@ describe('buildDescriptorFromFile', () => {
     expect(descs[0]!.relativePath).toBe('folder/pack.zip/a.png');
   });
 
-  it('non-media, non-zip File yields no descriptors', async () => {
-    const f = new File(['hi'], 'readme.txt', { type: 'text/plain' });
+  it('non-media, non-annotation, non-zip File yields no descriptors', async () => {
+    const f = new File(['hi'], 'readme.md', { type: 'text/markdown' });
     const budget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
-    const descs = await buildDescriptorFromFile(f, 'readme.txt', budget);
+    const descs = await buildDescriptorFromFile(f, 'readme.md', budget);
     expect(descs).toHaveLength(0);
   });
 });
@@ -252,5 +252,27 @@ describe('dropContainsFolderOrZip', () => {
     expect(
       dropContainsFolderOrZip({ entries: [], fallbackFiles: [img] }),
     ).toBe(false);
+  });
+});
+
+describe('classifyByExtension — annotations', () => {
+  it('recognizes annotation extensions', () => {
+    for (const n of ['a.json', 'a.txt', 'a.xml', 'a.yaml', 'a.yml', 'a.names']) {
+      expect(classifyByExtension(n), n).toBe('annotation');
+    }
+  });
+});
+
+describe('extractZipRecursive — annotations', () => {
+  it('emits descriptors for annotation files alongside images', () => {
+    const zip = buildZip({
+      'img/a.jpg': tinyPng(),
+      'labels/a.txt': strToU8('0 0.5 0.5 0.2 0.2'),
+      'notes.md': strToU8('ignored'),
+    });
+    const budget = { bytesUsed: 0, limit: MAX_UNCOMPRESSED_BYTES };
+    const descs = extractZipRecursive(zip, 'drop', 1, budget);
+    const kinds = descs.map((d) => d.kind).sort();
+    expect(kinds).toEqual(['annotation', 'image']);
   });
 });
