@@ -13,6 +13,7 @@ import {
   createImage,
   createVideo,
   deleteAllSegmentationsForImage,
+  deleteSegmentationByImageTag,
   deleteSegmentationsForImage,
   deleteImage,
   deleteVideo,
@@ -55,7 +56,7 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import { groupSegmentationsByImage } from './lib/segmentations';
-import { SegmentBakeLayer, evictBake } from './features/segmentation';
+import { SegmentBakeLayer, evictBake, type MaskIdentity } from './features/segmentation';
 import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
@@ -604,6 +605,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
   const [encodingIds, setEncodingIds] = useState<Set<string>>(() => new Set());
   const [segments, setSegments] = useState<Record<string, SegmentState>>({});
+  const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
   const segmentSeqRef = useRef<Record<string, number>>({});
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
@@ -1173,7 +1175,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const clearSelection = useCallback(() => {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
+    setSelectedMask(null);
   }, []);
+
+  useEffect(() => {
+    if (selectedIds.size > 0) setSelectedMask(null);
+  }, [selectedIds]);
 
   const clearSegment = useCallback((id: string) => {
     // Bump the sequence so any in-flight invoke for this id is ignored when
@@ -1190,6 +1197,67 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     );
     evictBake(id);
   }, []);
+
+  const deleteMask = useCallback(
+    (target: MaskIdentity) => {
+      const current = segments[target.imageId];
+      if (!current) return;
+      const nextEntries: typeof current.entries = [];
+      let touched = false;
+      let tagStillPresent = false;
+      for (const entry of current.entries) {
+        if (entry.status !== 'ready' || entry.tag.toLowerCase() !== target.tag.toLowerCase()) {
+          nextEntries.push(entry);
+          continue;
+        }
+        touched = true;
+        const nextMasks = entry.response.masks.filter((_, idx) => idx !== target.maskIndex);
+        if (nextMasks.length > 0) {
+          nextEntries.push({
+            ...entry,
+            response: { ...entry.response, masks: nextMasks },
+          });
+          tagStillPresent = true;
+        }
+      }
+      if (!touched) return;
+
+      setSegments((prev) => {
+        const cur = prev[target.imageId];
+        if (!cur) return prev;
+        if (nextEntries.length === 0) {
+          const next = { ...prev };
+          delete next[target.imageId];
+          return next;
+        }
+        return { ...prev, [target.imageId]: { entries: nextEntries } };
+      });
+      setSelectedMask(null);
+
+      // Persist.
+      const remainingTagEntry = nextEntries.find(
+        (e) => e.status === 'ready' && e.tag.toLowerCase() === target.tag.toLowerCase(),
+      );
+      if (
+        remainingTagEntry &&
+        remainingTagEntry.status === 'ready' &&
+        tagStillPresent
+      ) {
+        upsertSegmentation({
+          image: target.imageId,
+          tag: remainingTagEntry.tag,
+          masks: remainingTagEntry.response.masks,
+          source_width: remainingTagEntry.response.source_width,
+          source_height: remainingTagEntry.response.source_height,
+        }).catch((e) => console.warn('[sam3] delete-persist failed', e));
+      } else {
+        deleteSegmentationByImageTag(target.imageId, target.tag).catch((e) =>
+          console.warn('[sam3] delete-tag-persist failed', e),
+        );
+      }
+    },
+    [segments],
+  );
 
   const removeSegmentTag = useCallback((id: string, tag: string) => {
     const key = tag.toLowerCase();
@@ -1563,6 +1631,27 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [clearSelection, deleteSelection, selectAll, duplicateSelection, clearHideTimer]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (!selectedMask) return;
+      // Don't hijack text inputs.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      deleteMask(selectedMask);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedMask, deleteMask]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2147,8 +2236,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
                 sourceW={first.source_width}
                 sourceH={first.source_height}
                 masks={masksInput}
-                onMaskSelect={() => {
-                  /* Selection is wired in a later task. */
+                onMaskSelect={(id) => {
+                  setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
+                  setLastSelectedId(null);
+                  setSelectedMask(id);
                 }}
                 onEmptyPointerDown={(e) => {
                   handleMediaPointerDown(e, m);
@@ -2156,6 +2247,39 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
               />,
             ];
           })}
+        {selectedMask && (() => {
+          const m = paintMedia.find((x) => x.id === selectedMask.imageId);
+          if (!m || m.kind !== 'image') return null;
+          const state = segments[selectedMask.imageId];
+          if (!state) return null;
+          const entry = state.entries.find(
+            (e) =>
+              e.status === 'ready' &&
+              e.tag.toLowerCase() === selectedMask.tag.toLowerCase(),
+          );
+          if (!entry || entry.status !== 'ready') return null;
+          const mask = entry.response.masks[selectedMask.maskIndex];
+          if (!mask || !mask.bbox) return null;
+          const [x1, y1, x2, y2] = mask.bbox;
+          const fx = m.width / mask.width;
+          const fy = m.height / mask.height;
+          const { accent } = colorForTag(entry.tag);
+          return (
+            <div
+              key={`selected-${selectedMask.imageId}-${selectedMask.tag}-${selectedMask.maskIndex}`}
+              className="segment-mask-selected"
+              style={{
+                left: m.x + x1 * fx,
+                top: m.y + y1 * fy,
+                width: Math.max(1, (x2 - x1) * fx),
+                height: Math.max(1, (y2 - y1) * fy),
+                borderColor: accent,
+                boxShadow: `0 0 0 2px ${accent}33`,
+              }}
+              aria-hidden
+            />
+          );
+        })()}
       </InfiniteCanvas>
 
       {visibleMedia
