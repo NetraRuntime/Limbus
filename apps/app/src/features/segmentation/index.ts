@@ -17,3 +17,4 @@ export {
   type ResizeBboxEntryArgs,
   type ResizeBboxMeta,
 } from './resizeBboxEntry';
+export { nextSoloTag } from './tagNavigation';
