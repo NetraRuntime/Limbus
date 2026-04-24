@@ -21,12 +21,18 @@ export type SegGroup = {
 
 export type Encoder = (annotation: ParsedAnnotation) => Promise<string>;
 
+// Yield every 16 encodes so the main thread can service layout / user input /
+// state ticks between PNG encoding bursts.
+const YIELD_EVERY = 16;
+
 /** Pure grouping: annotations → SegGroup[]. Encoder stubbed in tests. */
 export async function buildSegMaskGroups(
   annotations: Array<{ imageId: string; annotation: ParsedAnnotation }>,
   encode: Encoder,
+  onEncoded?: (done: number, total: number) => void,
 ): Promise<SegGroup[]> {
   const byKey = new Map<string, SegGroup>();
+  let doneEncoding = 0;
   for (const { imageId, annotation } of annotations) {
     const tag = annotation.className.toLowerCase();
     const key = `${imageId}::${tag}`;
@@ -49,9 +55,27 @@ export async function buildSegMaskGroups(
       score: 1,
       bbox: annotation.bbox,
     });
+    doneEncoding++;
+    onEncoded?.(doneEncoding, annotations.length);
+    if (doneEncoding % YIELD_EVERY === 0) {
+      // Yield: lets the main thread service layout / user input / state ticks.
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
   return Array.from(byKey.values());
 }
+
+export type RunAnnotationPlanResult = {
+  /** Individual ParsedAnnotations that made it into a successfully upserted group. */
+  annotationsImported: number;
+  /** Annotations whose image had no PocketBase id — skipped before grouping. */
+  annotationsUnmatched: number;
+  /** Successfully upserted (imageId, tag) groups. */
+  groupsImported: number;
+  /** Groups whose upsert threw — their annotations are NOT counted in annotationsImported. */
+  groupsFailed: number;
+  errors: string[];
+};
 
 export type RunAnnotationPlanInput = {
   plan: AnnotationPlan;
@@ -60,24 +84,29 @@ export type RunAnnotationPlanInput = {
   imageIdByDescriptorPath: ReadonlyMap<string, string>;
   upsert: (group: SegGroup) => Promise<void>;
   onProgress?: (done: number, total: number) => void;
+  onEncodeProgress?: (done: number, total: number) => void;
 };
 
 export async function runAnnotationPlan(
   input: RunAnnotationPlanInput,
-): Promise<{ imported: number; skipped: number; errors: string[] }> {
+): Promise<RunAnnotationPlanResult> {
   const errors: string[] = [];
   const sources = input.plan.sources.filter((s) =>
     input.chosenFormat === 'none' ? true : s.format === input.chosenFormat,
   );
 
   const annotations: Array<{ imageId: string; annotation: ParsedAnnotation }> = [];
+  let annotationsUnmatched = 0;
 
   for (const source of sources) {
     try {
       const parsed = await parseSource(source, input.descriptors);
       for (const { imageDescriptorPath, annotation } of parsed) {
         const imageId = input.imageIdByDescriptorPath.get(imageDescriptorPath);
-        if (!imageId) continue;
+        if (!imageId) {
+          annotationsUnmatched++;
+          continue;
+        }
         annotations.push({ imageId, annotation });
       }
     } catch (err) {
@@ -97,18 +126,26 @@ export async function runAnnotationPlan(
     });
   };
 
-  const groups = await buildSegMaskGroups(annotations, encode);
-  let done = 0;
+  const groups = await buildSegMaskGroups(annotations, encode, input.onEncodeProgress);
+
+  let groupsImported = 0;
+  let groupsFailed = 0;
+  let annotationsImported = 0;
+
   for (const group of groups) {
     try {
       await input.upsert(group);
-      done++;
-      input.onProgress?.(done, groups.length);
+      groupsImported++;
+      // Each mask corresponds to one ParsedAnnotation that reached an upserted group.
+      annotationsImported += group.masks.length;
+      input.onProgress?.(groupsImported, groups.length);
     } catch (err) {
+      groupsFailed++;
       errors.push(`${group.imageId}/${group.tag}: ${(err as Error).message}`);
     }
   }
-  return { imported: done, skipped: annotations.length - done, errors };
+
+  return { annotationsImported, annotationsUnmatched, groupsImported, groupsFailed, errors };
 }
 
 async function parseSource(
