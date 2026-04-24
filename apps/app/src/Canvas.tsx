@@ -55,6 +55,7 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import { groupSegmentationsByImage } from './lib/segmentations';
+import { SegmentBakeLayer, evictBake } from './features/segmentation';
 import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
@@ -1187,6 +1188,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     deleteAllSegmentationsForImage(id).catch((e) =>
       console.warn('[sam3] clear-persist failed', id, e),
     );
+    evictBake(id);
   }, []);
 
   const removeSegmentTag = useCallback((id: string, tag: string) => {
@@ -1409,6 +1411,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           { alreadyApplied: true },
         );
         if (lodCache) void lodCache.delete(id);
+        evictBake(id);
         dropAsset(id);
       })
       .catch((err) => {
@@ -2111,6 +2114,48 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             />
           );
         })}
+        {paintMedia
+          .filter((m) => m.kind === 'image' && segments[m.id])
+          .flatMap((m) => {
+            const state = segments[m.id]!;
+            const readyEntries = state.entries.filter(
+              (e): e is Extract<typeof e, { status: 'ready' }> => e.status === 'ready',
+            );
+            if (readyEntries.length === 0) return [];
+            const masksInput = readyEntries.flatMap((entry) => {
+              const { accent } = colorForTag(entry.tag);
+              return entry.response.masks.map((mask, idx) => ({
+                tag: entry.tag,
+                maskIndex: idx,
+                png_base64: mask.png_base64,
+                maskW: mask.width,
+                maskH: mask.height,
+                bbox: mask.bbox,
+                accent,
+              }));
+            });
+            // source dims are consistent across one image's ready entries.
+            const first = readyEntries[0]!.response;
+            return [
+              <SegmentBakeLayer
+                key={`bake-${m.id}`}
+                imageId={m.id}
+                worldX={m.x}
+                worldY={m.y}
+                worldWidth={m.width}
+                worldHeight={m.height}
+                sourceW={first.source_width}
+                sourceH={first.source_height}
+                masks={masksInput}
+                onMaskSelect={() => {
+                  /* Selection is wired in a later task. */
+                }}
+                onEmptyPointerDown={(e) => {
+                  handleMediaPointerDown(e, m);
+                }}
+              />,
+            ];
+          })}
       </InfiniteCanvas>
 
       {visibleMedia
@@ -2192,153 +2237,66 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const rh = m.height * view.scale;
           const state = segments[m.id]!;
           const base = `segment-${m.id}`;
-          const nodes: JSX.Element[] = [];
-
-          // Per-tag masks + boxes, each recolored by its tag identity so
-          // the pill, mask fill, and bounding box share one hue.
-          for (const entry of state.entries) {
-            if (entry.status !== 'ready') continue;
-            const { accent } = colorForTag(entry.tag);
-            entry.response.masks.forEach((mask, idx) => {
-              const maskKey = `${base}-${entry.tag}-mask-${idx}`;
-              const fillUrl = `url(data:image/png;base64,${mask.png_base64})`;
-              nodes.push(
-                <div
-                  key={maskKey}
-                  className="segment-mask"
-                  style={{
-                    left: rx,
-                    top: ry,
-                    width: rw,
-                    height: rh,
-                    backgroundColor: accent,
-                    opacity: 0.5,
-                    WebkitMaskImage: fillUrl,
-                    maskImage: fillUrl,
-                    WebkitMaskSize: '100% 100%',
-                    maskSize: '100% 100%',
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskRepeat: 'no-repeat',
-                  }}
-                  aria-hidden
-                />,
-              );
-              // White outline — separate edge-only PNG so the default
-              // alpha-masking path draws it. Skipped for masks persisted
-              // before the edge PNG existed.
-              if (mask.edge_png_base64) {
-                const edgeUrl = `url(data:image/png;base64,${mask.edge_png_base64})`;
-                nodes.push(
-                  <div
-                    key={`${maskKey}-edge`}
-                    className="segment-mask-edge"
-                    style={{
-                      left: rx,
-                      top: ry,
-                      width: rw,
-                      height: rh,
-                      backgroundColor: '#fff',
-                      WebkitMaskImage: edgeUrl,
-                      maskImage: edgeUrl,
-                      WebkitMaskSize: '100% 100%',
-                      maskSize: '100% 100%',
-                      WebkitMaskRepeat: 'no-repeat',
-                      maskRepeat: 'no-repeat',
-                    }}
-                    aria-hidden
-                  />,
-                );
-              }
-              // Bounding box is in mask-pixel coordinates; translate to
-              // screen coordinates via the mask's own width/height so it
-              // rides the image through pan/zoom.
-              if (mask.bbox && mask.width > 0 && mask.height > 0) {
-                const [x1, y1, x2, y2] = mask.bbox;
-                const fx = rw / mask.width;
-                const fy = rh / mask.height;
-                const bx = rx + x1 * fx;
-                const by = ry + y1 * fy;
-                const bw = Math.max(1, (x2 - x1) * fx);
-                const bh = Math.max(1, (y2 - y1) * fy);
-                nodes.push(
-                  <div
-                    key={`${base}-${entry.tag}-box-${idx}`}
-                    className="segment-bbox"
-                    style={{
-                      left: bx,
-                      top: by,
-                      width: bw,
-                      height: bh,
-                      borderColor: accent,
-                    }}
-                    aria-hidden
-                  />,
-                );
-              }
-            });
-          }
 
           const loadingTags = state.entries.filter((e) => e.status === 'loading');
           const errorTags = state.entries.filter(
             (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
           );
 
-          if (loadingTags.length > 0 || errorTags.length > 0) {
-            nodes.push(
-              <div
-                key={`${base}-chips`}
-                className="segment-overlay segment-overlay--chips"
-                style={{ left: rx, top: ry, width: rw, height: rh }}
-                aria-hidden
-              >
-                <div className="segment-chip-stack">
-                  {loadingTags.map((entry) => {
-                    const { bg, fg, border } = colorForTag(entry.tag);
-                    return (
-                      <div
-                        key={`loading-${entry.tag}`}
-                        className="segment-chip"
-                        style={{
-                          background: bg,
-                          color: fg,
-                          borderColor: border,
-                        }}
-                        role="status"
-                        aria-live="polite"
-                        aria-label={`Segmenting "${entry.tag}"`}
-                      >
-                        <span className="encoding-spinner" aria-hidden />
-                        <span className="encoding-label">{entry.tag}</span>
-                      </div>
-                    );
-                  })}
-                  {errorTags.map((entry) => {
-                    const { bg, fg, border } = colorForTag(entry.tag);
-                    return (
-                      <div
-                        key={`error-${entry.tag}`}
-                        className="segment-chip segment-chip--error"
-                        style={{
-                          background: bg,
-                          color: fg,
-                          borderColor: border,
-                        }}
-                        role="alert"
-                        title={entry.message}
-                      >
-                        <i className="ri-error-warning-line" aria-hidden />
-                        <span className="encoding-label">
-                          No match — {entry.tag}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>,
-            );
-          }
+          if (loadingTags.length === 0 && errorTags.length === 0) return [];
 
-          return nodes;
+          return [
+            <div
+              key={`${base}-chips`}
+              className="segment-overlay segment-overlay--chips"
+              style={{ left: rx, top: ry, width: rw, height: rh }}
+              aria-hidden
+            >
+              <div className="segment-chip-stack">
+                {loadingTags.map((entry) => {
+                  const { bg, fg, border } = colorForTag(entry.tag);
+                  return (
+                    <div
+                      key={`loading-${entry.tag}`}
+                      className="segment-chip"
+                      style={{
+                        background: bg,
+                        color: fg,
+                        borderColor: border,
+                      }}
+                      role="status"
+                      aria-live="polite"
+                      aria-label={`Segmenting "${entry.tag}"`}
+                    >
+                      <span className="encoding-spinner" aria-hidden />
+                      <span className="encoding-label">{entry.tag}</span>
+                    </div>
+                  );
+                })}
+                {errorTags.map((entry) => {
+                  const { bg, fg, border } = colorForTag(entry.tag);
+                  return (
+                    <div
+                      key={`error-${entry.tag}`}
+                      className="segment-chip segment-chip--error"
+                      style={{
+                        background: bg,
+                        color: fg,
+                        borderColor: border,
+                      }}
+                      role="alert"
+                      title={entry.message}
+                    >
+                      <i className="ri-error-warning-line" aria-hidden />
+                      <span className="encoding-label">
+                        No match — {entry.tag}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>,
+          ];
         })}
 
       {tool === 'box' && activeMedia && activeRect && cursor && (() => {
