@@ -8,7 +8,6 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev:website": "pnpm --filter @netrart/website dev",
     "dev:app": "pnpm --filter @netrart/app dev",
     "build": "pnpm -r build",
     "lint": "eslint .",
