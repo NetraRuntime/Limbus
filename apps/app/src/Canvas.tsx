@@ -266,6 +266,23 @@ type DrawBoxState = {
 type UserBox = {
   id: string;
   box: [number, number, number, number];
+  /** User-supplied label captured at draw time. Used as the segment tag so
+   *  the SAM3 mask renders under a meaningful name. */
+  label: string;
+};
+
+/** A box that's been drawn but not yet labeled. While set, a popover prompts
+ *  the user for a label; on confirm we commit the box + dispatch SAM3, on
+ *  cancel we discard. `worldRect` is snapshotted so the popover follows
+ *  pan/zoom without re-reading the image's live position (image moves are
+ *  unlikely while the modal is open, but the snapshot makes it robust). */
+type PendingBoxLabel = {
+  imageId: string;
+  boxId: string;
+  relBox: [number, number, number, number];
+  imageW: number;
+  imageH: number;
+  worldRect: { x1: number; y1: number; x2: number; y2: number };
 };
 
 const DRAW_BOX_MIN_SIZE_PX = 4;
@@ -313,7 +330,14 @@ const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
 
 const EMPTY_TAGS: readonly string[] = Object.freeze([]);
 
-const CULL_BUFFER_FACTOR = 0.5;
+// Effectively disables viewport culling. At 0.5 (the previous value),
+// zooming in on one image unmounted the others; zooming back out
+// remounted them in a burst, and the mass re-composition blanked the
+// entire WKWebView window until another input forced a re-raster.
+// Keeping everything mounted trades a bit of memory for a stable
+// compositor — the per-item DOM is cheap, and paintable content is
+// already bounded by the active canvas, not history.
+const CULL_BUFFER_FACTOR = 50;
 
 const StoredViewSchema = z.object({
   x: z.number().finite(),
@@ -733,6 +757,97 @@ const BakeForImage = memo(function BakeForImage({
   );
 });
 
+type BoxLabelPopoverProps = {
+  /** Anchor in viewport pixels — popover positions itself just below this. */
+  screenX: number;
+  screenY: number;
+  /** Maximum width the popover can use; the parent caps it to the box width
+   *  so the popover doesn't dwarf a small selection. Falls back to a minimum
+   *  via CSS (`min-width`) so an extreme zoom-out doesn't squash the input. */
+  maxWidth: number;
+  onConfirm: (label: string) => void;
+  onCancel: () => void;
+};
+
+/** Popover that captures the user's label for a freshly drawn box.
+ *
+ *  Behavior: autofocuses on mount; Enter confirms (if non-empty); Esc
+ *  cancels; click-outside is intentionally NOT cancel — the user must use a
+ *  control or a key, matching Figma's rename pattern (it's too easy to lose
+ *  a long label by misclicking). */
+function BoxLabelPopover({
+  screenX,
+  screenY,
+  maxWidth,
+  onConfirm,
+  onCancel,
+}: BoxLabelPopoverProps) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const trimmed = value.trim();
+  const canConfirm = trimmed.length > 0;
+
+  return (
+    <div
+      className="box-label-popover"
+      role="dialog"
+      aria-label="Label this object"
+      style={{
+        left: screenX,
+        top: screenY,
+        maxWidth: Math.max(180, maxWidth),
+      }}
+      onPointerDown={(e) => {
+        // Eat pointerdown so it doesn't reach the canvas (which would fire
+        // background-pointer-down or start a drag).
+        e.stopPropagation();
+      }}
+    >
+      <input
+        ref={inputRef}
+        className="box-label-input"
+        type="text"
+        placeholder="Name this object…"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (canConfirm) onConfirm(trimmed);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        maxLength={64}
+        aria-label="Object label"
+      />
+      <div className="box-label-actions">
+        <button
+          type="button"
+          className="box-label-btn box-label-btn--ghost"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="box-label-btn box-label-btn--primary"
+          onClick={() => canConfirm && onConfirm(trimmed)}
+          disabled={!canConfirm}
+        >
+          Segment
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const sam3Available = !sam3Error;
   // HUD liquid-glass filters. Each one measures its own element via
@@ -817,6 +932,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const [drawBoxPreview, setDrawBoxPreview] = useState<DrawBoxState | null>(null);
   const drawBoxRef = useRef<DrawBoxState | null>(null);
   const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
+
+  const [pendingBoxLabel, setPendingBoxLabel] = useState<PendingBoxLabel | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [tool, setTool] = useState<CanvasTool>('drag');
@@ -1707,16 +1824,22 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     [clearSegment, sam3Available, segments],
   );
 
-  /** Send a user-drawn box to SAM3 and feed the response into the segment
-   *  pipeline. `relBox` is `[x1, y1, x2, y2]` in image-relative world units
-   *  (offsets of `imageW`/`imageH`); we normalize to `[0, 1]` for the worker.
-   *  Each box gets its own segment entry keyed by `boxId` and tagged
-   *  `kind: 'box'` so it shares the mask renderer with text segments while
-   *  staying out of the text-tag chip stack. */
+  /** Send a user-drawn box to SAM3 under the user's chosen label and feed
+   *  the response into the segment pipeline. `relBox` is `[x1, y1, x2, y2]`
+   *  in image-relative world units; we normalize to `[0, 1]` for the worker.
+   *  The `label` becomes the segment tag, so the chip displays the user's
+   *  name and the mask renders under that color. `kind: 'box'` is preserved
+   *  so consumers can tell box-derived entries apart from text-derived ones.
+   *
+   *  Collisions on label are handled the same way as the text path: tags are
+   *  unique by `tag.toLowerCase()`, so re-using a label replaces the prior
+   *  entry. The corresponding userBox is left in place — fine for now,
+   *  revisit when boxes get a deletion UI. */
   const dispatchBoxPrompt = useCallback(
     (
       imageId: string,
       boxId: string,
+      label: string,
       relBox: [number, number, number, number],
       imageW: number,
       imageH: number,
@@ -1725,7 +1848,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       const m = mediaRef.current.find((it) => it.id === imageId);
       if (!m || m.kind !== 'image' || !m.collectionId || !m.file) return;
       if (imageW <= 0 || imageH <= 0) return;
-      const tag = `__box__${boxId}`;
+      const tag = label;
       const norm: [number, number, number, number] = [
         Math.max(0, Math.min(1, relBox[0] / imageW)),
         Math.max(0, Math.min(1, relBox[1] / imageH)),
@@ -1737,6 +1860,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       // Snapshot the current sequence so a later clearSegment(imageId) bump
       // discards this in-flight invoke — same convention as the text path.
       const seq = segmentSeqRef.current[imageId] ?? 0;
+      const key = tag.toLowerCase();
       const updateEntry = (patch: TagSegment) => {
         if ((segmentSeqRef.current[imageId] ?? 0) !== seq) return;
         setSegments((prev) => {
@@ -1744,7 +1868,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const next: TagSegment[] = [];
           let replaced = false;
           for (const e of cur.entries) {
-            if (e.tag === tag) {
+            if (e.tag.toLowerCase() === key) {
               next.push(patch);
               replaced = true;
             } else {
@@ -1766,9 +1890,16 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       })
         .then((response) => {
           updateEntry({ tag, status: 'ready', response, kind: 'box' });
-          // Box segments are not persisted — the user-drawn box itself isn't
-          // saved either. Both are session-local for now; revisit when boxes
-          // get a deletion UI and PB schema.
+          // Persist the mask under the user's label so it rehydrates after
+          // reload. The user-drawn box rectangle itself is still
+          // session-local; only the resulting segmentation is durable.
+          upsertSegmentation({
+            image: imageId,
+            tag,
+            masks: response.masks,
+            source_width: response.source_width,
+            source_height: response.source_height,
+          }).catch((e) => console.warn('[sam3] persist failed', tag, e));
         })
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
@@ -1778,6 +1909,32 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     },
     [sam3Available],
   );
+
+  /** Confirm the pending box: commit it to `userBoxes` under the trimmed
+   *  label and dispatch SAM3. Empty/whitespace labels are rejected so the
+   *  popover stays open. */
+  const confirmPendingBoxLabel = useCallback(
+    (rawLabel: string) => {
+      const label = rawLabel.trim();
+      if (!label) return;
+      const p = pendingBoxLabel;
+      if (!p) return;
+      setUserBoxes((prev) => {
+        const list = prev[p.imageId] ?? [];
+        return {
+          ...prev,
+          [p.imageId]: [...list, { id: p.boxId, box: p.relBox, label }],
+        };
+      });
+      dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
+      setPendingBoxLabel(null);
+    },
+    [pendingBoxLabel, dispatchBoxPrompt],
+  );
+
+  const cancelPendingBoxLabel = useCallback(() => {
+    setPendingBoxLabel(null);
+  }, []);
 
   const selectAll = useCallback(() => {
     const all = mediaRef.current;
@@ -2536,6 +2693,9 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       // Box tool: click-drag on an image draws a new bounding box. Videos
       // aren't supported yet — fall through to a no-op so they don't drag.
       if (m.kind !== 'image') return;
+      // Starting a new draw discards any unlabeled box waiting on a label.
+      // Matches Photoshop/Figma "new selection replaces old" semantics.
+      setPendingBoxLabel(null);
       const v = viewRef.current;
       // InfiniteCanvas is position:fixed inset:0, so client coords map
       // directly to its local space; no rect offset needed.
@@ -2618,12 +2778,17 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           x2 - b.imageX,
           y2 - b.imageY,
         ];
-        const boxId = genBoxId();
-        setUserBoxes((prev) => {
-          const list = prev[b.imageId] ?? [];
-          return { ...prev, [b.imageId]: [...list, { id: boxId, box: rel }] };
+        // Park the box in `pendingBoxLabel` and let the popover collect a
+        // user label. The box is not committed to `userBoxes` and SAM3 is
+        // not invoked until the user confirms — cancel just clears state.
+        setPendingBoxLabel({
+          imageId: b.imageId,
+          boxId: genBoxId(),
+          relBox: rel,
+          imageW: b.imageW,
+          imageH: b.imageH,
+          worldRect: { x1, y1, x2, y2 },
         });
-        dispatchBoxPrompt(b.imageId, boxId, rel, b.imageW, b.imageH);
       };
 
       window.addEventListener('pointermove', onMove);
@@ -2654,7 +2819,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     // unselected item won't fire click (moved=true suppresses it), so the
     // selectedIds-driven raise effect wouldn't run. Raise here too.
     bringToFront(ids);
-  }, [bringToFront, dispatchBoxPrompt]);
+  }, [bringToFront]);
 
   const handleMediaPointerMove = useCallback((e: MediaPointerEvent) => {
     const d = dragRef.current;
@@ -3079,16 +3244,9 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const state = segments[m.id]!;
           const base = `segment-${m.id}`;
 
-          // Box-derived segments are visualized by the user-drawn box overlay
-          // itself (and their masks render via BakeForImage); skip them in the
-          // text-tag chip stack so loading/error feedback for boxes doesn't
-          // surface raw `__box__<id>` strings.
-          const loadingTags = state.entries.filter(
-            (e) => e.status === 'loading' && e.kind !== 'box',
-          );
+          const loadingTags = state.entries.filter((e) => e.status === 'loading');
           const errorTags = state.entries.filter(
-            (e): e is Extract<TagSegment, { status: 'error' }> & { kind?: 'box' } =>
-              e.status === 'error' && e.kind !== 'box',
+            (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
           );
 
           if (loadingTags.length === 0 && errorTags.length === 0) return [];
@@ -3266,20 +3424,35 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
       {/* Committed user-drawn boxes. Viewport-space so border weight stays
           crisp at every zoom level. Only rendered for images currently in
-          paint range to match the segmentation bbox culling. */}
+          paint range to match the segmentation bbox culling.
+          A box is "loading" while its matching segment entry (looked up by
+          label) is in `status: 'loading'` — i.e. SAM3 is still processing
+          the prompt. We render a scan-line overlay during that window so
+          the user sees the work in progress on the box itself, in addition
+          to the chip in the corner. */}
       {paintMedia
         .filter((m) => m.kind === 'image' && (userBoxes[m.id]?.length ?? 0) > 0)
-        .flatMap((m) =>
-          userBoxes[m.id]!.map((b) => {
+        .flatMap((m) => {
+          const entries = segments[m.id]?.entries ?? [];
+          return userBoxes[m.id]!.map((b) => {
             const [rx1, ry1, rx2, ry2] = b.box;
             const wx = m.x + rx1;
             const wy = m.y + ry1;
             const ww = Math.max(1, rx2 - rx1);
             const wh = Math.max(1, ry2 - ry1);
+            const labelKey = b.label.toLowerCase();
+            const matched = entries.find(
+              (e) => e.kind === 'box' && e.tag.toLowerCase() === labelKey,
+            );
+            const isLoading = matched?.status === 'loading';
+            const isError = matched?.status === 'error';
+            const cls = `user-box${isLoading ? ' user-box--loading' : ''}${
+              isError ? ' user-box--error' : ''
+            }`;
             return (
               <div
                 key={`ubox-${m.id}-${b.id}`}
-                className="user-box"
+                className={cls}
                 aria-hidden
                 style={{
                   left: wx * view.scale + view.x,
@@ -3288,14 +3461,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
                   height: wh * view.scale,
                 }}
               >
+                {isLoading && <span className="user-box-scan" aria-hidden />}
                 <span className="user-box-tick tl" />
                 <span className="user-box-tick tr" />
                 <span className="user-box-tick bl" />
                 <span className="user-box-tick br" />
               </div>
             );
-          }),
-        )}
+          });
+        })}
 
       {/* Live preview of the box being drawn. Matches the committed style
           with reduced opacity so release feels like a "snap". */}
@@ -3321,6 +3495,38 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             <span className="user-box-tick bl" />
             <span className="user-box-tick br" />
           </div>
+        );
+      })()}
+
+      {/* Pending box: drawn but not yet labeled. Shows the box outline and
+          anchors the label popover. The outline reuses .user-box without
+          .is-drawing so it reads as "committed visual but awaiting input". */}
+      {pendingBoxLabel && (() => {
+        const r = pendingBoxLabel.worldRect;
+        const left = r.x1 * view.scale + view.x;
+        const top = r.y1 * view.scale + view.y;
+        const width = Math.max(0, (r.x2 - r.x1) * view.scale);
+        const height = Math.max(0, (r.y2 - r.y1) * view.scale);
+        return (
+          <>
+            <div
+              className="user-box user-box--pending"
+              aria-hidden
+              style={{ left, top, width, height }}
+            >
+              <span className="user-box-tick tl" />
+              <span className="user-box-tick tr" />
+              <span className="user-box-tick bl" />
+              <span className="user-box-tick br" />
+            </div>
+            <BoxLabelPopover
+              screenX={left}
+              screenY={top + height + 8}
+              maxWidth={width}
+              onConfirm={confirmPendingBoxLabel}
+              onCancel={cancelPendingBoxLabel}
+            />
+          </>
         );
       })()}
 
