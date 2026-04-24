@@ -138,7 +138,53 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
     idToMask.push({ tag: m.tag, maskIndex: m.maskIndex });
   }
 
-  // Single write of the combined mask fills onto the visual canvas.
+  // White edge ring pass. SAM3 emits a companion `edge_png_base64` whose
+  // alpha is the thin anti-aliased ring along each mask contour. We
+  // composite it in white on top of the fills using Porter-Duff
+  // source-over with the edge's native alpha — preserves the ring's
+  // anti-aliasing (smooth) without widening it into a blur. Done in a
+  // separate pass so the ring sits above every fill regardless of
+  // compositing order.
+  for (const m of input.masks) {
+    if (!m.edge_png_base64) continue;
+    const edgeBmp = await getMaskBitmap(input.decodeCache, m.edge_png_base64);
+    const { rgba: erg, w: ew, h: eh } = readBitmapPixels(edgeBmp);
+    const esx = ew / w;
+    const esy = eh / h;
+    for (let y = 0; y < h; y++) {
+      const ey = Math.min(eh - 1, Math.floor(y * esy));
+      const rowB = y * w;
+      const rowE = ey * ew;
+      for (let x = 0; x < w; x++) {
+        const ex = Math.min(ew - 1, Math.floor(x * esx));
+        const ei = (rowE + ex) * 4;
+        // Edge alpha = max of the source channels (same robustness rule
+        // as the fill pass; SAM3 writes to the alpha channel).
+        const aEdgeSrc = Math.max(
+          erg[ei] ?? 0,
+          erg[ei + 1] ?? 0,
+          erg[ei + 2] ?? 0,
+          erg[ei + 3] ?? 0,
+        );
+        if (aEdgeSrc === 0) continue;
+        const srcA = aEdgeSrc / 255;
+        const bi = (rowB + x) * 4;
+        const dstR = bakeRgba[bi] ?? 0;
+        const dstG = bakeRgba[bi + 1] ?? 0;
+        const dstB = bakeRgba[bi + 2] ?? 0;
+        const dstA = (bakeRgba[bi + 3] ?? 0) / 255;
+        const outA = srcA + dstA * (1 - srcA);
+        if (outA <= 0) continue;
+        const invSrcA = 1 - srcA;
+        bakeRgba[bi] = Math.round((255 * srcA + dstR * dstA * invSrcA) / outA);
+        bakeRgba[bi + 1] = Math.round((255 * srcA + dstG * dstA * invSrcA) / outA);
+        bakeRgba[bi + 2] = Math.round((255 * srcA + dstB * dstA * invSrcA) / outA);
+        bakeRgba[bi + 3] = Math.round(outA * 255);
+      }
+    }
+  }
+
+  // Single write of the combined mask fills + edges onto the visual canvas.
   vctx.putImageData(new ImageData(bakeRgba, w, h), 0, 0);
 
   // Bbox strokes over the fills — drawn last so they sit on top.

@@ -581,6 +581,7 @@ const BakeForImage = memo(function BakeForImage({
         tag: entry.tag,
         maskIndex: idx,
         png_base64: mask.png_base64,
+        edge_png_base64: mask.edge_png_base64,
         maskW: mask.width,
         maskH: mask.height,
         bbox: mask.bbox,
