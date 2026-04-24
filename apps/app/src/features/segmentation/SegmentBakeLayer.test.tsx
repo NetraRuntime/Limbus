@@ -4,19 +4,29 @@ import { SegmentBakeLayer, type SegmentBakeLayerProps } from './SegmentBakeLayer
 import * as bakeCache from './bakeCache';
 import type { BakeEntry } from './types';
 
-const mkBake = (overrides: Partial<BakeEntry> = {}): BakeEntry => {
-  const idMap = new Uint16Array(2 * 2);
-  idMap[0] = 1; // top-left pixel hits mask id 1
-  return {
-    signature: 'sig',
-    bitmap: { width: 2, height: 2, close: () => {} } as unknown as ImageBitmap,
-    idMap,
-    idToMask: [{ tag: 'cat', maskIndex: 0 }],
-    width: 2,
-    height: 2,
-    ...overrides,
-  };
-};
+const mkBake = (overrides: Partial<BakeEntry> = {}): BakeEntry => ({
+  signature: 'sig',
+  bitmap: { width: 2, height: 2, close: () => {} } as unknown as ImageBitmap,
+  // One mask covering the top-left bake pixel region (0,0)..(1,1).
+  hitMasks: [
+    {
+      tag: 'cat',
+      maskIndex: 0,
+      rings: [
+        [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 },
+          { x: 0, y: 1 },
+        ],
+      ],
+      bbox: { x: 0, y: 0, w: 1, h: 1 },
+    },
+  ],
+  width: 2,
+  height: 2,
+  ...overrides,
+});
 
 const mkProps = (overrides: Partial<SegmentBakeLayerProps> = {}): SegmentBakeLayerProps => ({
   imageId: 'img1',
@@ -94,7 +104,7 @@ describe('SegmentBakeLayer', () => {
     const canvas = container.querySelector('canvas')!;
     canvas.getBoundingClientRect = () =>
       ({ left: 100, top: 200, right: 500, bottom: 600, width: 400, height: 400, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
-    // Pointer near bottom-right → pixel (1,1) in 2x2 idMap → 0.
+    // Pointer near bottom-right → outside the mask's bake-space bbox (0..1, 0..1) → null hit.
     fireEvent.pointerDown(canvas, { clientX: 499, clientY: 599 });
     expect(onMaskSelect).not.toHaveBeenCalled();
     expect(onEmptyPointerDown).toHaveBeenCalled();

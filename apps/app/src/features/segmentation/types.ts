@@ -1,7 +1,3 @@
-/**
- * One mask's identity within a per-image bake. The tuple (imageId, tag,
- * maskIndex) uniquely identifies a mask in the app's segmentation state.
- */
 export type MaskIdentity = {
   imageId: string;
   tag: string;
@@ -33,15 +29,29 @@ export type ComposeInput = {
 };
 
 /**
- * Output of composeBake. `bitmap` is the visible composite;
- * `idMap[y*width + x]` holds the 1-based id of the topmost mask at
- * that pixel, or 0 if empty. `idToMask[id - 1]` maps back to the
- * mask's identity (tag, maskIndex).
+ * Per-mask hit-test record built by composeBake. `rings` are smoothed
+ * polygon rings in bake-pixel space. `bbox` is the axis-aligned
+ * bounding rectangle of those rings in bake-pixel space, used as a
+ * cheap O(1) pre-filter before the even-odd ring test. Masks are
+ * ordered exactly as they were painted, so iterating the array in
+ * reverse yields topmost-first.
+ */
+export type HitMask = {
+  tag: string;
+  maskIndex: number;
+  rings: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>;
+  bbox: { x: number; y: number; w: number; h: number };
+};
+
+/**
+ * Output of composeBake. `bitmap` is the visible composite (mask fills
+ * + white edge strokes). `hitMasks` carries the per-mask rings + bbox
+ * used by the main-thread hit test; masks are in paint order, so
+ * topmost-first iteration is `hitMasks[i]` for `i = len-1 .. 0`.
  */
 export type ComposedBake = {
   bitmap: ImageBitmap;
-  idMap: Uint16Array;
-  idToMask: ReadonlyArray<{ tag: string; maskIndex: number }>;
+  hitMasks: ReadonlyArray<HitMask>;
   width: number;
   height: number;
 };
