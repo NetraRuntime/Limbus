@@ -1499,8 +1499,11 @@ body[data-canvas-tool="box"] .media-label {
 }
 
 /* "Awaiting label" state — gentle pulse on the corner brackets to draw the
- * eye to the popover that just appeared below the box. */
-.user-box.user-box--pending .user-box-tick {
+ * eye to the popover that just appeared below the box. The same pulse runs
+ * during the "loading" state so the box keeps signaling activity until SAM3
+ * returns. */
+.user-box.user-box--pending .user-box-tick,
+.user-box.user-box--loading .user-box-tick {
   animation: user-box-pending-pulse 1.4s ease-in-out infinite;
 }
 
@@ -1510,9 +1513,68 @@ body[data-canvas-tool="box"] .media-label {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .user-box.user-box--pending .user-box-tick {
+  .user-box.user-box--pending .user-box-tick,
+  .user-box.user-box--loading .user-box-tick {
     animation: none;
   }
+}
+
+/* "SAM3 is processing" state — a soft horizontal band sweeps top-to-bottom
+ * inside the box, evoking a scan/inference pass. The .user-box-scan child
+ * wrapper clips the band with overflow:hidden so the corner brackets (which
+ * sit OUTSIDE the box via -4px offsets) aren't clipped. The static border
+ * stays so the frame keeps reading as a stable selection underneath. */
+.user-box-scan {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.user-box-scan::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30%;
+  height: 30%;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 32%, transparent) 50%,
+    transparent 100%
+  );
+  animation: user-box-scan 1.5s linear infinite;
+}
+
+@keyframes user-box-scan {
+  from { top: -30%; }
+  to   { top: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-box-scan::before {
+    animation: none;
+    top: 35%;
+    opacity: 0.5;
+  }
+}
+
+/* "SAM3 returned an error" state — swap the accent border for a muted red
+ * so a failed box is recognizable at a glance even before the chip is read.
+ * Brackets and shadow stay so the frame still reads as a box. */
+.user-box.user-box--error {
+  border-color: var(--color-error, #e5484d);
+  background: color-mix(in srgb, var(--color-error, #e5484d) 6%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--bg) 70%, transparent),
+    0 2px 10px color-mix(in srgb, var(--color-error, #e5484d) 22%, transparent);
+}
+
+.user-box.user-box--error .user-box-tick::before,
+.user-box.user-box--error .user-box-tick::after {
+  background: var(--color-error, #e5484d);
 }
 
 /* Label popover — captures a name for the freshly drawn box.
