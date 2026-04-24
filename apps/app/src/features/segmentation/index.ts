@@ -6,3 +6,14 @@ export type {
 } from './types';
 export { SegmentBakeLayer } from './SegmentBakeLayer';
 export { evictBake, evictDecode } from './bakeCache';
+export {
+  deleteMaskEntry,
+  type DeleteMaskEntryArgs,
+  type DeleteMaskMeta,
+  type ReadyMaskEntry,
+} from './deleteMaskEntry';
+export {
+  resizeBboxEntry,
+  type ResizeBboxEntryArgs,
+  type ResizeBboxMeta,
+} from './resizeBboxEntry';

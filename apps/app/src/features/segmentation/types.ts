@@ -22,10 +22,6 @@ export type ComposeInput = {
     tag: string;
     maskIndex: number;
     png_base64: string;
-    // Optional thin anti-aliased ring around the mask's contour.
-    // SAM3 emits this alongside the fill; the composer paints it in
-    // white on top of the fill to outline each mask.
-    edge_png_base64?: string;
     maskW: number;
     maskH: number;
     bbox: [number, number, number, number] | null;

@@ -307,7 +307,7 @@ fn segment_text(
         .map_err(|e| format!("segment: {e}"))?;
 
     let reduced = if result.iou_valid() && result.n_masks() > 0 {
-        result.nms(0.5, 0.5, 0.0).unwrap_or(result)
+        result.nms(0.5, 0.5, 0.8).unwrap_or(result)
     } else {
         result
     };

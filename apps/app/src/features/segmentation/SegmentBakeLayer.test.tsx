@@ -99,4 +99,74 @@ describe('SegmentBakeLayer', () => {
     expect(onMaskSelect).not.toHaveBeenCalled();
     expect(onEmptyPointerDown).toHaveBeenCalled();
   });
+
+  it('fires onMaskHover on transitions and forwards the pointermove', () => {
+    const onMaskHover = vi.fn();
+    const onPointerMove = vi.fn();
+    const { container } = render(
+      <SegmentBakeLayer {...mkProps({ onMaskHover, onPointerMove })} />,
+    );
+    const canvas = container.querySelector('canvas')!;
+    canvas.getBoundingClientRect = () =>
+      ({ left: 100, top: 200, right: 500, bottom: 600, width: 400, height: 400, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
+    // Over mask id 1 (top-left bake pixel).
+    fireEvent.pointerMove(canvas, { clientX: 101, clientY: 201 });
+    // Second sample still on id 1 — should NOT re-fire (de-duped).
+    fireEvent.pointerMove(canvas, { clientX: 105, clientY: 205 });
+    // Off the mask entirely → clears to null.
+    fireEvent.pointerMove(canvas, { clientX: 499, clientY: 599 });
+    expect(onMaskHover).toHaveBeenNthCalledWith(1, {
+      imageId: 'img1',
+      tag: 'cat',
+      maskIndex: 0,
+    });
+    expect(onMaskHover).toHaveBeenNthCalledWith(2, null);
+    expect(onMaskHover).toHaveBeenCalledTimes(2);
+    // The forwarded onPointerMove still runs for every sample.
+    expect(onPointerMove).toHaveBeenCalledTimes(3);
+  });
+
+  it('fires onMaskHover(null) on mouseleave when a mask was hovered', () => {
+    const onMaskHover = vi.fn();
+    const onMouseLeave = vi.fn();
+    const { container } = render(
+      <SegmentBakeLayer {...mkProps({ onMaskHover, onMouseLeave })} />,
+    );
+    const canvas = container.querySelector('canvas')!;
+    canvas.getBoundingClientRect = () =>
+      ({ left: 100, top: 200, right: 500, bottom: 600, width: 400, height: 400, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.pointerMove(canvas, { clientX: 101, clientY: 201 });
+    fireEvent.mouseLeave(canvas);
+    expect(onMaskHover).toHaveBeenLastCalledWith(null);
+    expect(onMouseLeave).toHaveBeenCalledTimes(1);
+  });
+
+  // The canvas sits over the <img> with pointer-events: auto. Without these
+  // pass-throughs, hovering the image body is swallowed by the canvas and the
+  // image's hover highlight never fires.
+  it('forwards hover and drag events to the image handlers', () => {
+    const onMouseEnter = vi.fn();
+    const onMouseLeave = vi.fn();
+    const onPointerMove = vi.fn();
+    const onPointerUp = vi.fn();
+    const { container } = render(
+      <SegmentBakeLayer
+        {...mkProps({
+          onMouseEnter,
+          onMouseLeave,
+          onPointerMove,
+          onPointerUp,
+        })}
+      />,
+    );
+    const canvas = container.querySelector('canvas')!;
+    fireEvent.mouseEnter(canvas);
+    fireEvent.pointerMove(canvas, { clientX: 150, clientY: 250 });
+    fireEvent.pointerUp(canvas, { clientX: 150, clientY: 250 });
+    fireEvent.mouseLeave(canvas);
+    expect(onMouseEnter).toHaveBeenCalledTimes(1);
+    expect(onPointerMove).toHaveBeenCalledTimes(1);
+    expect(onPointerUp).toHaveBeenCalledTimes(1);
+    expect(onMouseLeave).toHaveBeenCalledTimes(1);
+  });
 });
