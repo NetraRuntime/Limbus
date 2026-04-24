@@ -9,3 +9,4 @@ export type {
   ParsedAnnotation,
   PerFormat,
 } from './types';
+export { detectAnnotations } from './detect';
