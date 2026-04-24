@@ -76,8 +76,8 @@ export function Waitlist() {
             </h2>
 
             <p className="wl-sub">
-              We're opening the SDK and CLI to a small cohort of edge-AI developers. Drop your
-              email — we'll send an invite when your slot is ready.
+              We're opening NetraRT to a small cohort of computer vision teams tired of paying the
+              annotation tax. Drop your email — we'll send an invite when your slot is ready.
             </p>
 
             {status.kind !== 'success' ? (
@@ -137,11 +137,11 @@ export function Waitlist() {
             <dl className="wl-dl">
               <div className="wl-row">
                 <dt className="mono">01 · What</dt>
-                <dd>NetraRT SDK, CLI, and local runtime for on-device vision AI.</dd>
+                <dd>The local annotation platform for computer vision datasets.</dd>
               </div>
               <div className="wl-row">
                 <dt className="mono">02 · Who</dt>
-                <dd>Edge and embedded engineers shipping vision on real hardware.</dd>
+                <dd>ML teams and solo devs labeling images without the cloud bill.</dd>
               </div>
               <div className="wl-row">
                 <dt className="mono">03 · When</dt>

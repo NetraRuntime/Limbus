@@ -33,7 +33,7 @@ export function Footer() {
         <div className="footer-top">
           <div className="footer-brand reveal reveal-up" data-delay="0">
             <span className="footer-wordmark">NetraRT</span>
-            <p>Vision AI, as easy as text. On any device.</p>
+            <p>Local, collaborative data annotation for computer vision.</p>
             <div className="footer-socials">
               {SOCIALS.map((s) => (
                 <a
