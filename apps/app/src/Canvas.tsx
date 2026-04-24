@@ -38,7 +38,7 @@ import {
   HIGHLIGHT_INPUT_GAP,
   HIGHLIGHT_INPUT_HEIGHT,
 } from './components/HighlightInput';
-import { colorForTag } from './components/savedTags';
+import { colorForTag, useSavedTags } from './components/savedTags';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
@@ -788,7 +788,9 @@ function BoxLabelPopover({
   onCancel,
 }: BoxLabelPopoverProps) {
   const [value, setValue] = useState('');
+  const [activeIdx, setActiveIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { search } = useSavedTags();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -796,6 +798,22 @@ function BoxLabelPopover({
 
   const trimmed = value.trim();
   const canConfirm = trimmed.length > 0;
+  // No "existing tags" arg — box labels are independent; let the
+  // same-session saved-tags store be the suggestion source, unfiltered.
+  const suggestions = useMemo(
+    () => search(value, [] as string[], 6),
+    [search, value],
+  );
+
+  // Keep activeIdx in range when suggestion count shrinks.
+  useEffect(() => {
+    if (activeIdx >= suggestions.length) setActiveIdx(-1);
+  }, [suggestions.length, activeIdx]);
+
+  const commit = (label: string) => {
+    const clean = label.trim();
+    if (clean) onConfirm(clean);
+  };
 
   return (
     <div
@@ -819,19 +837,77 @@ function BoxLabelPopover({
         type="text"
         placeholder="Name this object…"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setActiveIdx(-1);
+        }}
         onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' && suggestions.length > 0) {
+            e.preventDefault();
+            setActiveIdx((i) => (i + 1) % suggestions.length);
+            return;
+          }
+          if (e.key === 'ArrowUp' && suggestions.length > 0) {
+            e.preventDefault();
+            setActiveIdx((i) =>
+              i <= 0 ? suggestions.length - 1 : i - 1,
+            );
+            return;
+          }
           if (e.key === 'Enter') {
             e.preventDefault();
-            if (canConfirm) onConfirm(trimmed);
-          } else if (e.key === 'Escape') {
+            if (activeIdx >= 0 && activeIdx < suggestions.length) {
+              commit(suggestions[activeIdx]!);
+            } else if (canConfirm) {
+              commit(trimmed);
+            }
+            return;
+          }
+          if (e.key === 'Escape') {
             e.preventDefault();
+            if (activeIdx >= 0) {
+              setActiveIdx(-1);
+              return;
+            }
             onCancel();
           }
         }}
         maxLength={64}
         aria-label="Object label"
+        autoComplete="off"
+        spellCheck={false}
       />
+      {/* Autocomplete list of previously-used tags. Matches HighlightInput's
+          suggestion UI so the two prompt surfaces feel consistent. */}
+      {suggestions.length > 0 && (
+        <ul
+          className="highlight-suggestions"
+          role="listbox"
+          onPointerDown={(e) => e.preventDefault()}
+        >
+          {suggestions.map((tag, i) => {
+            const palette = colorForTag(tag);
+            const active = i === activeIdx;
+            return (
+              <li key={`sugg-${tag}`} role="option" aria-selected={active}>
+                <button
+                  type="button"
+                  className={`highlight-suggestion${active ? ' is-active' : ''}`}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onClick={() => commit(tag)}
+                >
+                  <span
+                    className="highlight-suggestion-swatch"
+                    aria-hidden
+                    style={{ background: palette.border }}
+                  />
+                  <span className="highlight-suggestion-text">{tag}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {/* Keyboard-only affordances — no explicit buttons. ↵ confirms when the
           input is non-empty, esc always cancels. The hint brightens slightly
           once a label is typed so the user gets a small "ready" signal. */}
@@ -851,6 +927,9 @@ function BoxLabelPopover({
 
 export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const sam3Available = !sam3Error;
+  // Saved-tags registry shared with HighlightInput so box-prompt labels
+  // land in the same autocomplete + recent-tags history.
+  const { remember: rememberSavedTag } = useSavedTags();
   // HUD liquid-glass filters. Each one measures its own element via
   // ResizeObserver; pill surfaces use radius 999 (auto-clamped to
   // height/2 in the hook), the wordmark uses the design-system md
@@ -1956,10 +2035,13 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       // text-prompt tags the user types directly. Box entries still appear
       // in the MediaTagList (driven by `segments`), just not in the text
       // chip strip, so the two prompt surfaces stay conceptually separate.
+      // DO register the label in saved-tags so it surfaces in autocomplete
+      // for later text prompts, matching HighlightInput's commitTag path.
+      rememberSavedTag(label);
       dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
       setPendingBoxLabel(null);
     },
-    [pendingBoxLabel, dispatchBoxPrompt],
+    [pendingBoxLabel, dispatchBoxPrompt, rememberSavedTag],
   );
 
   const cancelPendingBoxLabel = useCallback(() => {
