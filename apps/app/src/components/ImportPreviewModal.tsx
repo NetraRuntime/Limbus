@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react';
 import type { ImportState } from '../hooks/useImportPreview';
 import { humanSize } from '../hooks/useImportPreview';
+import type { AnnotationFormat } from '../lib/annotations';
 
 type Props = {
   state: ImportState;
   onCancel: () => void;
   onImport: () => void;
+  onChangeFormat: (f: AnnotationFormat | 'none') => void;
 };
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function ImportPreviewModal({ state, onCancel, onImport }: Props) {
+export function ImportPreviewModal({ state, onCancel, onImport, onChangeFormat }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -63,7 +65,9 @@ export function ImportPreviewModal({ state, onCancel, onImport }: Props) {
   const summary =
     state.phase === 'scanning' && total === 0
       ? 'Scanning…'
-      : `${state.imageCount} images · ${state.videoCount} videos · ${humanSize(state.bytes)}`;
+      : state.phase === 'detecting'
+        ? `${state.imageCount} images · ${state.videoCount} videos — detecting annotations…`
+        : `${state.imageCount} images · ${state.videoCount} videos · ${humanSize(state.bytes)}`;
 
   const headerTitle =
     state.phase === 'scanning' && total === 0
@@ -102,6 +106,54 @@ export function ImportPreviewModal({ state, onCancel, onImport }: Props) {
 
         <div className="settings-body import-preview-body">
           <div className="import-preview-summary">{summary}</div>
+
+          {state.annotationPlan && state.annotationPlan.format !== 'none' && (
+            <div className="import-preview-annotations">
+              <div className="import-preview-annotations-header">
+                <i className="ri-price-tag-3-line" aria-hidden />
+                <span>
+                  {state.annotationPlan.format === 'mixed'
+                    ? 'Detected multiple annotation formats'
+                    : `Detected ${state.annotationPlan.format.toUpperCase()} annotations`}
+                </span>
+              </div>
+              <div className="import-preview-annotations-body">
+                <div>{state.annotationPlan.imagesWithAnnotations} images annotated</div>
+                <div>{state.annotationPlan.totalAnnotations} annotations</div>
+                <div>{state.annotationPlan.classes.length} classes</div>
+                {state.annotationPlan.unmatchedAnnotations > 0 && (
+                  <div>
+                    {state.annotationPlan.unmatchedAnnotations} annotations with no matching image (will be skipped)
+                  </div>
+                )}
+              </div>
+              {state.annotationPlan.format === 'mixed' && (
+                <div className="import-preview-annotations-picker">
+                  <label htmlFor="annotation-format-picker">Import as:</label>
+                  <select
+                    id="annotation-format-picker"
+                    value={state.chosenFormat}
+                    onChange={(e) => onChangeFormat(e.target.value as AnnotationFormat | 'none')}
+                  >
+                    <option value="none">Pick a format…</option>
+                    {(['coco', 'yolo', 'voc'] as const).map((f) =>
+                      state.annotationPlan!.perFormat[f] ? (
+                        <option key={f} value={f}>
+                          {f.toUpperCase()} ({state.annotationPlan!.perFormat[f]!.totalAnnotations} annotations)
+                        </option>
+                      ) : null,
+                    )}
+                  </select>
+                </div>
+              )}
+              {state.annotationPlan.warnings.map((w, i) => (
+                <div key={i} className="import-preview-banner is-warning" role="alert">
+                  <i className="ri-alert-line" aria-hidden />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {state.warning && (
             <div className="import-preview-banner is-warning" role="alert">
@@ -143,7 +195,7 @@ export function ImportPreviewModal({ state, onCancel, onImport }: Props) {
             onClick={onImport}
             disabled={!canImport(state)}
           >
-            {state.phase === 'scanning' ? 'Scanning…' : 'Import'}
+            {state.phase === 'scanning' ? 'Scanning…' : state.phase === 'detecting' ? 'Detecting…' : 'Import'}
           </button>
         </div>
       </div>
@@ -152,9 +204,9 @@ export function ImportPreviewModal({ state, onCancel, onImport }: Props) {
 }
 
 function canImport(state: ImportState): boolean {
-  return (
-    state.phase === 'ready' &&
-    !state.error &&
-    state.descriptors.length > 0
-  );
+  if (state.phase !== 'ready') return false;
+  if (state.error) return false;
+  if (state.descriptors.length === 0) return false;
+  if (state.annotationPlan?.format === 'mixed' && state.chosenFormat === 'none') return false;
+  return true;
 }
