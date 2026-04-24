@@ -13,6 +13,12 @@ const ALPHA_THRESHOLD = 128;
 // re-tuned at render time — if the UI wants to change overlay opacity,
 // the bake signature should include this value.
 const FILL_ALPHA = 128;
+// Cut off the soft skirt of the edge PNG at a relatively high alpha so
+// only the ring's core pixels paint. SAM3's anti-aliased edge extends
+// a pixel or two past the true contour; dropping the skirt keeps the
+// ring thin. Surviving pixels keep their sub-threshold alpha for
+// smoothness when browser-bilinear-scaled to display.
+const EDGE_CORE_THRESHOLD = 180;
 
 type ReadableBitmap = ImageBitmap & { width: number; height: number };
 
@@ -166,7 +172,7 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
           erg[ei + 2] ?? 0,
           erg[ei + 3] ?? 0,
         );
-        if (aEdgeSrc === 0) continue;
+        if (aEdgeSrc < EDGE_CORE_THRESHOLD) continue;
         const srcA = aEdgeSrc / 255;
         const bi = (rowB + x) * 4;
         const dstR = bakeRgba[bi] ?? 0;

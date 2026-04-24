@@ -633,8 +633,10 @@
   position: absolute;
   z-index: 12;
   pointer-events: auto;
-  /* Preserve crisp mask edges when the container scales up. */
-  image-rendering: pixelated;
+  /* Let the browser bilinear-smooth the canvas as .ic-content scales
+     up. Binarized mask fills stay visually crisp (only sub-pixel
+     softening), and the white edge ring's anti-aliased alpha traces
+     mask contours as smooth curves instead of axis-aligned blocks. */
 }
 
 /* Selection ring around a single selected mask's bbox. World-coord
