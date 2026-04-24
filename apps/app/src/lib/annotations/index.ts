@@ -10,3 +10,5 @@ export type {
   PerFormat,
 } from './types';
 export { detectAnnotations } from './detect';
+export { runAnnotationPlan, buildSegMaskGroups } from './runAnnotationPlan';
+export type { SegGroup } from './runAnnotationPlan';
