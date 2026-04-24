@@ -209,6 +209,22 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
       const worldX = (ax - v.x) / v.scale;
       const worldY = (ay - v.y) / v.scale;
       applyView({ scale: next, x: ax - worldX * next, y: ay - worldY * next });
+      // WKWebView corruption workaround: zooming in then back out occasionally
+      // blanks the whole view until another input re-rasters. Toggling the
+      // layer off and on forces WebKit to drop the bad backing and allocate
+      // a fresh one. We only do this on zoom-out since zoom-in is what
+      // creates the bad state and the corruption only manifests on the way
+      // back down.
+      if (next < v.scale) {
+        requestAnimationFrame(() => {
+          const content = contentRef.current;
+          if (!content) return;
+          content.style.willChange = 'auto';
+          requestAnimationFrame(() => {
+            if (content) content.style.willChange = 'transform';
+          });
+        });
+      }
     },
     [cancelTween, applyView],
   );
