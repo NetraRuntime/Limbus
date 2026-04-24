@@ -80,11 +80,17 @@ export function useSegmentBake(input: BakeHookInput): {
 
   const runIdRef = useRef(0);
   const signature = computeSignature(input.masks);
+  // Stash the latest input so the effect can read masks without needing
+  // them in its dep array (their array ref changes every parent render).
+  // `signature` in deps is the content-equivalent stand-in, so the
+  // effect only re-runs when the bake actually needs to be invalidated.
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   useEffect(() => {
     const cached = bakeStore.get(input.imageId);
     if (cached && cached.signature === signature) {
-      setBake(cached);
+      setBake((prev) => (prev === cached ? prev : cached));
       return;
     }
 
@@ -92,10 +98,11 @@ export function useSegmentBake(input: BakeHookInput): {
     let cancelled = false;
 
     (async () => {
+      const current = inputRef.current;
       const composed = await composeFn({
-        sourceW: input.sourceW,
-        sourceH: input.sourceH,
-        masks: input.masks,
+        sourceW: current.sourceW,
+        sourceH: current.sourceH,
+        masks: current.masks,
         decodeCache,
       });
       if (cancelled || runId !== runIdRef.current) {
@@ -103,8 +110,8 @@ export function useSegmentBake(input: BakeHookInput): {
         return;
       }
       const entry: BakeEntry = { ...composed, signature };
-      const prior = bakeStore.get(input.imageId);
-      bakeStore.set(input.imageId, entry);
+      const prior = bakeStore.get(current.imageId);
+      bakeStore.set(current.imageId, entry);
       if (prior && prior !== entry) prior.bitmap.close();
       evictBakeStore();
       setBake(entry);
@@ -113,7 +120,7 @@ export function useSegmentBake(input: BakeHookInput): {
     return () => {
       cancelled = true;
     };
-  }, [input.imageId, input.sourceW, input.sourceH, signature, input.masks]);
+  }, [input.imageId, input.sourceW, input.sourceH, signature]);
 
   return { bake };
 }

@@ -550,6 +550,71 @@ type CanvasProps = {
   sam3Error?: string | null;
 };
 
+// Memoized per-image bake-layer wrapper. Stabilizes the `masksInput` array
+// ref and pointer-handler refs across parent re-renders so the inner
+// SegmentBakeLayer's React.memo actually bails out when nothing material
+// changed. This is the hot path on pan/zoom (Canvas re-renders once per
+// animation frame via the view rAF), so ref stability matters.
+type BakeForImageProps = {
+  m: CanvasMedia;
+  state: SegmentState;
+  onMaskSelect: (id: { imageId: string; tag: string; maskIndex: number }) => void;
+  onEmptyPointerDown: (e: MediaPointerEvent, m: CanvasMedia) => void;
+};
+
+const BakeForImage = memo(function BakeForImage({
+  m,
+  state,
+  onMaskSelect,
+  onEmptyPointerDown,
+}: BakeForImageProps) {
+  const { masksInput, first } = useMemo(() => {
+    const readyEntries = state.entries.filter(
+      (e): e is Extract<typeof e, { status: 'ready' }> => e.status === 'ready',
+    );
+    if (readyEntries.length === 0) {
+      return { masksInput: null, first: null };
+    }
+    const built = readyEntries.flatMap((entry) => {
+      const { accent } = colorForTag(entry.tag);
+      return entry.response.masks.map((mask, idx) => ({
+        tag: entry.tag,
+        maskIndex: idx,
+        png_base64: mask.png_base64,
+        maskW: mask.width,
+        maskH: mask.height,
+        bbox: mask.bbox,
+        accent,
+      }));
+    });
+    return { masksInput: built, first: readyEntries[0]!.response };
+  }, [state]);
+
+  const handleEmpty = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      onEmptyPointerDown(e, m);
+    },
+    [m, onEmptyPointerDown],
+  );
+
+  if (!masksInput || !first) return null;
+
+  return (
+    <SegmentBakeLayer
+      imageId={m.id}
+      worldX={m.x}
+      worldY={m.y}
+      worldWidth={m.width}
+      worldHeight={m.height}
+      sourceW={first.source_width}
+      sourceH={first.source_height}
+      masks={masksInput}
+      onMaskSelect={onMaskSelect}
+      onEmptyPointerDown={handleEmpty}
+    />
+  );
+});
+
 export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const sam3Available = !sam3Error;
   // HUD liquid-glass filters. Each one measures its own element via
@@ -1181,6 +1246,14 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   useEffect(() => {
     if (selectedIds.size > 0) setSelectedMask(null);
   }, [selectedIds]);
+
+  // Stable across renders — BakeForImage's memo depends on this not
+  // changing ref so it can skip re-renders during pan/zoom.
+  const handleMaskSelect = useCallback((id: MaskIdentity) => {
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
+    setLastSelectedId(null);
+    setSelectedMask(id);
+  }, []);
 
   const clearSegment = useCallback((id: string) => {
     // Bump the sequence so any in-flight invoke for this id is ignored when
@@ -2205,48 +2278,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         })}
         {paintMedia
           .filter((m) => m.kind === 'image' && segments[m.id])
-          .flatMap((m) => {
-            const state = segments[m.id]!;
-            const readyEntries = state.entries.filter(
-              (e): e is Extract<typeof e, { status: 'ready' }> => e.status === 'ready',
-            );
-            if (readyEntries.length === 0) return [];
-            const masksInput = readyEntries.flatMap((entry) => {
-              const { accent } = colorForTag(entry.tag);
-              return entry.response.masks.map((mask, idx) => ({
-                tag: entry.tag,
-                maskIndex: idx,
-                png_base64: mask.png_base64,
-                maskW: mask.width,
-                maskH: mask.height,
-                bbox: mask.bbox,
-                accent,
-              }));
-            });
-            // source dims are consistent across one image's ready entries.
-            const first = readyEntries[0]!.response;
-            return [
-              <SegmentBakeLayer
-                key={`bake-${m.id}`}
-                imageId={m.id}
-                worldX={m.x}
-                worldY={m.y}
-                worldWidth={m.width}
-                worldHeight={m.height}
-                sourceW={first.source_width}
-                sourceH={first.source_height}
-                masks={masksInput}
-                onMaskSelect={(id) => {
-                  setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
-                  setLastSelectedId(null);
-                  setSelectedMask(id);
-                }}
-                onEmptyPointerDown={(e) => {
-                  handleMediaPointerDown(e, m);
-                }}
-              />,
-            ];
-          })}
+          .map((m) => (
+            <BakeForImage
+              key={`bake-${m.id}`}
+              m={m}
+              state={segments[m.id]!}
+              onMaskSelect={handleMaskSelect}
+              onEmptyPointerDown={handleMediaPointerDown}
+            />
+          ))}
         {selectedMask && (() => {
           const m = paintMedia.find((x) => x.id === selectedMask.imageId);
           if (!m || m.kind !== 'image') return null;

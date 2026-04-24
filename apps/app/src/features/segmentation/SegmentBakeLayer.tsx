@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useSegmentBake, type BakeHookInput } from './bakeCache';
 import { hitTestAtPointer } from './hitTest';
 import type { MaskIdentity } from './types';
@@ -19,7 +19,7 @@ export type SegmentBakeLayerProps = {
   onEmptyPointerDown: (e: ReactPointerEvent<HTMLCanvasElement>) => void;
 };
 
-export function SegmentBakeLayer({
+function SegmentBakeLayerImpl({
   imageId,
   worldX,
   worldY,
@@ -92,3 +92,5 @@ export function SegmentBakeLayer({
     />
   );
 }
+
+export const SegmentBakeLayer = memo(SegmentBakeLayerImpl);
