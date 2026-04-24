@@ -1580,30 +1580,22 @@ body[data-canvas-tool="box"] .media-label {
 /* Label popover — captures a name for the freshly drawn box.
  *
  * Anchored just below the box (placement done in JSX); fixed positioning so
- * pan/zoom can keep the world-space anchor stable. Visual style mirrors
- * `.highlight-input`'s liquid-glass card so the two prompt UIs feel like a
- * family. */
+ * pan/zoom can keep the world-space anchor stable. Minimalist design: just
+ * a bare input and a faint keyboard-shortcut hint — no buttons. The popover
+ * is transparent around the input; only the input's pill has a background,
+ * so the whole thing reads as "type here" rather than "fill out this form". */
 .box-label-popover {
   position: fixed;
   z-index: 25;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  min-width: 220px;
-  background: color-mix(in srgb, var(--color-neutral) 28%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
-  border-radius: var(--radius-lg);
-  box-shadow:
-    0 14px 28px -14px rgb(0 0 0 / 0.35),
-    0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
-  backdrop-filter: saturate(140%) blur(10px);
-  -webkit-backdrop-filter: saturate(140%) blur(10px);
-  animation: box-label-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  gap: 6px;
+  min-width: 180px;
+  animation: box-label-pop-in 140ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes box-label-pop-in {
-  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  from { opacity: 0; transform: translateY(-3px); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -1614,68 +1606,70 @@ body[data-canvas-tool="box"] .media-label {
 .box-label-input {
   appearance: none;
   width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--color-neutral) 50%, transparent);
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
   color: var(--fg);
-  font: 500 13px/1 var(--font-sans);
+  font: 500 12.5px/1 var(--font-sans);
   letter-spacing: -0.1px;
   outline: none;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  box-shadow:
+    0 8px 18px -10px rgb(0 0 0 / 0.35),
+    0 0 0 1px color-mix(in srgb, var(--bg) 50%, transparent);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .box-label-input::placeholder {
-  color: color-mix(in srgb, var(--fg) 45%, transparent);
+  color: color-mix(in srgb, var(--fg) 40%, transparent);
 }
 
 .box-label-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow:
+    0 8px 18px -10px rgb(0 0 0 / 0.35),
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-.box-label-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+/* Keyboard hint — very muted by default, slightly brightens when the input
+ * has a committable value ("↵ is now live"). Inline `kbd` tags get a tiny
+ * bubble so they read as keys, but the whole row stays compact. */
+.box-label-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  font: 500 10.5px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--fg) 40%, transparent);
+  transition: color 140ms ease;
+  user-select: none;
 }
 
-.box-label-btn {
-  appearance: none;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font: 500 12px/1 var(--font-sans);
-  letter-spacing: -0.1px;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+.box-label-hint.is-ready {
+  color: color-mix(in srgb, var(--fg) 68%, transparent);
 }
 
-.box-label-btn--ghost {
-  background: transparent;
-  color: color-mix(in srgb, var(--fg) 75%, transparent);
-  border-color: color-mix(in srgb, var(--color-neutral) 40%, transparent);
+.box-label-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  color: inherit;
+  font: 500 10px/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0;
 }
 
-.box-label-btn--ghost:hover {
-  background: color-mix(in srgb, var(--color-text) 6%, transparent);
-  color: var(--fg);
-}
-
-.box-label-btn--primary {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-.box-label-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-.box-label-btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.box-label-hint-sep {
+  opacity: 0.4;
 }
 
 

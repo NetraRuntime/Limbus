@@ -2,6 +2,11 @@ export type MaskIdentity = {
   imageId: string;
   tag: string;
   maskIndex: number;
+  /** Optional entry discriminator. Two box entries can share a display
+   *  tag (two boxes both labeled "cat"); `entryId` makes the identity
+   *  unique so hover/click land on the intended entry. Undefined for
+   *  text segments where tag is already unique. */
+  entryId?: string;
 };
 
 /**
@@ -22,6 +27,9 @@ export type ComposeInput = {
     maskH: number;
     bbox: [number, number, number, number] | null;
     accent: string;
+    /** See MaskIdentity.entryId — threaded through compose so hit-test
+     *  records carry it back to the identity returned on click/hover. */
+    entryId?: string;
   }>;
   decodeCache: {
     get: (key: string) => Promise<ImageBitmap>;
@@ -39,6 +47,8 @@ export type ComposeInput = {
 export type HitMask = {
   tag: string;
   maskIndex: number;
+  /** See MaskIdentity.entryId. */
+  entryId?: string;
   rings: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>;
   bbox: { x: number; y: number; w: number; h: number };
 };
