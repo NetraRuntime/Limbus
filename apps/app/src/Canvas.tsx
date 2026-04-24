@@ -1444,7 +1444,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
   const deleteAllMasksForTag = useCallback(
     (imageId: string, tag: string) => {
-      const current = segments[imageId];
+      const current = segmentsRef.current[imageId];
       if (!current) return;
       const key = tag.toLowerCase();
       const ready = current.entries.find(
@@ -1481,7 +1481,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       entry.do();
       history.push(entry, { alreadyApplied: true });
     },
-    [segments, replaceReadyTag, history],
+    [replaceReadyTag, history],
   );
 
   const removeSegmentTag = useCallback((id: string, tag: string) => {
@@ -1885,7 +1885,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       if (isTypingContext(e)) return;
       if (!activeMedia || activeMedia.kind !== 'image') return;
       if (!soloTag) return;
-      const entries = segments[activeMedia.id]?.entries;
+      const entries = segmentsRef.current[activeMedia.id]?.entries;
       if (!entries || entries.length === 0) return;
       const dir = e.key === 'ArrowDown' ? 'next' : 'prev';
       const next = nextSoloTag(
@@ -1899,7 +1899,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeMedia, soloTag, segments]);
+  }, [activeMedia, soloTag]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
