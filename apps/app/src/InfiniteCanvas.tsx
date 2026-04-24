@@ -20,14 +20,11 @@ export type WorldPoint = { worldX: number; worldY: number };
 
 export type WorldRect = { x: number; y: number; width: number; height: number };
 
-// WKWebView's compositor fails to rasterize `.ic-content` when `transform:
-// scale(n)` produces a layer matrix outside a narrow range — deep zoom-ins
-// allocate GPU textures the compositor can't back, and the layer stays
-// invalidated after zoom-out (screen goes fully black, dots included).
-// 16× in either direction is plenty for normal use and keeps the matrix
-// well within the stable envelope.
-const MIN_SCALE = 1 / 16;
-const MAX_SCALE = 16;
+// WKWebView's compositor gets unhappy at extreme matrix values, so cap
+// zoom at 64× in either direction. The real blanking bug came from nested
+// transforms on `.world-image`, not the outer scale (fixed in App.css).
+const MIN_SCALE = 1 / 64;
+const MAX_SCALE = 64;
 const ZOOM_INTENSITY = 0.0015;
 const PINCH_ZOOM_MULTIPLIER = 4;
 const LINE_TO_PX = 16;

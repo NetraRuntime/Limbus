@@ -430,14 +430,14 @@
      a re-raster. Default `auto` (browser bilinear) scales cleanly at
      every view.scale. */
   object-fit: cover;
-  /* Pop-in: invisible + slightly shrunken until the bytes are decoded
-     (`.is-loaded`). The overshoot cubic-bezier gives a subtle bounce. */
+  /* Pop-in: invisible until the bytes are decoded (`.is-loaded`). The
+     previous version also scaled 0.9 → 1 with an overshoot, but a nested
+     transform inside the .ic-content transform trips WKWebView's
+     compositor (the parent scale + child scale combination blanks the
+     whole view layer on zoom). Opacity-only fade avoids that. */
   opacity: 0;
-  transform: scale(0.9);
-  transform-origin: center;
   transition:
     opacity 220ms ease-out,
-    transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
     outline-color 160ms ease,
     box-shadow 160ms ease;
   outline: 1.5px solid transparent;
@@ -446,7 +446,6 @@
 
 .world-image.is-loaded {
   opacity: 1;
-  transform: scale(1);
 }
 
 .world-image:active {
@@ -470,11 +469,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .world-image {
-    transform: none;
     transition: opacity 140ms ease-out, outline-color 160ms ease, box-shadow 160ms ease;
-  }
-  .world-image.is-loaded {
-    transform: none;
   }
 }
 
@@ -1398,55 +1393,227 @@ body[data-canvas-tool="box"] .media-label {
   transform: translateY(-0.5px);
 }
 
-/* User-drawn bounding box. Viewport-space like .segment-mask-bbox so stroke
-   weight stays crisp at any zoom. The in-flight preview (`.is-drawing`)
-   fades the fill a touch so the rect feels provisional until release. */
+/* User-drawn bounding box — SAM3 prompt visualization.
+ *
+ * Viewport-space (like .segment-mask-bbox) so stroke weight stays crisp at
+ * any zoom. Three-layer treatment for clarity over arbitrary image content:
+ *   1. Inner border (1.5px accent) — the rectangle itself.
+ *   2. Outer halo (1px dark) — separation from light image content.
+ *   3. Drop shadow (soft) — separation from dark image content.
+ * Corner brackets sit outside the rectangle so the user always sees a
+ * complete frame even when the box hugs an object's edge. While drawing,
+ * the border becomes marching ants for a tactile "active selection" feel
+ * (Photoshop/Figma idiom); reduced-motion users get a static dashed border. */
 .user-box {
   position: fixed;
   z-index: 13;
   pointer-events: none;
   border: 1.5px solid var(--accent);
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bg) 85%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--bg) 70%, transparent),
+    0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+/* Marching ants on the in-flight box. The conic-gradient driven via
+ * `background` on a thicker pseudo-element would be more correct, but the
+ * cheaper trick is animating four edge gradients. Border itself goes
+ * transparent so only the animated stripes show. */
 .user-box.is-drawing {
-  border-style: dashed;
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-color: transparent;
+  background:
+    linear-gradient(90deg, var(--accent) 50%, transparent 50%) repeat-x 0 0 / 10px 1.5px,
+    linear-gradient(90deg, var(--accent) 50%, transparent 50%) repeat-x 0 100% / 10px 1.5px,
+    linear-gradient(0deg, var(--accent) 50%, transparent 50%) repeat-y 0 0 / 1.5px 10px,
+    linear-gradient(0deg, var(--accent) 50%, transparent 50%) repeat-y 100% 0 / 1.5px 10px,
+    color-mix(in srgb, var(--accent) 4%, transparent);
+  animation: user-box-ants 0.7s linear infinite;
 }
 
+@keyframes user-box-ants {
+  to { background-position: 20px 0, -20px 100%, 0 -20px, 100% 20px, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-box.is-drawing {
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+    border-color: var(--accent);
+    border-style: dashed;
+    animation: none;
+  }
+}
+
+/* Corner brackets — longer L-shapes set just outside the rectangle, so the
+ * frame reads as "selection target" rather than "thumbnail tick". 10px legs,
+ * 2px thick, offset -4px so the bracket corner sits flush with the box
+ * corner. A subtle dark halo (filter: drop-shadow) keeps them visible over
+ * any underlying image. */
 .user-box-tick {
   position: absolute;
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
   pointer-events: none;
-  border: 1.5px solid var(--accent);
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--bg) 80%, transparent));
 }
 
-.user-box-tick.tl {
-  top: -1px;
-  left: -1px;
-  border-right: 0;
-  border-bottom: 0;
+.user-box-tick::before,
+.user-box-tick::after {
+  content: '';
+  position: absolute;
+  background: var(--accent);
+  border-radius: 1px;
 }
-.user-box-tick.tr {
-  top: -1px;
-  right: -1px;
-  border-left: 0;
-  border-bottom: 0;
+
+.user-box-tick::before {
+  width: 10px;
+  height: 2px;
 }
-.user-box-tick.bl {
-  bottom: -1px;
-  left: -1px;
-  border-right: 0;
-  border-top: 0;
+
+.user-box-tick::after {
+  width: 2px;
+  height: 10px;
 }
-.user-box-tick.br {
-  bottom: -1px;
-  right: -1px;
-  border-left: 0;
-  border-top: 0;
+
+.user-box-tick.tl { top: -4px; left: -4px; }
+.user-box-tick.tl::before { top: 0; left: 0; }
+.user-box-tick.tl::after  { top: 0; left: 0; }
+
+.user-box-tick.tr { top: -4px; right: -4px; }
+.user-box-tick.tr::before { top: 0; right: 0; }
+.user-box-tick.tr::after  { top: 0; right: 0; }
+
+.user-box-tick.bl { bottom: -4px; left: -4px; }
+.user-box-tick.bl::before { bottom: 0; left: 0; }
+.user-box-tick.bl::after  { bottom: 0; left: 0; }
+
+.user-box-tick.br { bottom: -4px; right: -4px; }
+.user-box-tick.br::before { bottom: 0; right: 0; }
+.user-box-tick.br::after  { bottom: 0; right: 0; }
+
+/* Brackets fade slightly while the box is being dragged out — the marching
+ * ants are the visual focus during draw; the brackets become the focus on
+ * commit. */
+.user-box.is-drawing .user-box-tick {
+  opacity: 0.55;
+}
+
+/* "Awaiting label" state — gentle pulse on the corner brackets to draw the
+ * eye to the popover that just appeared below the box. */
+.user-box.user-box--pending .user-box-tick {
+  animation: user-box-pending-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes user-box-pending-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-box.user-box--pending .user-box-tick {
+    animation: none;
+  }
+}
+
+/* Label popover — captures a name for the freshly drawn box.
+ *
+ * Anchored just below the box (placement done in JSX); fixed positioning so
+ * pan/zoom can keep the world-space anchor stable. Visual style mirrors
+ * `.highlight-input`'s liquid-glass card so the two prompt UIs feel like a
+ * family. */
+.box-label-popover {
+  position: fixed;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  min-width: 220px;
+  background: color-mix(in srgb, var(--color-neutral) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 14px 28px -14px rgb(0 0 0 / 0.35),
+    0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  animation: box-label-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes box-label-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .box-label-popover { animation: none; }
+}
+
+.box-label-input {
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 50%, transparent);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  color: var(--fg);
+  font: 500 13px/1 var(--font-sans);
+  letter-spacing: -0.1px;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.box-label-input::placeholder {
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+
+.box-label-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.box-label-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.box-label-btn {
+  appearance: none;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font: 500 12px/1 var(--font-sans);
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.box-label-btn--ghost {
+  background: transparent;
+  color: color-mix(in srgb, var(--fg) 75%, transparent);
+  border-color: color-mix(in srgb, var(--color-neutral) 40%, transparent);
+}
+
+.box-label-btn--ghost:hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  color: var(--fg);
+}
+
+.box-label-btn--primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.box-label-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.box-label-btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 
