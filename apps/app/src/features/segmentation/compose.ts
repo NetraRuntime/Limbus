@@ -128,6 +128,7 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
       hitMasks.push({
         tag: m.tag,
         maskIndex: m.maskIndex,
+        entryId: m.entryId,
         rings: [],
         bbox: { x: 0, y: 0, w: 0, h: 0 },
       });
@@ -162,6 +163,7 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
     hitMasks.push({
       tag: m.tag,
       maskIndex: m.maskIndex,
+      entryId: m.entryId,
       rings: scaled,
       bbox: ringsBbox(scaled),
     });

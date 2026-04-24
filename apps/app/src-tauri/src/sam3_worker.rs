@@ -346,7 +346,8 @@ fn segment_text(
     let result = ctx
         .segment(&[Prompt::Text(text)])
         .map_err(|e| format!("segment: {e}"))?;
-    build_segment_response(result, src_w, src_h)
+    // Text prompts produce stable quality scores — 0.8 filters noise cleanly.
+    build_segment_response(result, src_w, src_h, 0.8)
 }
 
 /// Run a single box prompt. `bbox` is normalized `[x1, y1, x2, y2]` in `[0, 1]`
@@ -372,19 +373,26 @@ fn segment_box(
     let result = ctx
         .segment(&[Prompt::Box(box_prompt)])
         .map_err(|e| format!("segment: {e}"))?;
-    build_segment_response(result, src_w, src_h)
+    // After the upstream prompt-encoder fix (vendor/sam3.c 894dc93) libsam3
+    // scores box-prompt candidates correctly, so NMS + score filtering work
+    // the same way as text prompts. Use 0.8 min_quality — same cutoff as the
+    // text path — so only high-confidence masks are returned.
+    build_segment_response(result, src_w, src_h, 0.8)
 }
 
 /// Reduce (NMS), sort best-first, PNG-encode masks, and bundle with the
-/// source dimensions the frontend uses for placement. Shared between every
-/// prompt variant so response shape stays identical regardless of prompt type.
+/// source dimensions the frontend uses for placement. Shared between text
+/// prompts and any future N-mask variant.
+///
+/// `min_quality` is the post-NMS stability threshold (see per-caller notes).
 fn build_segment_response(
     result: SegmentResult,
     src_w: u32,
     src_h: u32,
+    min_quality: f32,
 ) -> Result<SegmentResponse, String> {
     let reduced = if result.iou_valid() && result.n_masks() > 0 {
-        result.nms(0.5, 0.5, 0.8).unwrap_or(result)
+        result.nms(0.5, 0.5, min_quality).unwrap_or(result)
     } else {
         result
     };
@@ -432,6 +440,7 @@ fn build_segment_response(
         source_height: src_h,
     })
 }
+
 
 /// PNG-encode mask logits as two separate alpha-mask PNGs, matching
 /// the CLI `write_overlay` fill-and-outline pass exactly.

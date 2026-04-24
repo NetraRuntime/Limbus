@@ -58,7 +58,12 @@ export function hitTestAtPointer(
     if (bx < m.bbox.x || by < m.bbox.y) continue;
     if (bx >= m.bbox.x + m.bbox.w || by >= m.bbox.y + m.bbox.h) continue;
     if (pointInMask(bx, by, m.rings)) {
-      return { imageId, tag: m.tag, maskIndex: m.maskIndex };
+      return {
+        imageId,
+        tag: m.tag,
+        maskIndex: m.maskIndex,
+        entryId: m.entryId,
+      };
     }
   }
   return null;

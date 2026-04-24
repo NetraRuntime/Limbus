@@ -367,6 +367,13 @@ fn scan_paths(paths: Vec<String>) -> Result<Vec<EntryInfo>, String> {
     Ok(out)
 }
 
+/// Forward a webview log line to the process stderr. Used to capture JS
+/// errors/diagnostics that would otherwise only appear in devtools.
+#[tauri::command]
+fn debug_log(level: String, message: String) {
+    eprintln!("[webview:{level}] {message}");
+}
+
 #[tauri::command]
 fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))
@@ -388,6 +395,7 @@ pub fn run() {
             sam3_segment_box,
             scan_paths,
             read_file_bytes,
+            debug_log,
         ])
         .setup(|app| {
             if port_in_use() {

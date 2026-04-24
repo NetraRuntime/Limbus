@@ -58,16 +58,31 @@ function SegmentBakeLayerImpl({
   // Track the last mask under the pointer by stable identity string so
   // onMaskHover only fires on transitions, not every pointermove sample.
   const lastHoverKeyRef = useRef<string | null>(null);
+  // `transferFromImageBitmap` is DESTRUCTIVE — after the first call the
+  // bitmap is neutered and subsequent calls throw `InvalidStateError`.
+  // React StrictMode double-invokes effects in dev, so guard the second
+  // invocation by remembering the last bitmap we successfully consumed.
+  // (Ref persists across StrictMode's simulated unmount → remount.)
+  const consumedBitmapRef = useRef<ImageBitmap | null>(null);
 
   // Publish the latest bitmap into the canvas (zero-copy).
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !bake) return;
+    if (consumedBitmapRef.current === bake.bitmap) return;
     if (canvas.width !== bake.width) canvas.width = bake.width;
     if (canvas.height !== bake.height) canvas.height = bake.height;
     const ctx = canvas.getContext('bitmaprenderer') as ImageBitmapRenderingContext | null;
     if (!ctx) return;
-    ctx.transferFromImageBitmap(bake.bitmap);
+    try {
+      ctx.transferFromImageBitmap(bake.bitmap);
+      consumedBitmapRef.current = bake.bitmap;
+    } catch (err) {
+      // Defensive: if the bitmap was already consumed by another canvas
+      // (bake cache sharing, hot-reload edge cases), swallow the throw so
+      // the whole tree doesn't unmount — the canvas just stays blank.
+      console.warn('[bake] transferFromImageBitmap failed', err);
+    }
   }, [bake]);
 
   if (!bake) return null;

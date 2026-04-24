@@ -2,6 +2,7 @@ export type SignatureInput = ReadonlyArray<{
   tag: string;
   maskIndex: number;
   png_base64: string;
+  entryId?: string;
 }>;
 
 /**
@@ -21,7 +22,9 @@ export function computeSignature(masks: SignatureInput): string {
     const png = m.png_base64;
     const head = png.slice(0, 16);
     const tail = png.slice(-16);
-    parts.push(`${m.tag.toLowerCase()}|${m.maskIndex}|${png.length}|${head}|${tail}`);
+    parts.push(
+      `${m.tag.toLowerCase()}|${m.entryId ?? ''}|${m.maskIndex}|${png.length}|${head}|${tail}`,
+    );
   }
   return parts.join('\n');
 }

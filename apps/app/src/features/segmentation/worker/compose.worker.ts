@@ -14,6 +14,7 @@ type ComposeJobInput = {
     maskH: number;
     bbox: [number, number, number, number] | null;
     accent: string;
+    entryId?: string;
   }>;
 };
 

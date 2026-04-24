@@ -308,9 +308,9 @@ type SegmentResponse = {
 };
 
 type TagSegment =
-  | { tag: string; status: 'loading'; kind?: 'box' }
-  | { tag: string; status: 'ready'; response: SegmentResponse; kind?: 'box' }
-  | { tag: string; status: 'error'; message: string; kind?: 'box' };
+  | { tag: string; status: 'loading'; kind?: 'box'; boxId?: string }
+  | { tag: string; status: 'ready'; response: SegmentResponse; kind?: 'box'; boxId?: string }
+  | { tag: string; status: 'error'; message: string; kind?: 'box'; boxId?: string };
 
 type SegmentState = { entries: TagSegment[] };
 
@@ -713,9 +713,14 @@ const BakeForImage = memo(function BakeForImage({
     }
     const built = visibleEntries.flatMap((entry) => {
       const { accent } = colorForTag(entry.tag);
+      // `entryId` disambiguates two entries sharing a display tag — two
+      // box entries both labeled "cat" each get their own hit-test identity
+      // via their unique boxId. Text entries don't need it (tag is unique).
+      const entryId = entry.kind === 'box' ? entry.boxId : undefined;
       return entry.response.masks.map((mask, idx) => ({
         tag: entry.tag,
         maskIndex: idx,
+        entryId,
         png_base64: mask.png_base64,
         maskW: mask.width,
         maskH: mask.height,
@@ -827,22 +832,18 @@ function BoxLabelPopover({
         maxLength={64}
         aria-label="Object label"
       />
-      <div className="box-label-actions">
-        <button
-          type="button"
-          className="box-label-btn box-label-btn--ghost"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="box-label-btn box-label-btn--primary"
-          onClick={() => canConfirm && onConfirm(trimmed)}
-          disabled={!canConfirm}
-        >
-          Segment
-        </button>
+      {/* Keyboard-only affordances — no explicit buttons. ↵ confirms when the
+          input is non-empty, esc always cancels. The hint brightens slightly
+          once a label is typed so the user gets a small "ready" signal. */}
+      <div
+        className={`box-label-hint${canConfirm ? ' is-ready' : ''}`}
+        aria-hidden
+      >
+        <kbd>↵</kbd>
+        <span>segment</span>
+        <span className="box-label-hint-sep">·</span>
+        <kbd>esc</kbd>
+        <span>cancel</span>
       </div>
     </div>
   );
@@ -1859,8 +1860,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
 
       // Snapshot the current sequence so a later clearSegment(imageId) bump
       // discards this in-flight invoke — same convention as the text path.
+      // Box entries are keyed by `boxId` (not lowercase tag) so two boxes
+      // with the same user label each get their own segment entry and the
+      // later one doesn't clobber the earlier's mask.
       const seq = segmentSeqRef.current[imageId] ?? 0;
-      const key = tag.toLowerCase();
       const updateEntry = (patch: TagSegment) => {
         if ((segmentSeqRef.current[imageId] ?? 0) !== seq) return;
         setSegments((prev) => {
@@ -1868,7 +1871,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const next: TagSegment[] = [];
           let replaced = false;
           for (const e of cur.entries) {
-            if (e.tag.toLowerCase() === key) {
+            if (e.kind === 'box' && e.boxId === boxId) {
               next.push(patch);
               replaced = true;
             } else {
@@ -1880,7 +1883,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         });
       };
 
-      updateEntry({ tag, status: 'loading', kind: 'box' });
+      updateEntry({ tag, status: 'loading', kind: 'box', boxId });
 
       invoke<SegmentResponse>('sam3_segment_box', {
         id: imageId,
@@ -1889,7 +1892,29 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         bbox: norm,
       })
         .then((response) => {
-          updateEntry({ tag, status: 'ready', response, kind: 'box' });
+          updateEntry({ tag, status: 'ready', response, kind: 'box', boxId });
+          // Snap the user's drawn box to the segmentation's tight-fit bbox
+          // (from the highest-scoring mask). Feels like "drag a box, it
+          // snaps around the actual object" — the UX gain worth the extra
+          // state update. Mask bbox is in MASK pixel coords (the PNG dims),
+          // so rescale to the image's world units before storing.
+          // Remove the user-drawn rectangle — its only job was to carry the
+          // prompt and show the loading scan. Now that the mask is ready,
+          // `BboxOverlayLayer` renders the segmentation's tight-fit bbox
+          // (same chrome as text-prompt segments), so keeping the userBox
+          // would duplicate it.
+          setUserBoxes((prev) => {
+            const list = prev[imageId];
+            if (!list) return prev;
+            const next = list.filter((b) => b.id !== boxId);
+            if (next.length === list.length) return prev;
+            if (next.length === 0) {
+              const copy = { ...prev };
+              delete copy[imageId];
+              return copy;
+            }
+            return { ...prev, [imageId]: next };
+          });
           // Persist the mask under the user's label so it rehydrates after
           // reload. The user-drawn box rectangle itself is still
           // session-local; only the resulting segmentation is durable.
@@ -1904,15 +1929,16 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
           console.warn(`[sam3] segment box failed for ${imageId} (${boxId})`, err);
-          updateEntry({ tag, status: 'error', message, kind: 'box' });
+          updateEntry({ tag, status: 'error', message, kind: 'box', boxId });
         });
     },
     [sam3Available],
   );
 
   /** Confirm the pending box: commit it to `userBoxes` under the trimmed
-   *  label and dispatch SAM3. Empty/whitespace labels are rejected so the
-   *  popover stays open. */
+   *  label, register the label as a chip in `highlightInputs` so it shows
+   *  in the same tag list as text-prompted segments, and dispatch SAM3.
+   *  Empty/whitespace labels are rejected so the popover stays open. */
   const confirmPendingBoxLabel = useCallback(
     (rawLabel: string) => {
       const label = rawLabel.trim();
@@ -1925,6 +1951,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           ...prev,
           [p.imageId]: [...list, { id: p.boxId, box: p.relBox, label }],
         };
+      });
+      setHighlightInputs((prev) => {
+        const existing = prev[p.imageId] ?? [];
+        const key = label.toLowerCase();
+        if (existing.some((t) => t.toLowerCase() === key)) return prev;
+        return { ...prev, [p.imageId]: [...existing, label] };
       });
       dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
       setPendingBoxLabel(null);
@@ -3244,9 +3276,27 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           const state = segments[m.id]!;
           const base = `segment-${m.id}`;
 
-          const loadingTags = state.entries.filter((e) => e.status === 'loading');
-          const errorTags = state.entries.filter(
-            (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
+          // Box entries can collide by tag (two boxes labeled "cat"), so
+          // dedup by lowercase tag here — one chip per label is plenty for
+          // the chip stack and avoids React's duplicate-key warning.
+          const dedupByTag = <T extends TagSegment>(arr: T[]): T[] => {
+            const seen = new Set<string>();
+            const out: T[] = [];
+            for (const e of arr) {
+              const k = e.tag.toLowerCase();
+              if (seen.has(k)) continue;
+              seen.add(k);
+              out.push(e);
+            }
+            return out;
+          };
+          const loadingTags = dedupByTag(
+            state.entries.filter((e) => e.status === 'loading'),
+          );
+          const errorTags = dedupByTag(
+            state.entries.filter(
+              (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
+            ),
           );
 
           if (loadingTags.length === 0 && errorTags.length === 0) return [];
@@ -3355,10 +3405,20 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         (segments[activeMedia.id]?.entries.length ?? 0) > 0 && (
           <MediaTagList
             rect={activeRect}
-            entries={segments[activeMedia.id]!.entries.map((e) => ({
-              tag: e.tag,
-              status: e.status,
-            }))}
+            entries={(() => {
+              // Dedup by tag: two box entries can share a label ("cat"/"cat");
+              // the chip list only shows one per label. Prefer a 'ready' entry
+              // over loading/error so the final state wins visually.
+              const byTag = new Map<string, { tag: string; status: TagSegment['status'] }>();
+              for (const e of segments[activeMedia.id]!.entries) {
+                const key = e.tag.toLowerCase();
+                const prev = byTag.get(key);
+                if (!prev || (prev.status !== 'ready' && e.status === 'ready')) {
+                  byTag.set(key, { tag: e.tag, status: e.status });
+                }
+              }
+              return Array.from(byTag.values());
+            })()}
             onRemove={(tag) => deleteAllMasksForTag(activeMedia.id, tag)}
             onSelect={(tag) => {
               // Toggle: re-clicking the current solo tag clears the filter.
@@ -3440,9 +3500,11 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             const wy = m.y + ry1;
             const ww = Math.max(1, rx2 - rx1);
             const wh = Math.max(1, ry2 - ry1);
-            const labelKey = b.label.toLowerCase();
+            // Match the segment entry by boxId (one entry per drawn box), not
+            // by label — two boxes can share a label ("cat"/"cat") and we
+            // still need each to show its own loading/ready/error state.
             const matched = entries.find(
-              (e) => e.kind === 'box' && e.tag.toLowerCase() === labelKey,
+              (e) => e.kind === 'box' && e.boxId === b.id,
             );
             const isLoading = matched?.status === 'loading';
             const isError = matched?.status === 'error';
@@ -3551,25 +3613,32 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             // their bboxes as usual.
             if (soloLower && m.id === activeId && tagLower !== soloLower) continue;
             const { accent } = colorForTag(entry.tag);
+            const entryId = entry.kind === 'box' ? entry.boxId : undefined;
             for (let i = 0; i < entry.response.masks.length; i += 1) {
               const mask = entry.response.masks[i];
               if (!mask || !mask.bbox) continue;
+              // Two box entries can share a display tag; match by entryId
+              // too so selected/hovered chrome lands on the intended entry.
               const isSel =
                 sel &&
                 sel.imageId === m.id &&
                 sel.tag.toLowerCase() === tagLower &&
-                sel.maskIndex === i;
+                sel.maskIndex === i &&
+                sel.entryId === entryId;
               const isHov =
                 hov &&
                 hov.imageId === m.id &&
                 hov.tag.toLowerCase() === tagLower &&
-                hov.maskIndex === i;
+                hov.maskIndex === i &&
+                hov.entryId === entryId;
               if (isSel || isHov) continue;
               const [x1, y1, x2, y2] = mask.bbox;
               const fx = m.width / mask.width;
               const fy = m.height / mask.height;
+              // Include boxId (when present) in the key so two box entries
+              // sharing a tag don't collide on React's key check.
               rects.push({
-                key: `${m.id}-${entry.tag}-${i}`,
+                key: `${m.id}-${entry.tag}-${entry.kind === 'box' ? entry.boxId ?? '' : ''}-${i}`,
                 left: (m.x + x1 * fx) * view.scale + view.x,
                 top: (m.y + y1 * fy) * view.scale + view.y,
                 width: Math.max(1, (x2 - x1) * fx) * view.scale,
@@ -3609,10 +3678,16 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           if (!m || m.kind !== 'image') return null;
           const state = segments[id.imageId];
           if (!state) return null;
-          const entry = state.entries.find(
-            (e) =>
-              e.status === 'ready' && e.tag.toLowerCase() === id.tag.toLowerCase(),
-          );
+          // Match by entryId when present (two box entries can share a tag;
+          // the unique boxId pins down the right entry). Fall back to a
+          // tag-only match for text entries where boxId is absent.
+          const entry = state.entries.find((e) => {
+            if (e.status !== 'ready') return false;
+            if (id.entryId !== undefined) {
+              return e.kind === 'box' && e.boxId === id.entryId;
+            }
+            return e.tag.toLowerCase() === id.tag.toLowerCase();
+          });
           if (!entry || entry.status !== 'ready') return null;
           const mask = entry.response.masks[id.maskIndex];
           if (!mask || !mask.bbox) return null;
@@ -3641,7 +3716,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           (!selectedMask ||
             hoveredMask.imageId !== selectedMask.imageId ||
             hoveredMask.tag !== selectedMask.tag ||
-            hoveredMask.maskIndex !== selectedMask.maskIndex)
+            hoveredMask.maskIndex !== selectedMask.maskIndex ||
+            hoveredMask.entryId !== selectedMask.entryId)
             ? hoveredMask
             : null;
         const hover = hoverId ? resolve(hoverId) : null;
