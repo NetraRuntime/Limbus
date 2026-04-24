@@ -61,6 +61,7 @@ import {
   evictBake,
   deleteMaskEntry,
   resizeBboxEntry,
+  nextSoloTag,
   type MaskIdentity,
   type ReadyMaskEntry,
 } from './features/segmentation';
@@ -1876,6 +1877,29 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedMask, deleteMask]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (isTypingContext(e)) return;
+      if (!activeMedia || activeMedia.kind !== 'image') return;
+      if (!soloTag) return;
+      const entries = segments[activeMedia.id]?.entries;
+      if (!entries || entries.length === 0) return;
+      const dir = e.key === 'ArrowDown' ? 'next' : 'prev';
+      const next = nextSoloTag(
+        soloTag,
+        entries.map((en) => ({ tag: en.tag, status: en.status })),
+        dir,
+      );
+      if (!next) return;
+      e.preventDefault();
+      setSoloTag(next);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeMedia, soloTag, segments]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
