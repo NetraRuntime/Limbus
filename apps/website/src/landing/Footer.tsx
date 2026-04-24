@@ -52,6 +52,7 @@ export function Footer() {
             <div>
               <h4>Project</h4>
               <a href="#why">Why NetraRT</a>
+              <a href="#story">Mission</a>
               <a href="#waitlist">Waitlist</a>
             </div>
             <div>

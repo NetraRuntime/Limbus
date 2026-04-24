@@ -49,6 +49,9 @@ export function Header() {
           <a className="nav-item" href="#why">
             Why NetraRT
           </a>
+          <a className="nav-item" href="#story">
+            Mission
+          </a>
           <a className="nav-item" href="#waitlist">
             Waitlist
           </a>
@@ -93,6 +96,9 @@ export function Header() {
         <div className="menu-inner" onClick={(e) => e.stopPropagation()}>
           <a className="menu-link" href="#why" onClick={close}>
             Why NetraRT
+          </a>
+          <a className="menu-link" href="#story" onClick={close}>
+            Mission
           </a>
           <a className="menu-link" href="#waitlist" onClick={close}>
             Waitlist
