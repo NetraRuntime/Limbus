@@ -5,6 +5,7 @@ export type {
   BakeEntry,
 } from './types';
 export { SegmentBakeLayer } from './SegmentBakeLayer';
+export { BboxOverlayLayer, type BboxOverlayRect } from './BboxOverlayLayer';
 export { evictBake, evictDecode } from './bakeCache';
 export {
   deleteMaskEntry,

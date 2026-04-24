@@ -58,10 +58,12 @@ import { labelOuterWidth } from './lib/labelMetrics';
 import { groupSegmentationsByImage } from './lib/segmentations';
 import {
   SegmentBakeLayer,
+  BboxOverlayLayer,
   evictBake,
   deleteMaskEntry,
   resizeBboxEntry,
   nextSoloTag,
+  type BboxOverlayRect,
   type MaskIdentity,
   type ReadyMaskEntry,
 } from './features/segmentation';
@@ -1277,7 +1279,10 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   }, [selectedIds, bringToFront]);
 
   const runUploadPlan = useCallback(
-    (plan: UploadPlan[]): Promise<void> => {
+    (
+      plan: UploadPlan[],
+      onUploaded?: (draftId: string, record: ImageRecord | VideoRecord) => void,
+    ): Promise<void> => {
       if (plan.length === 0) return Promise.resolve();
       setMedia((prev) => [...prev, ...plan.map((p) => p.draft)]);
       setUploadStatus((prev) => {
@@ -1306,6 +1311,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
               p.draft.kind === 'video'
                 ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
                 : await createImage(p.file, p.meta, onProgress, ctrl.signal);
+            onUploaded?.(p.draft.id, record);
             const next =
               p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
             setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
@@ -2039,10 +2045,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           d.kind === 'image' || d.kind === 'video',
       );
       const files: { file: File; kind: 'image' | 'video' }[] = [];
+      const descriptorsForFiles: (MediaDescriptor & { kind: 'image' | 'video' })[] = [];
       for (const d of mediaDescriptors) {
         try {
           const f = await d.load();
           files.push({ file: f, kind: d.kind });
+          descriptorsForFiles.push(d);
         } catch (err) {
           console.error('[ingest] load failed', d.relativePath, err);
         }
@@ -2090,12 +2098,25 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         };
       });
 
+      const descriptorByDraftId = new Map<string, MediaDescriptor & { kind: 'image' | 'video' }>();
+      for (let i = 0; i < plan.length; i++) {
+        descriptorByDraftId.set(plan[i]!.draft.id, descriptorsForFiles[i]!);
+      }
+
       const minX = Math.min(...plan.map((p) => p.draft.x));
       const minY = Math.min(...plan.map((p) => p.draft.y));
       const maxX = Math.max(...plan.map((p) => p.draft.x + p.draft.width));
       const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
 
-      const uploading = runUploadPlan(plan);
+      const imageIdByDescriptorPath = new Map<string, string>();
+      const onUploaded = (draftId: string, record: ImageRecord | VideoRecord) => {
+        const desc = descriptorByDraftId.get(draftId);
+        if (desc && desc.kind === 'image') {
+          imageIdByDescriptorPath.set(desc.relativePath, record.id);
+        }
+      };
+
+      const uploading = runUploadPlan(plan, onUploaded);
       canvasRef.current?.focusOn(
         { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
         { bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
@@ -3177,22 +3198,15 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       })()}
 
       {(() => {
-        // Dim "at-rest" bbox for every ready mask on every visible image. The
-        // active (selected/hovered) mask is skipped here and rendered by the
-        // block below with full chrome. Pointer-events: none so clicks fall
-        // through to the bake canvas underneath.
+        // Dim "at-rest" bboxes are painted to a single viewport-space
+        // <canvas> via BboxOverlayLayer. The active (selected / hovered)
+        // mask is skipped here and rendered by the block below as DOM so
+        // it keeps its resize handles and hover pill.
         const sel = selectedMask;
         const hov = hoveredMask;
         const activeId = activeMedia?.id ?? null;
         const soloLower = soloTag ? soloTag.toLowerCase() : null;
-        const rects: Array<{
-          key: string;
-          left: number;
-          top: number;
-          width: number;
-          height: number;
-          accent: string;
-        }> = [];
+        const rects: BboxOverlayRect[] = [];
         for (const m of paintMedia) {
           if (m.kind !== 'image') continue;
           const state = segments[m.id];
@@ -3232,27 +3246,13 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             }
           }
         }
-        return rects.map((r) => (
-          <div
-            key={`bbox-${r.key}`}
-            className="segment-mask-bbox"
-            aria-hidden
-            style={
-              {
-                left: r.left,
-                top: r.top,
-                width: r.width,
-                height: r.height,
-                '--seg-accent': r.accent,
-              } as React.CSSProperties
-            }
-          >
-            <span className="segment-mask-bbox-tick tl" />
-            <span className="segment-mask-bbox-tick tr" />
-            <span className="segment-mask-bbox-tick bl" />
-            <span className="segment-mask-bbox-tick br" />
-          </div>
-        ));
+        return (
+          <BboxOverlayLayer
+            viewportWidth={viewport.w}
+            viewportHeight={viewport.h}
+            rects={rects}
+          />
+        );
       })()}
 
       {(() => {
