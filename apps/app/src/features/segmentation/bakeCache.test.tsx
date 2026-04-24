@@ -8,12 +8,28 @@ import {
 } from './bakeCache';
 import type { ComposedBake } from './types';
 
-function mkFakeBake(idMapFill: number, bitmapId: number): ComposedBake {
-  const idMap = new Uint16Array(4);
-  idMap.fill(idMapFill);
+function mkFakeBake(markerX: number, bitmapId: number): ComposedBake {
   const fake = { id: bitmapId, closed: false, close() { this.closed = true; } };
   const bitmap = fake as unknown as ImageBitmap;
-  return { bitmap, idMap, idToMask: [], width: 2, height: 2 };
+  return {
+    bitmap,
+    hitMasks: [
+      {
+        tag: 'cat',
+        maskIndex: 0,
+        rings: [
+          [
+            { x: 0, y: 0 },
+            { x: markerX, y: 0 },
+            { x: markerX, y: 1 },
+          ],
+        ],
+        bbox: { x: 0, y: 0, w: markerX, h: 1 },
+      },
+    ],
+    width: 2,
+    height: 2,
+  };
 }
 
 const mkInput = (overrides: Partial<BakeHookInput> = {}): BakeHookInput => ({
@@ -44,7 +60,7 @@ describe('useSegmentBake', () => {
     __setComposeForTests(compose);
     const { result } = renderHook(() => useSegmentBake(mkInput()));
     await waitFor(() => expect(result.current.bake).not.toBeNull());
-    expect(result.current.bake!.idMap[0]).toBe(5);
+    expect(result.current.bake!.hitMasks).toHaveLength(1);
     expect(compose).toHaveBeenCalledTimes(1);
   });
 

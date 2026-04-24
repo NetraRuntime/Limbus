@@ -1,7 +1,7 @@
-import type { ComposedBake, ComposeInput } from './types';
+import type { ComposedBake, ComposeInput, HitMask } from './types';
 import { capDims } from './dims';
 import { strokeWidthFor } from './stroke';
-import { extractContours, smoothChaikin } from './contours';
+import { extractContours, ringsToPath, smoothChaikin, type Point } from './contours';
 
 // Bake at up to source resolution. The visible canvas is CSS-stretched
 // to the image's world rect, so capping below the source's native size
@@ -38,8 +38,7 @@ async function getMaskBitmap(
 
 /**
  * Read the pixels of an ImageBitmap into an RGBA `Uint8ClampedArray` at
- * its native size. Used to sample mask alpha for both contour
- * extraction and id-map building.
+ * its native size. Used to sample mask alpha for contour extraction.
  */
 function readBitmapPixels(bmp: ReadableBitmap): {
   rgba: Uint8ClampedArray;
@@ -55,44 +54,43 @@ function readBitmapPixels(bmp: ReadableBitmap): {
   return { rgba: data.data, w: bmp.width, h: bmp.height };
 }
 
-/**
- * Build a `Path2D` from a list of rings, scaling/offsetting each
- * vertex from mask-pixel space into bake-pixel space.
- */
-function ringsToPath(
-  rings: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
-  scaleX: number,
-  scaleY: number,
-): Path2D {
-  const path = new Path2D();
+/** Axis-aligned bounding rectangle of a set of rings in their own coord space. */
+function ringsBbox(
+  rings: ReadonlyArray<ReadonlyArray<Point>>,
+): { x: number; y: number; w: number; h: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
   for (const ring of rings) {
-    if (ring.length < 2) continue;
-    const p0 = ring[0]!;
-    path.moveTo(p0.x * scaleX, p0.y * scaleY);
-    for (let i = 1; i < ring.length; i++) {
-      const p = ring[i]!;
-      path.lineTo(p.x * scaleX, p.y * scaleY);
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
     }
-    path.closePath();
   }
-  return path;
+  if (!isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 /**
- * Compose all ready masks for a single image into one ImageBitmap +
- * id-map. For each mask:
+ * Compose all ready masks for a single image into one ImageBitmap + a
+ * per-mask hit-test record. For each mask:
  *
  *   - Binarize the mask alpha at ALPHA_THRESHOLD.
  *   - Extract closed boundary rings via marching squares (with a
  *     virtual outside border so masks at the grid edge close cleanly).
  *   - Smooth each ring with Chaikin's algorithm so the visible contour
  *     traces a curve instead of an axis-aligned staircase.
+ *   - Scale rings from mask-pixel to bake-pixel space.
  *   - Fill the resulting Path2D with the accent color at FILL_ALPHA
  *     and stroke it in white for the edge ring.
- *   - Mark the mask's pixels in the parallel id-map at bake resolution.
+ *   - Record the smoothed rings + their bbox so the main thread can
+ *     hit-test against them without storing a per-pixel id map.
  *
- * Layering: later masks paint over earlier ones, so the topmost mask
- * wins both the visual color and the hit-test.
+ * Layering: later masks paint over earlier ones, so iterating the
+ * returned `hitMasks` in reverse yields topmost-first.
  */
 export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
   const maxSide = input.maxSide ?? DEFAULT_MAX_SIDE;
@@ -101,34 +99,20 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
   const visual = new OffscreenCanvas(w, h);
   const vctx = visual.getContext('2d');
   if (!vctx) throw new Error('OffscreenCanvas 2d context unavailable');
-  // Path fill/stroke anti-aliasing is on by default; image-smoothing
-  // setting only affects drawImage, which we don't use here.
 
-  const idMap = new Uint16Array(w * h);
-  const idToMask: Array<{ tag: string; maskIndex: number }> = [];
+  const hitMasks: HitMask[] = [];
   // Edge-ring thickness in bake pixels. Derived from the overall stroke
   // width so it tracks bake dimensions.
   const edgeLineWidth = Math.max(1, Math.round(strokeWidthFor(w, h) * 0.75));
 
-  // Scratch canvas used to rasterize each mask's smoothed Path2D into
-  // an alpha buffer, which is then thresholded to build the id-map.
-  // Reused across masks (cleared per iteration) to avoid reallocating
-  // a w*h*4 buffer per mask.
-  const idScratch = new OffscreenCanvas(w, h);
-  const sctx = idScratch.getContext('2d', { willReadFrequently: true });
-  if (!sctx) throw new Error('OffscreenCanvas 2d context unavailable');
-
   for (let i = 0; i < input.masks.length; i++) {
     const m = input.masks[i]!;
-    const id = i + 1;
     const bmp = await getMaskBitmap(input.decodeCache, m.png_base64);
     const { rgba, w: mw, h: mh } = readBitmapPixels(bmp);
 
     // Sample the mask as a continuous scalar field. SAM3 puts the mask
     // in the alpha channel for some encoders and in luminance for
-    // others — `max(R, G, B, A)` is robust to both. Out-of-bounds
-    // samples return 0 so the virtual outside border inside
-    // `extractContours` always reads as outside the iso-region.
+    // others — `max(R, G, B, A)` is robust to both.
     const sample = (x: number, y: number): number => {
       if (x < 0 || y < 0 || x >= mw || y >= mh) return 0;
       const i4 = (y * mw + x) * 4;
@@ -139,14 +123,24 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
       return Math.max(r, g, b, a);
     };
 
-    const rings = extractContours(sample, ALPHA_THRESHOLD, mw, mh);
-    if (rings.length === 0) {
-      idToMask.push({ tag: m.tag, maskIndex: m.maskIndex });
+    const rawRings = extractContours(sample, ALPHA_THRESHOLD, mw, mh);
+    if (rawRings.length === 0) {
+      hitMasks.push({
+        tag: m.tag,
+        maskIndex: m.maskIndex,
+        rings: [],
+        bbox: { x: 0, y: 0, w: 0, h: 0 },
+      });
       continue;
     }
-    const smoothed = rings.map((r) => smoothChaikin(r, SMOOTH_ITERATIONS));
-    // Map mask-pixel coords to bake-pixel coords.
-    const path = ringsToPath(smoothed, w / mw, h / mh);
+    const smoothed = rawRings.map((r) => smoothChaikin(r, SMOOTH_ITERATIONS));
+    const scaleX = w / mw;
+    const scaleY = h / mh;
+    // Rings in bake-pixel space — persisted for hit-testing.
+    const scaled: Point[][] = smoothed.map((ring) =>
+      ring.map((p) => ({ x: p.x * scaleX, y: p.y * scaleY })),
+    );
+    const path = ringsToPath(scaled);
 
     vctx.save();
     // Hand the accent string straight to the canvas — `colorForTag`
@@ -165,22 +159,14 @@ export async function composeBake(input: ComposeInput): Promise<ComposedBake> {
     vctx.stroke(path);
     vctx.restore();
 
-    // Id-map follows the smoothed contour: rasterize the same Path2D
-    // onto the scratch canvas in opaque white, threshold its alpha,
-    // and stamp the mask id at every covered bake pixel. Hit-testing
-    // therefore lines up with the visible curve instead of snapping
-    // to the raw mask's stairsteps.
-    sctx.clearRect(0, 0, w, h);
-    sctx.fillStyle = '#ffffff';
-    sctx.fill(path, 'evenodd');
-    const { data: alpha } = sctx.getImageData(0, 0, w, h);
-    const wh = w * h;
-    for (let p = 0; p < wh; p++) {
-      if ((alpha[p * 4 + 3] ?? 0) > ALPHA_THRESHOLD) idMap[p] = id;
-    }
-    idToMask.push({ tag: m.tag, maskIndex: m.maskIndex });
+    hitMasks.push({
+      tag: m.tag,
+      maskIndex: m.maskIndex,
+      rings: scaled,
+      bbox: ringsBbox(scaled),
+    });
   }
 
   const bitmap = visual.transferToImageBitmap();
-  return { bitmap, idMap, idToMask, width: w, height: h };
+  return { bitmap, hitMasks, width: w, height: h };
 }

@@ -6,7 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { useSegmentBake, type BakeHookInput } from './bakeCache';
-import { hitTestAtPointer } from './hitTest';
+import { hitTestAtPointer } from './hitTestMask';
 import type { MaskIdentity } from './types';
 
 export type SegmentBakeLayerProps = {
@@ -55,9 +55,9 @@ function SegmentBakeLayerImpl({
 }: SegmentBakeLayerProps) {
   const { bake } = useSegmentBake({ imageId, sourceW, sourceH, masks });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // De-dupe hover transitions so onMaskHover fires only when the hit changes,
-  // not on every pointermove sample.
-  const lastHoverIdRef = useRef<number>(0);
+  // Track the last mask under the pointer by stable identity string so
+  // onMaskHover only fires on transitions, not every pointermove sample.
+  const lastHoverKeyRef = useRef<string | null>(null);
 
   // Publish the latest bitmap into the canvas (zero-copy).
   useEffect(() => {
@@ -79,53 +79,46 @@ function SegmentBakeLayerImpl({
       return;
     }
     const rect = canvas.getBoundingClientRect();
-    const id = hitTestAtPointer(
+    const hit = hitTestAtPointer(
       { pointerX: e.clientX, pointerY: e.clientY },
       rect,
-      bake.idMap,
+      bake.hitMasks,
+      imageId,
       bake.width,
       bake.height,
     );
-    if (id === 0) {
+    if (!hit) {
       onEmptyPointerDown(e);
       return;
     }
     e.stopPropagation();
-    const m = bake.idToMask[id - 1];
-    if (!m) {
-      onEmptyPointerDown(e);
-      return;
-    }
-    onMaskSelect({ imageId, tag: m.tag, maskIndex: m.maskIndex });
+    onMaskSelect(hit);
   };
 
   const handlePointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (canvas && onMaskHover) {
       const rect = canvas.getBoundingClientRect();
-      const id = hitTestAtPointer(
+      const hit = hitTestAtPointer(
         { pointerX: e.clientX, pointerY: e.clientY },
         rect,
-        bake.idMap,
+        bake.hitMasks,
+        imageId,
         bake.width,
         bake.height,
       );
-      if (id !== lastHoverIdRef.current) {
-        lastHoverIdRef.current = id;
-        if (id === 0) {
-          onMaskHover(null);
-        } else {
-          const m = bake.idToMask[id - 1];
-          onMaskHover(m ? { imageId, tag: m.tag, maskIndex: m.maskIndex } : null);
-        }
+      const key = hit ? `${hit.tag}:${hit.maskIndex}` : null;
+      if (key !== lastHoverKeyRef.current) {
+        lastHoverKeyRef.current = key;
+        onMaskHover(hit);
       }
     }
     onPointerMove?.(e);
   };
 
   const handleMouseLeave = (e: ReactMouseEvent<HTMLCanvasElement>) => {
-    if (lastHoverIdRef.current !== 0 && onMaskHover) {
-      lastHoverIdRef.current = 0;
+    if (lastHoverKeyRef.current !== null && onMaskHover) {
+      lastHoverKeyRef.current = null;
       onMaskHover(null);
     }
     onMouseLeave?.(e);
