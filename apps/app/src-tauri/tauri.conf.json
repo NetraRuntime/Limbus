@@ -7,6 +7,7 @@
     "beforeDevCommand": "pnpm stage:pb && pnpm sam3:build && pnpm dev",
     "devUrl": "http://localhost:5174",
     "beforeBuildCommand": "pnpm stage:pb && pnpm sam3:build && pnpm build",
+    "beforeBundleCommand": "node ../../scripts/release/patch-rpath.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -47,7 +48,23 @@
       "../../../vendor/sam3.c/models/bpe_simple_vocab_16e6.txt.gz": "models/bpe_simple_vocab_16e6.txt.gz"
     },
     "macOS": {
-      "frameworks": ["../../../vendor/sam3.c/build/libsam3.dylib"]
+      "frameworks": ["../../../vendor/sam3.c/build/libsam3.dylib"],
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/netrart/libsam3.so": "../../../vendor/sam3.c/build/libsam3.so"
+        }
+      }
+    },
+    "windows": {
+      "wix": null,
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
+      }
     },
     "category": "Productivity",
     "shortDescription": "NetraRT infinite canvas",
