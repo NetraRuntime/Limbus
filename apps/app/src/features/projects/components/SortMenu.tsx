@@ -1,4 +1,12 @@
+import { useAutoLiquidGlassFilter } from '../../../components/LiquidGlass';
+
 export type SortKey = 'recent' | 'name' | 'created';
+
+const OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'recent', label: 'Recent' },
+  { value: 'name', label: 'Name' },
+  { value: 'created', label: 'Created' },
+];
 
 type Props = {
   value: SortKey;
@@ -6,14 +14,30 @@ type Props = {
 };
 
 export function SortMenu({ value, onChange }: Props) {
+  const glass = useAutoLiquidGlassFilter({ radius: 12 });
   return (
-    <label className="home-sort">
-      <span>Sort by</span>
-      <select value={value} onChange={(e) => onChange(e.target.value as SortKey)}>
-        <option value="recent">Recently opened</option>
-        <option value="name">Name</option>
-        <option value="created">Created</option>
-      </select>
-    </label>
+    <>
+      {glass.filterSvg}
+      <div
+        ref={glass.ref}
+        className="btn-cluster is-liquid-glass"
+        role="radiogroup"
+        aria-label="Sort projects"
+        style={glass.style}
+      >
+        {OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={value === opt.value}
+            className={`btn-ghost${value === opt.value ? ' is-active' : ''}`}
+            onClick={() => onChange(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

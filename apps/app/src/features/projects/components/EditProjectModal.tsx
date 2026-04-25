@@ -1,42 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { updateProject } from '../api/projects';
-import {
-  type ProjectRecord,
-  type ProjectColor,
-  type ProjectIcon,
-} from '../types/project';
-import { ColorPicker } from './ColorPicker';
-import { IconPicker } from './IconPicker';
+import type { ProjectRecord } from '../types/project';
+import { Modal } from '../../../components/Modal';
 
 type Props = {
   project: ProjectRecord;
   onClose: () => void;
 };
 
+// Rename-only edit dialog. Color and icon are decided once at create
+// time and aren't user-tunable here. Labels live as canvas tags now
+// (managed inline in canvas via box/text prompts), so the project
+// .labels array is no longer surfaced for editing.
 export function EditProjectModal({ project, onClose }: Props) {
   const [name, setName] = useState(project.name);
-  const [color, setColor] = useState<ProjectColor>(project.color);
-  const [icon, setIcon] = useState<ProjectIcon>(project.icon);
-  const [labels, setLabels] = useState<string[]>(project.labels);
-  const [labelDraft, setLabelDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || submitting) return;
+    const next = name.trim();
+    if (!next || submitting) return;
+    if (next === project.name) {
+      onClose();
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await updateProject(project.id, { name: name.trim(), color, icon, labels });
+      await updateProject(project.id, { name: next });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -44,33 +42,14 @@ export function EditProjectModal({ project, onClose }: Props) {
     }
   };
 
-  const addLabel = () => {
-    const t = labelDraft.trim();
-    if (!t || labels.includes(t)) return;
-    setLabels([...labels, t]);
-    setLabelDraft('');
-  };
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Edit project"
-      className="project-modal-backdrop"
-      onClick={onClose}
-    >
-      <form
-        className="project-modal-card project-modal-card-wide"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
-      >
-        <header className="project-modal-header">
-          <h2 className="project-modal-title">Edit project</h2>
-        </header>
+    <Modal open onClose={onClose} title="Rename project">
+      <form onSubmit={submit}>
         <div className="project-modal-body">
           <label className="project-field">
             <span className="project-field-label">Name</span>
             <input
+              ref={inputRef}
               type="text"
               className="project-input"
               value={name}
@@ -79,62 +58,12 @@ export function EditProjectModal({ project, onClose }: Props) {
               disabled={submitting}
             />
           </label>
-          <div className="project-field">
-            <span className="project-field-label">Color</span>
-            <ColorPicker value={color} onChange={setColor} />
-          </div>
-          <div className="project-field">
-            <span className="project-field-label">Icon</span>
-            <IconPicker value={icon} onChange={setIcon} />
-          </div>
-          <div className="project-field">
-            <span className="project-field-label">Labels</span>
-            {labels.length > 0 && (
-              <div className="project-card-labels">
-                {labels.map((l) => (
-                  <span key={l} className="project-label-edit-chip">
-                    #{l}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${l}`}
-                      className="project-label-edit-chip-remove"
-                      onClick={() => setLabels(labels.filter((x) => x !== l))}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="project-label-edit-row">
-              <input
-                type="text"
-                className="project-input"
-                value={labelDraft}
-                onChange={(e) => setLabelDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addLabel();
-                  }
-                }}
-                placeholder="Add a label"
-              />
-              <button
-                type="button"
-                className="home-btn home-btn-outline"
-                onClick={addLabel}
-              >
-                Add
-              </button>
-            </div>
-          </div>
           {error && <p className="project-modal-error" role="alert">{error}</p>}
         </div>
         <footer className="project-modal-footer">
           <button
             type="button"
-            className="home-btn home-btn-outline"
+            className="btn-ghost"
             onClick={onClose}
             disabled={submitting}
           >
@@ -142,13 +71,13 @@ export function EditProjectModal({ project, onClose }: Props) {
           </button>
           <button
             type="submit"
-            className="home-btn home-btn-primary"
+            className="btn-ghost btn-primary"
             disabled={!name.trim() || submitting}
           >
             {submitting ? 'Saving…' : 'Save'}
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }
