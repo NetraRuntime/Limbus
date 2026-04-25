@@ -2291,6 +2291,27 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [clearSelection, deleteSelection, selectAll, duplicateSelection, clearHideTimer]);
 
+  // Tool shortcuts — only meaningful while the floating media toolbar is
+  // visible, which is exactly when there's an active media. Keep them off
+  // when the user is typing (label input, popovers, etc).
+  useEffect(() => {
+    if (!activeMedia) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingContext(e)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'v') {
+        e.preventDefault();
+        setTool('drag');
+      } else if (k === 'b') {
+        e.preventDefault();
+        setTool('box');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeMedia]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;

@@ -22,14 +22,29 @@ const TOOLBAR_WIDTH = 36;
 const TOOLBAR_GAP = 8;
 const VIEWPORT_MARGIN = 8;
 
-const TOOLS: ReadonlyArray<{
+type ToolDef = {
   id: CanvasTool;
   icon: string;
   label: string;
   hint: string;
-}> = [
-  { id: 'drag', icon: 'ri-drag-move-2-line', label: 'Drag tool', hint: 'Move image or video' },
-  { id: 'box', icon: 'ri-square-line', label: 'Box tool', hint: 'Draw a box to annotate' },
+  shortcut: string;
+};
+
+export const TOOLBAR_TOOLS: ReadonlyArray<ToolDef> = [
+  {
+    id: 'drag',
+    icon: 'ri-drag-move-2-line',
+    label: 'Drag tool',
+    hint: 'Move image or video',
+    shortcut: 'V',
+  },
+  {
+    id: 'box',
+    icon: 'ri-square-line',
+    label: 'Box tool',
+    hint: 'Draw a box to annotate',
+    shortcut: 'B',
+  },
 ];
 
 export function MediaToolbar({
@@ -54,7 +69,7 @@ export function MediaToolbar({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {TOOLS.map((t) => {
+      {TOOLBAR_TOOLS.map((t) => {
         const active = t.id === tool;
         return (
           <button
@@ -62,11 +77,15 @@ export function MediaToolbar({
             type="button"
             className={`media-toolbar-btn ${active ? 'is-active' : ''}`}
             aria-label={t.label}
+            aria-keyshortcuts={t.shortcut}
             aria-pressed={active}
-            title={`${t.label} — ${t.hint}`}
+            title={`${t.label} (${t.shortcut}) — ${t.hint}`}
             onClick={() => onToolChange(t.id)}
           >
             <i className={t.icon} aria-hidden />
+            <span className="media-toolbar-btn-shortcut" aria-hidden>
+              {t.shortcut}
+            </span>
           </button>
         );
       })}
