@@ -8,7 +8,12 @@ const collectionFns = {
 };
 
 vi.mock('../../../lib/pb', () => ({
-  pb: { collection: () => collectionFns },
+  pb: {
+    collection: () => collectionFns,
+    // Minimal shim: replaces {:key} placeholders with quoted values.
+    filter: (expr: string, params: Record<string, string>) =>
+      expr.replace(/\{:(\w+)\}/g, (_, k: string) => `"${params[k]}"`),
+  },
 }));
 
 import { listTags, createTag, deleteTagById } from './tags';
