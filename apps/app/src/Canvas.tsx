@@ -2066,7 +2066,11 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       // chip strip, so the two prompt surfaces stay conceptually separate.
       // DO register the label in saved-tags so it surfaces in autocomplete
       // for later text prompts, matching HighlightInput's commitTag path.
-      void rememberSavedTag(label);
+      // Surface failures — silently swallowing breaks the Home label list
+      // and the saved-tags popover with no diagnostic.
+      rememberSavedTag(label).catch((err) =>
+        console.warn('[box-prompt] rememberSavedTag failed', err),
+      );
       dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
       setPendingBoxLabel(null);
     },
