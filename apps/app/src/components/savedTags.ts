@@ -4,6 +4,7 @@ import {
   createTag,
   updateTag,
   deleteTagById,
+  TagRecordSchema,
   type TagRecord,
 } from '../features/projects/api/tags';
 import { migrateLegacySavedTags } from '../features/projects/lib/legacyTagsMigration';
@@ -93,13 +94,15 @@ export function useSavedTags(projectId: string): SavedTagsApi {
         if (cancelled) return;
         if (e.record['project'] !== projectId) return;
         setRecords((prev) => {
-          const idx = prev.findIndex((r) => r.id === e.record.id);
+          const parsed = TagRecordSchema.safeParse(e.record);
+          if (!parsed.success) return prev;
+          const idx = prev.findIndex((r) => r.id === parsed.data.id);
           if (e.action === 'delete') {
-            return idx >= 0 ? prev.filter((r) => r.id !== e.record.id) : prev;
+            return idx >= 0 ? prev.filter((r) => r.id !== parsed.data.id) : prev;
           }
           const next = prev.slice();
-          if (idx >= 0) next[idx] = e.record as unknown as TagRecord;
-          else next.unshift(e.record as unknown as TagRecord);
+          if (idx >= 0) next[idx] = parsed.data;
+          else next.unshift(parsed.data);
           return next;
         });
       })
