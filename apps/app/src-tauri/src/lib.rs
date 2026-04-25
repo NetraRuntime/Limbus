@@ -1,3 +1,4 @@
+mod models;
 mod sam3_worker;
 
 use std::net::TcpStream;
@@ -173,6 +174,43 @@ async fn sam3_warmup(worker: State<'_, WorkerHandle>) -> Result<(), String> {
         .map_err(|e| format!("join worker: {e}"))?
 }
 
+/// Pin (or clear) the active SAM3 model. `name` is a basename inside
+/// `{app_data_dir}/models/`; `None` clears the override and lets the
+/// candidate fallback take over. Triggers a worker hot-swap when the
+/// resolved path differs from what's already loaded.
+#[tauri::command]
+async fn sam3_set_active_model(
+    app: AppHandle,
+    worker: State<'_, WorkerHandle>,
+    name: Option<String>,
+) -> Result<(), String> {
+    let path = match name {
+        Some(n) => {
+            // Reuse the same validation rules as the model manager so a
+            // crafted setting can't escape the models dir.
+            for ch in ['/', '\\'] {
+                if n.contains(ch) {
+                    return Err(format!("invalid model name: {n:?}"));
+                }
+            }
+            if n.is_empty() || n == "." || n == ".." {
+                return Err(format!("invalid model name: {n:?}"));
+            }
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("resolve app_data_dir: {e}"))?
+                .join("models");
+            Some(dir.join(n))
+        }
+        None => None,
+    };
+    let w = worker.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || w.set_active_model_blocking(path))
+        .await
+        .map_err(|e| format!("join worker: {e}"))?
+}
+
 #[tauri::command]
 async fn sam3_segment_text(
     app: AppHandle,
@@ -242,18 +280,34 @@ async fn sam3_segment_box(
 /// Ordered list of model-file candidates tried on first use.
 ///
 /// 1. `SAM3_MODEL_PATH` env override.
-/// 2. `{app_data_dir}/models/sam3_mobileclip_s0.sam3` — user-placed.
+/// 2. Any `*.sam3` file inside `{app_data_dir}/models/`, sorted so the
+///    legacy `sam3_mobileclip_s0.sam3` still wins when present and any
+///    HF-downloaded `sam3.sam3` is picked up automatically.
 /// 3. Debug-build fallback to the vendored file under the workspace so
 ///    `pnpm tauri:dev` works without extra setup.
 fn resolve_model_candidates(app: &AppHandle) -> Vec<Option<PathBuf>> {
     let mut out: Vec<Option<PathBuf>> = Vec::new();
     out.push(std::env::var_os("SAM3_MODEL_PATH").map(PathBuf::from));
-    out.push(
-        app.path()
-            .app_data_dir()
-            .ok()
-            .map(|d| d.join("models").join("sam3_mobileclip_s0.sam3")),
-    );
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        let models_dir = data_dir.join("models");
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(&models_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.eq_ignore_ascii_case("sam3"))
+                        .unwrap_or(false)
+            })
+            .collect();
+        entries.sort();
+        for path in entries {
+            out.push(Some(path));
+        }
+    }
     if cfg!(debug_assertions) {
         // CARGO_MANIFEST_DIR is apps/app/src-tauri; walk up to repo root.
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -384,10 +438,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(PocketBaseProcess::default())
+        .manage(models::ModelDownloads::default())
         .invoke_handler(tauri::generate_handler![
             pb_url,
             sam3_version,
             sam3_warmup,
+            sam3_set_active_model,
             sam3_encode_image,
             sam3_delete_image_cache,
             sam3_cache_status,
@@ -396,6 +452,12 @@ pub fn run() {
             scan_paths,
             read_file_bytes,
             debug_log,
+            models::models_dir_path,
+            models::models_list_local,
+            models::models_list_remote,
+            models::models_download,
+            models::models_delete,
+            models::models_cancel_download,
         ])
         .setup(|app| {
             if port_in_use() {

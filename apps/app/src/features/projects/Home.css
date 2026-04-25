@@ -34,14 +34,34 @@
 }
 
 .home-content {
-  /* Side padding matches the HUD's --space-5 inset so the project
-     list edges align with the wordmark and "+ New project" pills.
-     Top padding clears the wordmark; bottom clears the search HUD. */
-  padding: 80px var(--space-5) 96px;
+  /* Generous side padding so the content sits inside the floating HUD
+     pills with breathing room. Top padding clears the wordmark; bottom
+     clears the search HUD. */
+  padding: 80px clamp(20px, 3vw, 36px) 96px;
   min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  animation: home-view-fade 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes home-view-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-content,
+  .models-view,
+  .models-hero,
+  .models-hero-icon,
+  .models-row {
+    animation: none;
+  }
+  .models-hero-glow,
+  .models-active-pill {
+    animation: none;
+  }
 }
 
 .home-list {
@@ -675,4 +695,324 @@
   .project-menu {
     animation: none;
   }
+}
+
+/* ---------- Home view switcher (Projects ↔ Models) ---------- */
+
+.home-view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.home-view-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: calc(var(--radius-md) - 2px);
+  font: 600 12px/1 var(--font-display, system-ui);
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  position: relative;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.home-view-tab i {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.home-view-tab:hover:not(.is-active) {
+  color: var(--fg);
+}
+
+.home-view-tab.is-active {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.home-view-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
+  height: 16px;
+  border-radius: 999px;
+  font: 600 10px/1 var(--font-mono);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  color: var(--fg-muted);
+}
+
+.home-view-tab.is-active .home-view-tab-count {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.home-view-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+
+/* ---------- Download progress chip in wordmark ---------- */
+
+.download-chip {
+  appearance: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-muted));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px var(--space-5);
+  font: 500 12px/1.1 var(--font-display, system-ui);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 140ms ease;
+  animation: download-chip-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.download-chip:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+
+@keyframes download-chip-rise {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.download-chip-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: download-chip-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes download-chip-spin {
+  to { transform: rotate(360deg); }
+}
+
+.download-chip-name {
+  font: 600 11px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.download-chip-pct {
+  color: var(--fg-muted);
+  font: 500 11px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Models view (Home main area) ---------- */
+
+.models-view {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+  animation: models-view-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes models-view-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.models-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.models-view-head h1 {
+  margin: 0;
+  font: 600 26px/1 var(--font-display, system-ui);
+  letter-spacing: -0.7px;
+  color: var(--fg);
+}
+
+.models-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font: 500 11.5px/1 var(--font-mono);
+  color: var(--fg-muted);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.models-source:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  color: var(--fg);
+}
+
+/* ----- Hero (first-run empty state) ----- */
+
+.models-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+  padding: 56px var(--space-5) 48px;
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      ellipse 80% 60% at 50% -20%,
+      color-mix(in srgb, var(--accent) 16%, transparent) 0%,
+      transparent 60%
+    ),
+    var(--bg-subtle);
+  border: 1px solid var(--border-muted);
+  overflow: hidden;
+  isolation: isolate;
+  animation: hero-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.models-hero-glow {
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  top: -160px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 30%, transparent) 0%,
+    transparent 60%
+  );
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(20px);
+  animation: hero-pulse 6s ease-in-out infinite alternate;
+}
+
+@keyframes hero-pulse {
+  0%   { opacity: 0.7; transform: translateX(-50%) scale(1); }
+  100% { opacity: 1;   transform: translateX(-50%) scale(1.1); }
+}
+
+.models-hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 26px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  animation: hero-icon-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: 80ms;
+}
+
+@keyframes hero-icon-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.models-hero-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 420px;
+}
+
+.models-hero-text h2 {
+  margin: 0;
+  font: 600 18px/1.25 var(--font-display, system-ui);
+  letter-spacing: -0.3px;
+  color: var(--fg);
+}
+
+.models-hero-text p {
+  margin: 0;
+  color: var(--fg-muted);
+  font: 500 12.5px/1.4 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.models-hero-text code {
+  font: 600 12.5px/1 var(--font-mono);
+  color: var(--fg);
+}
+
+.models-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.models-hero-actions .btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 999px;
+  padding: 0 22px;
+  height: 38px;
+  font: 600 13px/1 var(--font-display, system-ui);
+  letter-spacing: -0.1px;
+  border: 0;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.models-hero-actions .btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 90%, black);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ---------- Project grid disabled state ---------- */
+
+.home-list.is-disabled .home-grid {
+  pointer-events: none;
+  opacity: 0.55;
+  filter: saturate(0.55);
+  transition: opacity 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .download-chip-spinner { animation: none; }
 }

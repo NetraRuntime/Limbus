@@ -83,6 +83,13 @@ pub enum Job {
     Warmup {
         reply: Sender<Result<(), String>>,
     },
+    /// Set (or clear) the user-selected active model. If the path differs
+    /// from the currently loaded one, the existing `Ctx` is dropped so the
+    /// next job picks up the new weights — Unity-Hub-style hot swap.
+    SetActiveModel {
+        path: Option<PathBuf>,
+        reply: Sender<Result<(), String>>,
+    },
     /// Run text-prompt segmentation against an image, reuse/save the
     /// encoder cache as a side effect.
     SegmentText {
@@ -151,6 +158,16 @@ impl WorkerHandle {
         let (reply, rx) = mpsc::channel();
         self.tx
             .send(Job::Warmup { reply })
+            .map_err(|_| "sam3 worker is not running".to_string())?;
+        rx.recv()
+            .map_err(|_| "sam3 worker dropped reply".to_string())?
+    }
+
+    /// Submit a `SetActiveModel` job and wait synchronously for the reply.
+    pub fn set_active_model_blocking(&self, path: Option<PathBuf>) -> Result<(), String> {
+        let (reply, rx) = mpsc::channel();
+        self.tx
+            .send(Job::SetActiveModel { path, reply })
             .map_err(|_| "sam3 worker is not running".to_string())?;
         rx.recv()
             .map_err(|_| "sam3 worker dropped reply".to_string())?
@@ -249,10 +266,15 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
     }
 
     let mut ctx: Option<Ctx> = None;
+    // Path of the model currently materialized in `ctx`. We compare against
+    // the `cfg.active` override before each ensure_ctx so a Unity-Hub style
+    // model swap drops the old Ctx automatically.
+    let mut loaded_path: Option<PathBuf> = None;
+    let mut active_override: Option<PathBuf> = None;
     while let Ok(job) = rx.recv() {
         match job {
             Job::EncodeImage { id, src_path, reply } => {
-                let res = ensure_ctx(&mut ctx, &cfg)
+                let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
                     .and_then(|ctx| encode_and_persist(ctx, &cfg.cache_dir, &id, &src_path));
                 let _ = reply.send(res);
             }
@@ -263,8 +285,30 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                 let _ = reply.send(Ok(cache_path(&cfg.cache_dir, &id).exists()));
             }
             Job::Warmup { reply } => {
-                let res = ensure_ctx(&mut ctx, &cfg).map(|_| ());
+                let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
+                    .map(|_| ());
                 let _ = reply.send(res);
+            }
+            Job::SetActiveModel { path, reply } => {
+                if path != active_override {
+                    active_override = path;
+                    // Drop ctx if the new override would resolve to a
+                    // different file than what's currently loaded.
+                    if let Some(loaded) = loaded_path.as_ref() {
+                        let next = active_override
+                            .clone()
+                            .or_else(|| pick_default(&cfg));
+                        let differs = match next {
+                            Some(p) => &p != loaded,
+                            None => true,
+                        };
+                        if differs {
+                            ctx = None;
+                            loaded_path = None;
+                        }
+                    }
+                }
+                let _ = reply.send(Ok(()));
             }
             Job::SegmentText {
                 id,
@@ -272,7 +316,7 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                 text,
                 reply,
             } => {
-                let res = ensure_ctx(&mut ctx, &cfg)
+                let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
                     .and_then(|ctx| segment_text(ctx, &cfg.cache_dir, &id, &src_path, &text));
                 let _ = reply.send(res);
             }
@@ -282,12 +326,16 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                 bbox,
                 reply,
             } => {
-                let res = ensure_ctx(&mut ctx, &cfg)
+                let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
                     .and_then(|ctx| segment_box(ctx, &cfg.cache_dir, &id, &src_path, bbox));
                 let _ = reply.send(res);
             }
         }
     }
+}
+
+fn pick_default(cfg: &ModelConfig) -> Option<PathBuf> {
+    cfg.candidates.iter().flatten().find(|p| p.exists()).cloned()
 }
 
 /// Prepare the context for segmentation against `src_path`. Loads the
@@ -515,19 +563,24 @@ fn encode_la8_png(la: &[u8], width: u32, height: u32) -> Result<String, String> 
     Ok(STANDARD_NO_PAD.encode(&png_bytes))
 }
 
-fn ensure_ctx<'a>(ctx: &'a mut Option<Ctx>, cfg: &ModelConfig) -> Result<&'a mut Ctx, String> {
+fn ensure_ctx<'a>(
+    ctx: &'a mut Option<Ctx>,
+    loaded_path: &mut Option<PathBuf>,
+    active_override: &Option<PathBuf>,
+    cfg: &ModelConfig,
+) -> Result<&'a mut Ctx, String> {
     if ctx.is_none() {
-        let model_path = cfg
-            .candidates
-            .iter()
-            .flatten()
-            .find(|p| p.exists())
+        // The user-selected override wins; fall back to the auto-discovered
+        // candidate list only when nothing has been pinned.
+        let model_path = active_override
+            .clone()
+            .filter(|p| p.exists())
+            .or_else(|| pick_default(cfg))
             .ok_or_else(|| {
-                "no SAM3 model found — set SAM3_MODEL_PATH or place \
-                 sam3_mobileclip_s0.sam3 in the app data models dir"
+                "no SAM3 model installed — open Settings → Models and \
+                 download one before opening a project"
                     .to_string()
-            })?
-            .clone();
+            })?;
 
         eprintln!("[sam3] loading model: {}", model_path.display());
         let mut c = Ctx::new().map_err(|e| format!("sam3 init: {e}"))?;
@@ -561,6 +614,7 @@ fn ensure_ctx<'a>(ctx: &'a mut Option<Ctx>, cfg: &ModelConfig) -> Result<&'a mut
         }
 
         *ctx = Some(c);
+        *loaded_path = Some(model_path);
     }
     Ok(ctx.as_mut().expect("ctx initialized above"))
 }

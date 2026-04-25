@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { useProjects } from '../api/useProjects';
 import { ProjectGrid } from './ProjectGrid';
@@ -8,12 +9,22 @@ import { LabelFilterRow } from './LabelFilterRow';
 import { pb } from '../../../lib/pb';
 import { TagRecordSchema, type TagRecord } from '../api/tags';
 import { useAutoLiquidGlassFilter } from '../../../components/LiquidGlass';
+import { SettingsModal } from '../../../components/SettingsModal';
 import { useSettings } from '../../../hooks/useSettings';
 import { useAppliedTheme } from '../../../hooks/useAppliedTheme';
 import { onHomeCloseQuit } from '../../../lib/windows';
+import { ModelsView } from '../../models/components/ModelsView';
+import { DownloadChip } from '../../models/components/DownloadChip';
 import '../Home.css';
 
 const ProjectFieldSchema = z.object({ project: z.string() });
+
+const isTauri =
+  typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
+type View = 'projects' | 'models';
+type LocalModel = { name: string };
 
 // Fetch every project's `tags` collection and bucket by project id. Tags
 // are populated when the user creates labels through box / text prompts
@@ -115,16 +126,81 @@ function useItemCounts(): Record<string, number> {
   return counts;
 }
 
+/**
+ * Watch the on-disk model directory for changes. Drives both the view
+ * switcher (forces 'models' on first run) and the project-tile gating.
+ * Refreshed on download/cancel/error events so the gate flips off the
+ * instant a model is available.
+ */
+function useHasModelInstalled(): { ready: boolean; hasModel: boolean } {
+  const [ready, setReady] = useState(false);
+  const [hasModel, setHasModel] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri) {
+      setReady(true);
+      // In the web debug build there's no Tauri to ask, but the canvas
+      // also won't actually run a model — so don't gate the click.
+      setHasModel(true);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const local = await invoke<LocalModel[]>('models_list_local');
+        if (cancelled) return;
+        setHasModel(local.length > 0);
+        setReady(true);
+      } catch {
+        if (!cancelled) setReady(true);
+      }
+    };
+    void refresh();
+
+    const onProgress = () => void refresh();
+    let unlisten: (() => void) | null = null;
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen('model-download-progress', onProgress).then((u) => {
+        if (cancelled) u();
+        else unlisten = u;
+      }),
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  return { ready, hasModel };
+}
+
 export function Home() {
   const state = useProjects();
   const [newOpen, setNewOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState<View>('projects');
+  const [forcedModelsView, setForcedModelsView] = useState(false);
   const itemCounts = useItemCounts();
   const tagsByProject = useProjectTags();
-  const { settings } = useSettings();
+  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   // Apply the persisted theme so light/dark stays in sync with the
   // canvas window. Settings are global (localStorage), so the same key
   // resolves on Home and Canvas.
   useAppliedTheme(settings.theme);
+
+  const { ready: modelsReady, hasModel } = useHasModelInstalled();
+
+  // First-run + recovery flow: on first mount, if no model is installed,
+  // jam the user onto the Models view. Only force *once* — once the
+  // user has installed something we let them navigate freely without
+  // bouncing them back. `forcedModelsView` is the latch.
+  useEffect(() => {
+    if (!modelsReady || forcedModelsView) return;
+    if (!hasModel) {
+      setView('models');
+      setForcedModelsView(true);
+    }
+  }, [modelsReady, hasModel, forcedModelsView]);
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('recent');
@@ -179,27 +255,68 @@ export function Home() {
       });
   }, [projects, query, sort, selectedLabels]);
 
+  const activeModelMissing =
+    modelsReady && (settings.activeModel == null || !hasModel);
+  const projectsDisabledReason = activeModelMissing
+    ? 'Install and activate a SAM3 model first (Models tab).'
+    : undefined;
+
   return (
     <div className="home-root">
-      <main className="home-content">
-        {state.status === 'loading' && <div className="home-empty">Loading…</div>}
-        {state.status === 'error' && (
-          <div className="home-empty">Failed to load projects: {state.error.message}</div>
+      <main className="home-content" data-view={view} key={view}>
+        {view === 'projects' && (
+          <>
+            {state.status === 'loading' && <div className="home-empty">Loading…</div>}
+            {state.status === 'error' && (
+              <div className="home-empty">Failed to load projects: {state.error.message}</div>
+            )}
+            {state.status === 'ready' && state.projects.length === 0 && (
+              <div className="home-empty">
+                {activeModelMissing ? (
+                  <>
+                    <p>No model installed.</p>
+                    <button
+                      type="button"
+                      className="btn btn-md btn-primary"
+                      onClick={() => setView('models')}
+                    >
+                      Open Models
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p>No projects yet.</p>
+                    <button
+                      type="button"
+                      className="btn btn-md btn-primary"
+                      onClick={() => setNewOpen(true)}
+                    >
+                      Create your first project
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {state.status === 'ready' && state.projects.length > 0 && (
+              <ProjectGrid
+                projects={visible}
+                itemCounts={itemCounts}
+                tagsByProject={tagsByProject}
+                disabledReason={projectsDisabledReason}
+              />
+            )}
+          </>
         )}
-        {state.status === 'ready' && state.projects.length === 0 && (
-          <div className="home-empty">
-            <p>No projects yet.</p>
-            <button
-              type="button"
-              className="btn btn-md btn-primary"
-              onClick={() => setNewOpen(true)}
-            >
-              Create your first project
-            </button>
-          </div>
-        )}
-        {state.status === 'ready' && state.projects.length > 0 && (
-          <ProjectGrid projects={visible} itemCounts={itemCounts} tagsByProject={tagsByProject} />
+        {view === 'models' && (
+          <ModelsView
+            activeModel={settings.activeModel}
+            onSetActiveModel={(name) => updateSetting('activeModel', name)}
+            onDownloadFinished={() => {
+              // First successful download — flip back to Projects so
+              // the user sees their grid the moment a model is ready.
+              if (forcedModelsView) setView('projects');
+            }}
+          />
         )}
       </main>
 
@@ -208,7 +325,7 @@ export function Home() {
         <div
           ref={wordmarkGlass.ref}
           className="wordmark is-liquid-glass"
-          aria-label="NetraRT — Projects"
+          aria-label="NetraRT — Home"
           style={wordmarkGlass.style}
         >
           <span className="wordmark-home" aria-hidden>
@@ -216,18 +333,40 @@ export function Home() {
             <span className="wordmark-glyph">NetraRT</span>
           </span>
           <span className="wordmark-divider" aria-hidden />
-          <span className="wordmark-tag">Projects</span>
-          {state.status === 'ready' && state.projects.length > 0 && (
-            <>
-              <span className="wordmark-divider" aria-hidden />
-              <span className="home-count">
-                {state.projects.length}{' '}
-                {state.projects.length === 1 ? 'project' : 'projects'}
-              </span>
-            </>
-          )}
+          <div className="home-view-switch" role="tablist" aria-label="Home views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === 'projects'}
+              className={`home-view-tab${view === 'projects' ? ' is-active' : ''}`}
+              onClick={() => setView('projects')}
+            >
+              <i className="ri-folder-2-line" aria-hidden /> Projects
+              {state.status === 'ready' && state.projects.length > 0 && (
+                <span className="home-view-tab-count">{state.projects.length}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === 'models'}
+              className={`home-view-tab${view === 'models' ? ' is-active' : ''}`}
+              onClick={() => setView('models')}
+            >
+              <i className="ri-cpu-line" aria-hidden /> Models
+              {activeModelMissing && (
+                <span
+                  className="home-view-tab-dot"
+                  aria-label="action required"
+                  title="No model installed"
+                />
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      <DownloadChip onClick={() => setView('models')} />
 
       <div className="hud hud-top-right">
         {newProjectGlass.filterSvg}
@@ -235,47 +374,70 @@ export function Home() {
           ref={newProjectGlass.ref}
           className="btn-cluster is-liquid-glass"
           role="group"
-          aria-label="Project actions"
+          aria-label="App actions"
           style={newProjectGlass.style}
         >
+          {view === 'projects' && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setNewOpen(true)}
+              disabled={activeModelMissing}
+              title={projectsDisabledReason}
+            >
+              <i className="ri-add-line" aria-hidden /> New project
+            </button>
+          )}
           <button
             type="button"
             className="btn-ghost"
-            onClick={() => setNewOpen(true)}
+            aria-label="Open settings"
+            title="Settings"
+            onClick={() => setSettingsOpen(true)}
           >
-            <i className="ri-add-line" aria-hidden /> New project
+            <i className="ri-settings-3-line" aria-hidden />
           </button>
         </div>
       </div>
 
-      <div className="hud hud-bottom-center">
-        {searchGlass.filterSvg}
-        <div
-          ref={searchGlass.ref}
-          className="btn-cluster is-liquid-glass"
-          role="group"
-          aria-label="Search projects"
-          style={searchGlass.style}
-        >
-          <span className="home-search-icon" aria-hidden>
-            <i className="ri-search-line" aria-hidden />
-          </span>
-          <input
-            type="search"
-            className="home-search"
-            placeholder="Search projects…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+      {view === 'projects' && (
+        <div className="hud hud-bottom-center">
+          {searchGlass.filterSvg}
+          <div
+            ref={searchGlass.ref}
+            className="btn-cluster is-liquid-glass"
+            role="group"
             aria-label="Search projects"
-          />
+            style={searchGlass.style}
+          >
+            <span className="home-search-icon" aria-hidden>
+              <i className="ri-search-line" aria-hidden />
+            </span>
+            <input
+              type="search"
+              className="home-search"
+              placeholder="Search projects…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search projects"
+            />
+          </div>
+
+          <SortMenu value={sort} onChange={setSort} />
+
+          <LabelFilterRow available={allLabels} selected={selectedLabels} onChange={setSelectedLabels} />
         </div>
-
-        <SortMenu value={sort} onChange={setSort} />
-
-        <LabelFilterRow available={allLabels} selected={selectedLabels} onChange={setSelectedLabels} />
-      </div>
+      )}
 
       {newOpen && <NewProjectModal onClose={() => setNewOpen(false)} />}
+
+      <SettingsModal
+        open={settingsOpen}
+        settings={settings}
+        onChange={updateSetting}
+        onReset={resetSettings}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 }
