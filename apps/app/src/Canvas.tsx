@@ -98,6 +98,10 @@ import {
   type LodCache,
   type MipWorkerClient,
 } from './features/lod';
+import { ProjectChip } from './features/projects';
+import { useProject } from './features/projects/api/useProject';
+import { DeletedBanner } from './features/projects/components/DeletedBanner';
+import { setCanvasTitle } from './lib/windows';
 import './App.css';
 
 type CanvasMedia = {
@@ -930,6 +934,14 @@ function BoxLabelPopover({
 
 export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const sam3Available = !sam3Error;
+
+  const projectState = useProject(projectId);
+
+  useEffect(() => {
+    if (projectState.status !== 'ready') return;
+    void setCanvasTitle(projectId, projectState.project.name);
+  }, [projectId, projectState]);
+
   // Saved-tags registry shared with HighlightInput so box-prompt labels
   // land in the same autocomplete + recent-tags history.
   const { remember: rememberSavedTag } = useSavedTags(projectId);
@@ -3230,6 +3242,8 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       }
     : null;
 
+  if (projectState.status === 'deleted') return <DeletedBanner />;
+
   return (
     <>
       <InfiniteCanvas
@@ -3976,6 +3990,8 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           </div>
         </div>
       )}
+
+      {projectState.status === 'ready' && <ProjectChip project={projectState.project} />}
 
       <FloatingSidebar
         items={media}
