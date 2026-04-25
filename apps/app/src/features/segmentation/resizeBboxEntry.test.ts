@@ -41,6 +41,7 @@ describe('resizeBboxEntry', () => {
     const after = makeReady('cat', [mask([0, 0, 20, 15])]);
 
     const entry = resizeBboxEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       maskIndex: 0,
@@ -53,7 +54,7 @@ describe('resizeBboxEntry', () => {
     entry.do();
     expect(replaceTag).toHaveBeenCalledWith('img1', 'cat', after);
     await vi.waitFor(() => expect(upsertMock).toHaveBeenCalledTimes(1));
-    expect(upsertMock).toHaveBeenCalledWith({
+    expect(upsertMock).toHaveBeenCalledWith('proj1', {
       image: 'img1',
       tag: 'cat',
       masks: after.response.masks,
@@ -70,6 +71,7 @@ describe('resizeBboxEntry', () => {
     const after = makeReady('cat', [mask([0, 0, 20, 15])]);
 
     const entry = resizeBboxEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       maskIndex: 0,
@@ -82,7 +84,7 @@ describe('resizeBboxEntry', () => {
     entry.undo();
     expect(replaceTag).toHaveBeenCalledWith('img1', 'cat', before);
     await vi.waitFor(() => expect(upsertMock).toHaveBeenCalledTimes(1));
-    expect(upsertMock).toHaveBeenCalledWith({
+    expect(upsertMock).toHaveBeenCalledWith('proj1', {
       image: 'img1',
       tag: 'cat',
       masks: before.response.masks,
@@ -99,6 +101,7 @@ describe('resizeBboxEntry', () => {
     const after = makeReady('cat', [mask([0, 0, 20, 15])]);
 
     const entry = resizeBboxEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       maskIndex: 0,
@@ -117,6 +120,7 @@ describe('resizeBboxEntry', () => {
     const before = makeReady('Cat', [mask([0, 0, 10, 10])]);
     const after = makeReady('Cat', [mask([0, 0, 20, 15])]);
     const entry = resizeBboxEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'Cat',
       maskIndex: 0,
