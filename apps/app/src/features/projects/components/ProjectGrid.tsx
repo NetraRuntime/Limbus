@@ -9,15 +9,21 @@ type Props = {
   projects: ProjectRecord[];
   itemCounts: Record<string, number>;
   tagsByProject: Record<string, TagRecord[]>;
+  /**
+   * When set, every project tile is visually disabled and clicking is a
+   * no-op. Used while no model is installed/active so the user can't
+   * stumble into a canvas window that has no model to load.
+   */
+  disabledReason?: string;
 };
 
-export function ProjectGrid({ projects, itemCounts, tagsByProject }: Props) {
+export function ProjectGrid({ projects, itemCounts, tagsByProject, disabledReason }: Props) {
   const [editing, setEditing] = useState<ProjectRecord | null>(null);
   const [deleting, setDeleting] = useState<ProjectRecord | null>(null);
 
   return (
     <>
-      <div className="home-list">
+      <div className={`home-list${disabledReason ? ' is-disabled' : ''}`}>
         <div className="home-list-header" role="row">
           <span aria-hidden />
           <span>Name</span>
@@ -25,7 +31,11 @@ export function ProjectGrid({ projects, itemCounts, tagsByProject }: Props) {
           <span>Last opened</span>
           <span aria-hidden />
         </div>
-        <div className="home-grid" role="list">
+        <div
+          className="home-grid"
+          role="list"
+          title={disabledReason}
+        >
           {projects.map((p) => (
             <ProjectCard
               key={p.id}

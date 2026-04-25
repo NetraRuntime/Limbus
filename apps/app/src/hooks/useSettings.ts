@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   zoomSensitivity: 4,
   panSpeed: 1,
   theme: 'system' as ThemePreference,
+  activeModel: null as string | null,
 } as const;
 
 const SettingsSchema = z.object({
@@ -29,6 +30,10 @@ const SettingsSchema = z.object({
     .max(SETTINGS_BOUNDS.panSpeed.max)
     .catch(DEFAULT_SETTINGS.panSpeed),
   theme: z.enum(THEME_OPTIONS).catch(DEFAULT_SETTINGS.theme),
+  // Filename of the active SAM3 model under {app_data_dir}/models/.
+  // Null until the user picks one in Settings → Models. The canvas refuses
+  // to open without an active, installed model — Unity-Hub style.
+  activeModel: z.string().nullable().catch(null),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
