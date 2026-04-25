@@ -26,6 +26,7 @@ export type DeleteMaskMeta = {
 };
 
 export type DeleteMaskEntryArgs = {
+  projectId: string;
   imageId: string;
   tag: string;
   /** Full snapshot of the ready entry for `tag` before deletion. */
@@ -38,6 +39,7 @@ export type DeleteMaskEntryArgs = {
 };
 
 const persistTag = async (
+  projectId: string,
   imageId: string,
   tag: string,
   target: ReadyMaskEntry | null,
@@ -45,7 +47,7 @@ const persistTag = async (
 ): Promise<void> => {
   try {
     if (target) {
-      await upsertSegmentation({
+      await upsertSegmentation(projectId, {
         image: imageId,
         tag: target.tag,
         masks: target.response.masks,
@@ -53,7 +55,7 @@ const persistTag = async (
         source_height: target.response.source_height,
       });
     } else {
-      await deleteSegmentationByImageTag(imageId, tag);
+      await deleteSegmentationByImageTag(projectId, imageId, tag);
     }
     onConn('ready');
   } catch (err) {
@@ -65,17 +67,17 @@ const persistTag = async (
 export function deleteMaskEntry(
   args: DeleteMaskEntryArgs,
 ): HistoryEntry<DeleteMaskMeta> {
-  const { imageId, tag, before, after, replaceTag, onConn } = args;
+  const { projectId, imageId, tag, before, after, replaceTag, onConn } = args;
   return {
     label: `delete mask ${tag}`,
     meta: { kind: 'delete-mask', imageId, tag },
     do: () => {
       replaceTag(imageId, tag, after);
-      void persistTag(imageId, tag, after, onConn);
+      void persistTag(projectId, imageId, tag, after, onConn);
     },
     undo: () => {
       replaceTag(imageId, tag, before);
-      void persistTag(imageId, tag, before, onConn);
+      void persistTag(projectId, imageId, tag, before, onConn);
     },
   };
 }

@@ -98,6 +98,15 @@ import {
   type LodCache,
   type MipWorkerClient,
 } from './features/lod';
+import {
+  ProjectChip,
+  DeletedBanner,
+  DeleteProjectModal,
+  useProject,
+  useProjectThumbnail,
+  updateProject,
+} from './features/projects';
+import { setCanvasTitle, closeCurrentCanvas, focusHome } from './lib/windows';
 import './App.css';
 
 type CanvasMedia = {
@@ -658,6 +667,7 @@ const getInitialView = (): View => {
 };
 
 type CanvasProps = {
+  projectId: string;
   /** When set, SAM3 failed to load. Encode/segment calls are skipped and a
    *  compact error chip is shown in the top-left HUD. */
   sam3Error?: string | null;
@@ -770,6 +780,7 @@ type BoxLabelPopoverProps = {
    *  so the popover doesn't dwarf a small selection. Falls back to a minimum
    *  via CSS (`min-width`) so an extreme zoom-out doesn't squash the input. */
   maxWidth: number;
+  projectId: string;
   onConfirm: (label: string) => void;
   onCancel: () => void;
 };
@@ -784,13 +795,14 @@ function BoxLabelPopover({
   screenX,
   screenY,
   maxWidth,
+  projectId,
   onConfirm,
   onCancel,
 }: BoxLabelPopoverProps) {
   const [value, setValue] = useState('');
   const [activeIdx, setActiveIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { search } = useSavedTags();
+  const { search } = useSavedTags(projectId);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -925,11 +937,19 @@ function BoxLabelPopover({
   );
 }
 
-export function Canvas({ sam3Error = null }: CanvasProps = {}) {
+export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const sam3Available = !sam3Error;
+
+  const projectState = useProject(projectId);
+
+  useEffect(() => {
+    if (projectState.status !== 'ready') return;
+    void setCanvasTitle(projectId, projectState.project.name);
+  }, [projectId, projectState]);
+
   // Saved-tags registry shared with HighlightInput so box-prompt labels
   // land in the same autocomplete + recent-tags history.
-  const { remember: rememberSavedTag } = useSavedTags();
+  const { remember: rememberSavedTag } = useSavedTags(projectId);
   // HUD liquid-glass filters. Each one measures its own element via
   // ResizeObserver; pill surfaces use radius 999 (auto-clamped to
   // height/2 in the hook), the wordmark uses the design-system md
@@ -943,6 +963,12 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [lodCache, setLodCache] = useState<LodCache | null>(null);
   const [lodWorker, setLodWorker] = useState<MipWorkerClient | null>(null);
+
+  const getLodCanvas = useCallback((): HTMLCanvasElement | null => {
+    const el = document.querySelector('canvas.lod-layer');
+    return el instanceof HTMLCanvasElement ? el : null;
+  }, []);
+  useProjectThumbnail(projectId, getLodCanvas);
 
   useEffect(() => {
     let cancelled = false;
@@ -977,6 +1003,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
   const [stackOrder, setStackOrder] = useState<string[]>(readStoredStackOrder);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
@@ -1292,21 +1319,21 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     let loaded = false;
     const load = () => {
       void Promise.all([
-        listImages().then(
+        listImages(projectId).then(
           (r) => ({ ok: true as const, records: r }),
           (err) => {
             console.warn('[pb] failed to load images:', err);
             return { ok: false as const, records: [] as ImageRecord[] };
           },
         ),
-        listVideos().then(
+        listVideos(projectId).then(
           (r) => ({ ok: true as const, records: r }),
           (err) => {
             console.warn('[pb] failed to load videos:', err);
             return { ok: false as const, records: [] as VideoRecord[] };
           },
         ),
-        listSegmentations().then(
+        listSegmentations(projectId).then(
           (r) => r,
           (err) => {
             console.warn('[pb] failed to load segmentations:', err);
@@ -1392,7 +1419,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     let cancelled = false;
     const runSweep = () => {
       const ONE_HOUR_MS = 60 * 60 * 1000;
-      void listTrashed({ olderThanMs: ONE_HOUR_MS })
+      void listTrashed(projectId, { olderThanMs: ONE_HOUR_MS })
         .then(({ images, videos }) => {
           if (cancelled) return;
           for (const img of images) {
@@ -1523,8 +1550,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           try {
             const record =
               p.draft.kind === 'video'
-                ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
-                : await createImage(p.file, p.meta, onProgress, ctrl.signal);
+                ? await createVideo(projectId, p.file, p.meta, onProgress, ctrl.signal)
+                : await createImage(projectId, p.file, p.meta, onProgress, ctrl.signal);
             onUploaded?.(p.draft.id, record);
             const next =
               p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
@@ -1641,7 +1668,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       delete next[id];
       return next;
     });
-    deleteAllSegmentationsForImage(id).catch((e) =>
+    deleteAllSegmentationsForImage(projectId, id).catch((e) =>
       console.warn('[sam3] clear-persist failed', id, e),
     );
     evictBake(id);
@@ -1718,6 +1745,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           : null;
 
       const entry = deleteMaskEntry({
+        projectId,
         imageId: target.imageId,
         tag: ready.tag,
         before,
@@ -1753,6 +1781,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       };
 
       const entry = deleteMaskEntry({
+        projectId,
         imageId,
         tag: ready.tag,
         before,
@@ -1800,11 +1829,11 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     // Other tags on the same image may still be loading — do NOT bump the
     // sequence or their responses would be dropped too.
     if (nothingLeft) {
-      deleteAllSegmentationsForImage(id).catch((e) =>
+      deleteAllSegmentationsForImage(projectId, id).catch((e) =>
         console.warn('[sam3] tag-remove persist failed', id, tag, e),
       );
     } else {
-      deleteSegmentationsForImage(id, remainingTags).catch((e) =>
+      deleteSegmentationsForImage(projectId, id, remainingTags).catch((e) =>
         console.warn('[sam3] tag-remove persist failed', id, tag, e),
       );
     }
@@ -1886,7 +1915,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             // Fire-and-forget: persist the mask to PB so it rehydrates after
             // reload. UI state is authoritative within a session; PB is
             // authoritative across sessions.
-            upsertSegmentation({
+            upsertSegmentation(projectId, {
               image: m.id,
               tag,
               masks: response.masks,
@@ -1997,7 +2026,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           // Persist the mask under the user's label so it rehydrates after
           // reload. The user-drawn box rectangle itself is still
           // session-local; only the resulting segmentation is durable.
-          upsertSegmentation({
+          upsertSegmentation(projectId, {
             image: imageId,
             tag,
             masks: response.masks,
@@ -2037,7 +2066,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       // chip strip, so the two prompt surfaces stay conceptually separate.
       // DO register the label in saved-tags so it surfaces in autocomplete
       // for later text prompts, matching HighlightInput's commitTag path.
-      rememberSavedTag(label);
+      void rememberSavedTag(label);
       dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
       setPendingBoxLabel(null);
     },
@@ -2515,7 +2544,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             descriptors,
             imageIdByDescriptorPath,
             upsert: (group) =>
-              upsertSegmentation({
+              upsertSegmentation(projectId, {
                 image: group.imageId,
                 tag: group.tag,
                 masks: group.masks,
@@ -3218,6 +3247,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       // reapplies an equivalent state but still triggers the upsert — mirrors
       // the deleteMaskEntry call site which does the same alreadyApplied dance.
       const entry = resizeBboxEntry({
+        projectId,
         imageId: s.imageId,
         tag: s.tag,
         maskIndex: s.maskIndex,
@@ -3244,6 +3274,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         height: activeMedia.height * view.scale,
       }
     : null;
+
+  if (projectState.status === 'deleted') return <DeletedBanner />;
 
   return (
     <>
@@ -3567,6 +3599,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           }}
           onDeleteWhenEmpty={deleteSelection}
           autoFocus={selectedIds.has(activeMedia.id)}
+          projectId={projectId}
         />
       )}
 
@@ -3686,6 +3719,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
               screenX={left}
               screenY={top + height + 8}
               maxWidth={width}
+              projectId={projectId}
               onConfirm={confirmPendingBoxLabel}
               onCancel={cancelPendingBoxLabel}
             />
@@ -3974,6 +4008,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           onTagsChange={setMultiHighlightInput}
           onEscape={clearSelection}
           onDeleteWhenEmpty={deleteSelection}
+          projectId={projectId}
         />
       )}
 
@@ -4039,11 +4074,22 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           aria-label="NetraRT"
           style={wordmarkGlass.style}
         >
-          <a href="/" className="wordmark-link">
+          <button
+            type="button"
+            className="wordmark-home"
+            aria-label="Back to Home"
+            title="Back to Home"
+            onClick={() => void focusHome()}
+          >
+            <i className="ri-home-2-line wordmark-home-icon" aria-hidden />
             <span className="wordmark-glyph">NetraRT</span>
-          </a>
-          <span className="wordmark-divider" aria-hidden />
-          <span className="wordmark-tag">canvas</span>
+          </button>
+          {projectState.status === 'ready' && (
+            <>
+              <span className="wordmark-divider" aria-hidden />
+              <ProjectChip project={projectState.project} />
+            </>
+          )}
           <span className="wordmark-divider" aria-hidden />
           <span className={`conn-dot conn-${conn}`} aria-label={`connection ${conn}`} />
           <span className="wordmark-tag">{conn}</span>
@@ -4149,7 +4195,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       </div>
 
       <div className="hud hud-top-right">
-        <SavedTagsPopover />
+        <SavedTagsPopover projectId={projectId} />
         {settingsPillGlass.filterSvg}
         <div
           ref={settingsPillGlass.ref}
@@ -4175,7 +4221,31 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
         onChange={updateSetting}
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
+        project={projectState.status === 'ready' ? projectState.project : undefined}
+        onRenameProject={
+          projectState.status === 'ready'
+            ? async (name) => {
+                await updateProject(projectState.project.id, { name });
+              }
+            : undefined
+        }
+        onDeleteProject={() => {
+          setSettingsOpen(false);
+          setDeleteProjectOpen(true);
+        }}
       />
+
+      {deleteProjectOpen && projectState.status === 'ready' && (
+        <DeleteProjectModal
+          project={projectState.project}
+          onClose={() => {
+            setDeleteProjectOpen(false);
+            // Cancel returns the user to where they came from — settings.
+            setSettingsOpen(true);
+          }}
+          onDeleted={() => void closeCurrentCanvas()}
+        />
+      )}
 
       <ImportPreviewModal
         state={preview.state}
