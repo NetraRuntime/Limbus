@@ -1,0 +1,5 @@
+# Format: <rust-triple> <sha256> <pocketbase-asset-name>
+aarch64-apple-darwin       811d6d28f8d4c21f1a42021b9ec1bf022dcd4fd0dd52b3d33b489e9b866c156f  pocketbase_0.26.6_darwin_arm64.zip
+x86_64-apple-darwin        27a63132efe1ef7c13bcb693e6395435a7e1e673952aa7aefdf08aa8ac1ffc6a  pocketbase_0.26.6_darwin_amd64.zip
+x86_64-pc-windows-msvc     16f5a8469431553576f8a17e25eeb060f02e7f7c95d2fd2f1d3dd5801931a33a  pocketbase_0.26.6_windows_amd64.zip
+x86_64-unknown-linux-gnu   f4d9ad15dbadae3905d8404abed5c772d5c8b1c9563741c91adefb9f14b8201e  pocketbase_0.26.6_linux_amd64.zip
