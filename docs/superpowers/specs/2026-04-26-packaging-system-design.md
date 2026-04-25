@@ -174,7 +174,7 @@ PB asset for each runner.
 
 **Fix:**
 
-- `pb/pocketbase.version` — pinned PB tag (e.g., `v0.26.8`). One source of truth.
+- `pb/pocketbase.version` — pinned PB tag (e.g., `v0.26.6`). One source of truth.
 - `pb/pocketbase.sha256` — committed SHA256 per supported triple.
 - `scripts/release/fetch-pocketbase.mjs` — reads both, downloads the matching
   asset from `github.com/pocketbase/pocketbase/releases/download/...`,
@@ -629,7 +629,7 @@ exceeds ~2 / month.
   created (likely `kolosal-ai`, but not committed).
 - **Apple Team ID + signing identity string** — values come from the Apple
   Developer account.
-- **PocketBase pin** — current version (`v0.26.8`) is the starting pin; bumps
+- **PocketBase pin** — current version (`v0.26.6`) is the starting pin; bumps
   are routine.
 
 ## 14. Open questions for the implementation plan

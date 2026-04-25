@@ -35,7 +35,7 @@ scripts, React 18 feature for the in-app updater UI.
   release-pr.yml                           # release-branch PR rehearsal (build only)
 
 pb/
-  pocketbase.version                       # pinned PB tag, e.g. "v0.26.8"
+  pocketbase.version                       # pinned PB tag, e.g. "v0.26.6"
   pocketbase.sha256                        # SHA256 per supported triple
 
 scripts/release/
@@ -124,7 +124,7 @@ verifiable on a developer machine.
 Create `pb/pocketbase.version`:
 
 ```
-v0.26.8
+v0.26.6
 ```
 
 (One line, no trailing newline isn't required but plausible — the script handles either.)
@@ -137,7 +137,7 @@ The PocketBase release naming scheme is
 ```bash
 mkdir -p /tmp/pb-checksums
 cd /tmp/pb-checksums
-PB_VER=0.26.8
+PB_VER=0.26.6
 for triple in darwin_amd64 darwin_arm64 linux_amd64 windows_amd64; do
   curl -sLfO "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VER}/pocketbase_${PB_VER}_${triple}.zip"
 done
@@ -148,10 +148,10 @@ Map filenames → Rust target triples and write to `pb/pocketbase.sha256`:
 
 ```
 # Format: <rust-triple> <sha256> <pocketbase-asset-name>
-aarch64-apple-darwin       <sha256-here>  pocketbase_0.26.8_darwin_arm64.zip
-x86_64-apple-darwin        <sha256-here>  pocketbase_0.26.8_darwin_amd64.zip
-x86_64-pc-windows-msvc     <sha256-here>  pocketbase_0.26.8_windows_amd64.zip
-x86_64-unknown-linux-gnu   <sha256-here>  pocketbase_0.26.8_linux_amd64.zip
+aarch64-apple-darwin       <sha256-here>  pocketbase_0.26.6_darwin_arm64.zip
+x86_64-apple-darwin        <sha256-here>  pocketbase_0.26.6_darwin_amd64.zip
+x86_64-pc-windows-msvc     <sha256-here>  pocketbase_0.26.6_windows_amd64.zip
+x86_64-unknown-linux-gnu   <sha256-here>  pocketbase_0.26.6_linux_amd64.zip
 ```
 
 - [ ] **Step 3: Write the fetch script**
@@ -719,7 +719,7 @@ pnpm tauri:build
 Expected output:
 ```
 [self-check] sam3 version: <some version>
-[self-check] pocketbase: PocketBase v0.26.8 ...
+[self-check] pocketbase: PocketBase v0.26.6 ...
 [self-check] OK
 ```
 Exit 0.
