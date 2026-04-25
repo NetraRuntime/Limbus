@@ -25,6 +25,7 @@ pb.autoCancellation(false);
 const PlacementRecordSchema = z.object({
   id: z.string(),
   collectionId: z.string(),
+  project: z.string(),
   file: z.string(),
   name: z.string(),
   x: z.number(),
@@ -52,6 +53,7 @@ const SegMaskSchema = z.object({
 const SegmentationRecordSchema = z.object({
   id: z.string(),
   collectionId: z.string(),
+  project: z.string(),
   image: z.string(),
   tag: z.string(),
   masks: z.array(SegMaskSchema),
@@ -85,50 +87,52 @@ const parseList = <T>(schema: z.ZodType<T>, raw: unknown): T[] => {
   return arr.data;
 };
 
-// PB stores an unset date as an empty string on pre-existing rows and as SQL
-// NULL after restoreX clears the field. The filter has to match both.
-const ACTIVE_FILTER = 'deleted_at = null || deleted_at = ""';
+// Compose project scope + soft-delete filter. Works against pre-existing rows
+// (deleted_at = "") and rows that restoreX cleared (deleted_at = null).
+const activeFilter = (projectId: string): string =>
+  `project="${projectId}" && (deleted_at = null || deleted_at = "")`;
 
-export const listImages = async (): Promise<ImageRecord[]> => {
+export const listImages = async (projectId: string): Promise<ImageRecord[]> => {
   const raw = await pb
     .collection('images')
-    .getFullList({ sort: 'created', filter: ACTIVE_FILTER });
+    .getFullList({ sort: 'created', filter: activeFilter(projectId) });
   return parseList(PlacementRecordSchema, raw);
 };
 
-export const listVideos = async (): Promise<VideoRecord[]> => {
+export const listVideos = async (projectId: string): Promise<VideoRecord[]> => {
   const raw = await pb
     .collection('videos')
-    .getFullList({ sort: 'created', filter: ACTIVE_FILTER });
+    .getFullList({ sort: 'created', filter: activeFilter(projectId) });
   return parseList(PlacementRecordSchema, raw);
 };
 
-export const listSegmentations = async (): Promise<SegmentationRecord[]> => {
-  const raw = await pb.collection('segmentations').getFullList({ sort: 'created' });
+export const listSegmentations = async (
+  projectId: string,
+): Promise<SegmentationRecord[]> => {
+  const raw = await pb
+    .collection('segmentations')
+    .getFullList({ sort: 'created', filter: `project="${projectId}"` });
   return parseList(SegmentationRecordSchema, raw);
 };
 
-export const upsertSegmentation = async (input: {
-  image: string;
-  tag: string;
-  masks: SegMask[];
-  source_width: number;
-  source_height: number;
-}): Promise<SegmentationRecord> => {
+export const upsertSegmentation = async (
+  projectId: string,
+  input: {
+    image: string;
+    tag: string;
+    masks: SegMask[];
+    source_width: number;
+    source_height: number;
+  },
+): Promise<SegmentationRecord> => {
   // Fetch this image's rows, find any existing tag match case-insensitively.
   // Row counts per image are small (one per tag), so getFullList is cheap.
   const raw = await pb
     .collection('segmentations')
-    .getFullList({ filter: `image="${input.image}"` });
+    .getFullList({ filter: `project="${projectId}" && image="${input.image}"` });
   const existing = parseList(SegmentationRecordSchema, raw);
   const match = findSegByTag(existing, input.tag);
-  const payload = {
-    image: input.image,
-    tag: input.tag,
-    masks: input.masks,
-    source_width: input.source_width,
-    source_height: input.source_height,
-  };
+  const payload = { ...input, project: projectId };
   const record = match
     ? await pb.collection('segmentations').update(match.id, payload)
     : await pb.collection('segmentations').create(payload);
@@ -136,30 +140,31 @@ export const upsertSegmentation = async (input: {
 };
 
 export const deleteSegmentationsForImage = async (
+  projectId: string,
   imageId: string,
   tagsToKeep: readonly string[],
 ): Promise<void> => {
   const raw = await pb
     .collection('segmentations')
-    .getFullList({ filter: `image="${imageId}"` });
+    .getFullList({ filter: `project="${projectId}" && image="${imageId}"` });
   const existing = parseList(SegmentationRecordSchema, raw);
   const ids = segIdsToPrune(existing, tagsToKeep);
-  await Promise.all(
-    ids.map((id) => pb.collection('segmentations').delete(id)),
-  );
+  await Promise.all(ids.map((id) => pb.collection('segmentations').delete(id)));
 };
 
 export const deleteAllSegmentationsForImage = (
+  projectId: string,
   imageId: string,
-): Promise<void> => deleteSegmentationsForImage(imageId, []);
+): Promise<void> => deleteSegmentationsForImage(projectId, imageId, []);
 
 export const deleteSegmentationByImageTag = async (
+  projectId: string,
   imageId: string,
   tag: string,
 ): Promise<void> => {
   const raw = await pb
     .collection('segmentations')
-    .getFullList({ filter: `image="${imageId}"` });
+    .getFullList({ filter: `project="${projectId}" && image="${imageId}"` });
   const existing = parseList(SegmentationRecordSchema, raw);
   const match = findSegByTag(existing, tag);
   if (!match) return;
@@ -184,11 +189,12 @@ export const updateVideoPosition = async (
 
 const buildMediaForm = (
   file: File,
-  meta: { x: number; y: number; width: number; height: number; name: string },
+  meta: { x: number; y: number; width: number; height: number; name: string; project: string },
 ): FormData => {
   const form = new FormData();
   form.append('file', file);
   form.append('name', meta.name);
+  form.append('project', meta.project);
   form.append('x', String(meta.x));
   form.append('y', String(meta.y));
   form.append('width', String(meta.width));
@@ -235,7 +241,7 @@ const buildUploadError = (status: number, statusText: string, body: string): Err
 const uploadWithProgress = (
   collection: string,
   file: File,
-  meta: { x: number; y: number; width: number; height: number; name: string },
+  meta: { x: number; y: number; width: number; height: number; name: string; project: string },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<unknown> =>
@@ -279,22 +285,36 @@ const uploadWithProgress = (
   });
 
 export const createImage = async (
+  projectId: string,
   file: File,
   meta: { x: number; y: number; width: number; height: number; name: string },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<ImageRecord> => {
-  const raw = await uploadWithProgress('images', file, meta, onProgress, signal);
+  const raw = await uploadWithProgress(
+    'images',
+    file,
+    { ...meta, project: projectId },
+    onProgress,
+    signal,
+  );
   return PlacementRecordSchema.parse(raw);
 };
 
 export const createVideo = async (
+  projectId: string,
   file: File,
   meta: { x: number; y: number; width: number; height: number; name: string },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<VideoRecord> => {
-  const raw = await uploadWithProgress('videos', file, meta, onProgress, signal);
+  const raw = await uploadWithProgress(
+    'videos',
+    file,
+    { ...meta, project: projectId },
+    onProgress,
+    signal,
+  );
   return PlacementRecordSchema.parse(raw);
 };
 
@@ -328,11 +348,12 @@ export const hardDeleteImage = (id: string): Promise<boolean> =>
 export const hardDeleteVideo = (id: string): Promise<boolean> =>
   pb.collection('videos').delete(id);
 
-export const listTrashed = async (opts: {
-  olderThanMs: number;
-}): Promise<{ images: ImageRecord[]; videos: VideoRecord[] }> => {
+export const listTrashed = async (
+  projectId: string,
+  opts: { olderThanMs: number },
+): Promise<{ images: ImageRecord[]; videos: VideoRecord[] }> => {
   const cutoff = new Date(Date.now() - opts.olderThanMs).toISOString();
-  const filter = `deleted_at != null && deleted_at != "" && deleted_at < "${cutoff}"`;
+  const filter = `project="${projectId}" && deleted_at != null && deleted_at != "" && deleted_at < "${cutoff}"`;
   const [imgs, vids] = await Promise.all([
     pb.collection('images').getFullList({ filter }),
     pb.collection('videos').getFullList({ filter }),
