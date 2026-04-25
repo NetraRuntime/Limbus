@@ -14,7 +14,7 @@ export type TagRecord = z.infer<typeof TagRecordSchema>;
 
 export const listTags = async (projectId: string): Promise<TagRecord[]> => {
   const raw = await pb.collection('tags').getFullList({
-    filter: `project="${projectId}"`,
+    filter: pb.filter('project={:project}', { project: projectId }),
     sort: '-updated',
   });
   if (!Array.isArray(raw)) return [];
