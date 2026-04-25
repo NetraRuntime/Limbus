@@ -15,8 +15,8 @@ type Props = {
 
 export function EditProjectModal({ project, onClose }: Props) {
   const [name, setName] = useState(project.name);
-  const [color, setColor] = useState<ProjectColor>(project.color as ProjectColor);
-  const [icon, setIcon] = useState<ProjectIcon>(project.icon as ProjectIcon);
+  const [color, setColor] = useState<ProjectColor>(project.color);
+  const [icon, setIcon] = useState<ProjectIcon>(project.icon);
   const [labels, setLabels] = useState<string[]>(project.labels);
   const [labelDraft, setLabelDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
