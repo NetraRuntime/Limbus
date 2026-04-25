@@ -98,10 +98,12 @@ import {
   type LodCache,
   type MipWorkerClient,
 } from './features/lod';
-import { ProjectChip } from './features/projects';
-import { useProject } from './features/projects/api/useProject';
-import { DeletedBanner } from './features/projects/components/DeletedBanner';
-import { useProjectThumbnail } from './features/projects/hooks/useProjectThumbnail';
+import {
+  ProjectChip,
+  DeletedBanner,
+  useProject,
+  useProjectThumbnail,
+} from './features/projects';
 import { setCanvasTitle } from './lib/windows';
 import './App.css';
 
