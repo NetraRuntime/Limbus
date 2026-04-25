@@ -658,6 +658,7 @@ const getInitialView = (): View => {
 };
 
 type CanvasProps = {
+  projectId: string;
   /** When set, SAM3 failed to load. Encode/segment calls are skipped and a
    *  compact error chip is shown in the top-left HUD. */
   sam3Error?: string | null;
@@ -925,7 +926,7 @@ function BoxLabelPopover({
   );
 }
 
-export function Canvas({ sam3Error = null }: CanvasProps = {}) {
+export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const sam3Available = !sam3Error;
   // Saved-tags registry shared with HighlightInput so box-prompt labels
   // land in the same autocomplete + recent-tags history.
@@ -1292,21 +1293,21 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     let loaded = false;
     const load = () => {
       void Promise.all([
-        listImages().then(
+        listImages(projectId).then(
           (r) => ({ ok: true as const, records: r }),
           (err) => {
             console.warn('[pb] failed to load images:', err);
             return { ok: false as const, records: [] as ImageRecord[] };
           },
         ),
-        listVideos().then(
+        listVideos(projectId).then(
           (r) => ({ ok: true as const, records: r }),
           (err) => {
             console.warn('[pb] failed to load videos:', err);
             return { ok: false as const, records: [] as VideoRecord[] };
           },
         ),
-        listSegmentations().then(
+        listSegmentations(projectId).then(
           (r) => r,
           (err) => {
             console.warn('[pb] failed to load segmentations:', err);
@@ -1392,7 +1393,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     let cancelled = false;
     const runSweep = () => {
       const ONE_HOUR_MS = 60 * 60 * 1000;
-      void listTrashed({ olderThanMs: ONE_HOUR_MS })
+      void listTrashed(projectId, { olderThanMs: ONE_HOUR_MS })
         .then(({ images, videos }) => {
           if (cancelled) return;
           for (const img of images) {
@@ -1523,8 +1524,8 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           try {
             const record =
               p.draft.kind === 'video'
-                ? await createVideo(p.file, p.meta, onProgress, ctrl.signal)
-                : await createImage(p.file, p.meta, onProgress, ctrl.signal);
+                ? await createVideo(projectId, p.file, p.meta, onProgress, ctrl.signal)
+                : await createImage(projectId, p.file, p.meta, onProgress, ctrl.signal);
             onUploaded?.(p.draft.id, record);
             const next =
               p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
@@ -1641,7 +1642,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       delete next[id];
       return next;
     });
-    deleteAllSegmentationsForImage(id).catch((e) =>
+    deleteAllSegmentationsForImage(projectId, id).catch((e) =>
       console.warn('[sam3] clear-persist failed', id, e),
     );
     evictBake(id);
@@ -1718,6 +1719,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           : null;
 
       const entry = deleteMaskEntry({
+        projectId,
         imageId: target.imageId,
         tag: ready.tag,
         before,
@@ -1753,6 +1755,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       };
 
       const entry = deleteMaskEntry({
+        projectId,
         imageId,
         tag: ready.tag,
         before,
@@ -1800,11 +1803,11 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
     // Other tags on the same image may still be loading — do NOT bump the
     // sequence or their responses would be dropped too.
     if (nothingLeft) {
-      deleteAllSegmentationsForImage(id).catch((e) =>
+      deleteAllSegmentationsForImage(projectId, id).catch((e) =>
         console.warn('[sam3] tag-remove persist failed', id, tag, e),
       );
     } else {
-      deleteSegmentationsForImage(id, remainingTags).catch((e) =>
+      deleteSegmentationsForImage(projectId, id, remainingTags).catch((e) =>
         console.warn('[sam3] tag-remove persist failed', id, tag, e),
       );
     }
@@ -1886,7 +1889,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             // Fire-and-forget: persist the mask to PB so it rehydrates after
             // reload. UI state is authoritative within a session; PB is
             // authoritative across sessions.
-            upsertSegmentation({
+            upsertSegmentation(projectId, {
               image: m.id,
               tag,
               masks: response.masks,
@@ -1997,7 +2000,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
           // Persist the mask under the user's label so it rehydrates after
           // reload. The user-drawn box rectangle itself is still
           // session-local; only the resulting segmentation is durable.
-          upsertSegmentation({
+          upsertSegmentation(projectId, {
             image: imageId,
             tag,
             masks: response.masks,
@@ -2494,7 +2497,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
             descriptors,
             imageIdByDescriptorPath,
             upsert: (group) =>
-              upsertSegmentation({
+              upsertSegmentation(projectId, {
                 image: group.imageId,
                 tag: group.tag,
                 masks: group.masks,
@@ -3197,6 +3200,7 @@ export function Canvas({ sam3Error = null }: CanvasProps = {}) {
       // reapplies an equivalent state but still triggers the upsert — mirrors
       // the deleteMaskEntry call site which does the same alreadyApplied dance.
       const entry = resizeBboxEntry({
+        projectId,
         imageId: s.imageId,
         tag: s.tag,
         maskIndex: s.maskIndex,

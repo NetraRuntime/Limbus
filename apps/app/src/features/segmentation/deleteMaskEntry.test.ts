@@ -41,6 +41,7 @@ describe('deleteMaskEntry', () => {
     const after = makeReady('cat', [mask('a')]);
 
     const entry = deleteMaskEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       before,
@@ -52,7 +53,7 @@ describe('deleteMaskEntry', () => {
     entry.do();
     expect(replaceTag).toHaveBeenCalledWith('img1', 'cat', after);
     await vi.waitFor(() => expect(upsertMock).toHaveBeenCalledTimes(1));
-    expect(upsertMock).toHaveBeenCalledWith({
+    expect(upsertMock).toHaveBeenCalledWith('proj1', {
       image: 'img1',
       tag: 'cat',
       masks: after.response.masks,
@@ -69,6 +70,7 @@ describe('deleteMaskEntry', () => {
     const before = makeReady('cat', [mask('a')]);
 
     const entry = deleteMaskEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       before,
@@ -80,7 +82,7 @@ describe('deleteMaskEntry', () => {
     entry.do();
     expect(replaceTag).toHaveBeenCalledWith('img1', 'cat', null);
     await vi.waitFor(() =>
-      expect(deleteTagMock).toHaveBeenCalledWith('img1', 'cat'),
+      expect(deleteTagMock).toHaveBeenCalledWith('proj1', 'img1', 'cat'),
     );
     expect(upsertMock).not.toHaveBeenCalled();
   });
@@ -91,6 +93,7 @@ describe('deleteMaskEntry', () => {
     const before = makeReady('cat', [mask('a'), mask('b')]);
 
     const entry = deleteMaskEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       before,
@@ -102,7 +105,7 @@ describe('deleteMaskEntry', () => {
     entry.undo();
     expect(replaceTag).toHaveBeenCalledWith('img1', 'cat', before);
     await vi.waitFor(() => expect(upsertMock).toHaveBeenCalledTimes(1));
-    expect(upsertMock).toHaveBeenCalledWith({
+    expect(upsertMock).toHaveBeenCalledWith('proj1', {
       image: 'img1',
       tag: 'cat',
       masks: before.response.masks,
@@ -119,6 +122,7 @@ describe('deleteMaskEntry', () => {
     const after = makeReady('cat', [mask('a')]);
 
     const entry = deleteMaskEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'cat',
       before,
@@ -136,6 +140,7 @@ describe('deleteMaskEntry', () => {
 
   it('carries meta identifying the deletion target', () => {
     const entry = deleteMaskEntry({
+      projectId: 'proj1',
       imageId: 'img1',
       tag: 'Cat',
       before: makeReady('Cat', [mask('a')]),
