@@ -101,10 +101,12 @@ import {
 import {
   ProjectChip,
   DeletedBanner,
+  DeleteProjectModal,
   useProject,
   useProjectThumbnail,
+  updateProject,
 } from './features/projects';
-import { setCanvasTitle } from './lib/windows';
+import { setCanvasTitle, closeCurrentCanvas, focusHome } from './lib/windows';
 import './App.css';
 
 type CanvasMedia = {
@@ -1001,6 +1003,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const [stackOrder, setStackOrder] = useState<string[]>(readStoredStackOrder);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
@@ -4000,8 +4003,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         </div>
       )}
 
-      {projectState.status === 'ready' && <ProjectChip project={projectState.project} />}
-
       <FloatingSidebar
         items={media}
         activeId={activeId}
@@ -4052,11 +4053,22 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           aria-label="NetraRT"
           style={wordmarkGlass.style}
         >
-          <a href="/" className="wordmark-link">
+          <button
+            type="button"
+            className="wordmark-home"
+            aria-label="Back to Home"
+            title="Back to Home"
+            onClick={() => void focusHome()}
+          >
+            <i className="ri-home-2-line wordmark-home-icon" aria-hidden />
             <span className="wordmark-glyph">NetraRT</span>
-          </a>
-          <span className="wordmark-divider" aria-hidden />
-          <span className="wordmark-tag">canvas</span>
+          </button>
+          {projectState.status === 'ready' && (
+            <>
+              <span className="wordmark-divider" aria-hidden />
+              <ProjectChip project={projectState.project} />
+            </>
+          )}
           <span className="wordmark-divider" aria-hidden />
           <span className={`conn-dot conn-${conn}`} aria-label={`connection ${conn}`} />
           <span className="wordmark-tag">{conn}</span>
@@ -4188,7 +4200,31 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onChange={updateSetting}
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
+        project={projectState.status === 'ready' ? projectState.project : undefined}
+        onRenameProject={
+          projectState.status === 'ready'
+            ? async (name) => {
+                await updateProject(projectState.project.id, { name });
+              }
+            : undefined
+        }
+        onDeleteProject={() => {
+          setSettingsOpen(false);
+          setDeleteProjectOpen(true);
+        }}
       />
+
+      {deleteProjectOpen && projectState.status === 'ready' && (
+        <DeleteProjectModal
+          project={projectState.project}
+          onClose={() => {
+            setDeleteProjectOpen(false);
+            // Cancel returns the user to where they came from — settings.
+            setSettingsOpen(true);
+          }}
+          onDeleted={() => void closeCurrentCanvas()}
+        />
+      )}
 
       <ImportPreviewModal
         state={preview.state}

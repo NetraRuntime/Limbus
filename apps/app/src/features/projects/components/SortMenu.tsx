@@ -7,8 +7,8 @@ type Props = {
 
 export function SortMenu({ value, onChange }: Props) {
   return (
-    <label>
-      <span style={{ fontSize: 12, marginRight: 4 }}>Sort by</span>
+    <label className="home-sort">
+      <span>Sort by</span>
       <select value={value} onChange={(e) => onChange(e.target.value as SortKey)}>
         <option value="recent">Recently opened</option>
         <option value="name">Name</option>

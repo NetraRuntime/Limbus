@@ -14,27 +14,24 @@ export function LabelFilterRow({ available, selected, onChange }: Props) {
     );
   };
   return (
-    <div style={{ display: 'flex', gap: 4, padding: '8px 24px', flexWrap: 'wrap' }}>
+    <div className="label-filter-row">
       {available.map((l) => (
         <button
           key={l}
           type="button"
+          className={`label-chip${selected.includes(l) ? ' is-active' : ''}`}
           onClick={() => toggle(l)}
           aria-pressed={selected.includes(l)}
-          style={{
-            padding: '4px 8px',
-            borderRadius: 12,
-            border: '1px solid #ddd',
-            background: selected.includes(l) ? '#111' : 'white',
-            color: selected.includes(l) ? 'white' : '#111',
-            cursor: 'pointer',
-          }}
         >
           #{l}
         </button>
       ))}
       {selected.length > 0 && (
-        <button type="button" onClick={() => onChange([])}>
+        <button
+          type="button"
+          className="label-chip label-chip-clear"
+          onClick={() => onChange([])}
+        >
           Clear
         </button>
       )}

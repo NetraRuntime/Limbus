@@ -62,6 +62,7 @@
   font: 700 16px/1 var(--font-display);
   letter-spacing: -0.6px;
   color: var(--fg);
+  transition: color 120ms ease;
 }
 
 .wordmark-link {
@@ -72,6 +73,29 @@
 }
 
 .wordmark-link:hover .wordmark-glyph {
+  color: var(--accent);
+}
+
+.wordmark-home {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.wordmark-home-icon {
+  font-size: 16px;
+  color: var(--fg-muted);
+  transition: color 120ms ease;
+}
+
+.wordmark-home:hover .wordmark-glyph,
+.wordmark-home:hover .wordmark-home-icon {
   color: var(--accent);
 }
 
@@ -1928,6 +1952,7 @@ body[data-canvas-tool="box"] .media-label {
 
 
 
+.modal-backdrop,
 .settings-backdrop {
   position: fixed;
   inset: 0;
@@ -1935,18 +1960,19 @@ body[data-canvas-tool="box"] .media-label {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--fg) 28%, transparent);
+  background: transparent;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   pointer-events: auto;
-  animation: settings-fade-in 120ms ease-out;
+  animation: modal-fade-in 120ms ease-out;
 }
 
-@keyframes settings-fade-in {
+@keyframes modal-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
+.modal-card,
 .settings-card {
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
@@ -1958,14 +1984,19 @@ body[data-canvas-tool="box"] .media-label {
   box-shadow: var(--shadow-card-lg, var(--shadow-card-md));
   overflow: hidden;
   outline: none;
-  animation: settings-rise 160ms ease-out;
+  animation: modal-rise 160ms ease-out;
 }
 
-@keyframes settings-rise {
+.modal-card-wide {
+  width: min(520px, calc(100vw - 32px));
+}
+
+@keyframes modal-rise {
   from { transform: translateY(8px) scale(0.98); opacity: 0; }
   to   { transform: translateY(0) scale(1); opacity: 1; }
 }
 
+.modal-header,
 .settings-header {
   display: flex;
   align-items: center;
@@ -1974,6 +2005,7 @@ body[data-canvas-tool="box"] .media-label {
   border-bottom: 1px solid var(--border-muted);
 }
 
+.modal-title,
 .settings-title {
   margin: 0;
   font: 600 14px/1.2 var(--font-display, var(--font-mono));
@@ -1981,6 +2013,11 @@ body[data-canvas-tool="box"] .media-label {
   color: var(--fg);
 }
 
+.modal-title.is-danger {
+  color: var(--color-danger-500);
+}
+
+.modal-close,
 .settings-close {
   appearance: none;
   border: 0;
@@ -1997,6 +2034,7 @@ body[data-canvas-tool="box"] .media-label {
   transition: background 120ms ease, color 120ms ease;
 }
 
+.modal-close:hover,
 .settings-close:hover {
   background: var(--color-grey-500);
   color: var(--fg);
@@ -2159,6 +2197,103 @@ body[data-canvas-tool="box"] .media-label {
 
 .settings-footer .btn-primary:hover {
   background: color-mix(in srgb, var(--accent) 88%, black);
+}
+
+/* ---------- Settings: Project section ---------- */
+
+.settings-project-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  font: 500 14px/1 var(--font-display, system-ui);
+  color: var(--fg);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.settings-project-input::placeholder {
+  color: var(--fg-subtle);
+}
+
+.settings-project-input:hover:not(:focus):not(:disabled) {
+  border-color: var(--border);
+}
+
+.settings-project-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--project-accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--project-accent) 18%, transparent);
+}
+
+.settings-project-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settings-project-error {
+  font: 400 12px/1.4 var(--font-display, system-ui);
+  color: var(--color-danger-500);
+  margin: 0;
+}
+
+.settings-project-name {
+  font: 500 14px/1.2 var(--font-display, system-ui);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.settings-project-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.settings-project-btn {
+  height: 32px;
+  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  font: 500 12px/1 var(--font-display, system-ui);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  color: var(--fg);
+}
+
+.settings-project-btn.is-danger {
+  color: var(--color-danger-500);
+  border-color: color-mix(in srgb, var(--color-danger-500) 30%, var(--border-muted));
+}
+
+.settings-project-btn.is-danger:hover {
+  background: var(--color-danger-100);
+}
+
+/* ---------- Settings: Danger zone ---------- */
+
+.settings-label.is-danger {
+  color: var(--color-danger-500);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.settings-danger {
+  gap: var(--space-2);
+}
+
+.settings-danger-divider {
+  border: 0;
+  border-top: 1px dashed
+    color-mix(in srgb, var(--color-danger-500) 35%, var(--border-muted));
+  margin: var(--space-2) 0;
+}
+
+.settings-danger-btn {
+  align-self: flex-start;
 }
 
 
