@@ -771,6 +771,7 @@ type BoxLabelPopoverProps = {
    *  so the popover doesn't dwarf a small selection. Falls back to a minimum
    *  via CSS (`min-width`) so an extreme zoom-out doesn't squash the input. */
   maxWidth: number;
+  projectId: string;
   onConfirm: (label: string) => void;
   onCancel: () => void;
 };
@@ -785,13 +786,14 @@ function BoxLabelPopover({
   screenX,
   screenY,
   maxWidth,
+  projectId,
   onConfirm,
   onCancel,
 }: BoxLabelPopoverProps) {
   const [value, setValue] = useState('');
   const [activeIdx, setActiveIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { search } = useSavedTags();
+  const { search } = useSavedTags(projectId);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -930,7 +932,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const sam3Available = !sam3Error;
   // Saved-tags registry shared with HighlightInput so box-prompt labels
   // land in the same autocomplete + recent-tags history.
-  const { remember: rememberSavedTag } = useSavedTags();
+  const { remember: rememberSavedTag } = useSavedTags(projectId);
   // HUD liquid-glass filters. Each one measures its own element via
   // ResizeObserver; pill surfaces use radius 999 (auto-clamped to
   // height/2 in the hook), the wordmark uses the design-system md
@@ -2040,7 +2042,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       // chip strip, so the two prompt surfaces stay conceptually separate.
       // DO register the label in saved-tags so it surfaces in autocomplete
       // for later text prompts, matching HighlightInput's commitTag path.
-      rememberSavedTag(label);
+      void rememberSavedTag(label);
       dispatchBoxPrompt(p.imageId, p.boxId, label, p.relBox, p.imageW, p.imageH);
       setPendingBoxLabel(null);
     },
@@ -3550,6 +3552,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           }}
           onDeleteWhenEmpty={deleteSelection}
           autoFocus={selectedIds.has(activeMedia.id)}
+          projectId={projectId}
         />
       )}
 
@@ -3669,6 +3672,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
               screenX={left}
               screenY={top + height + 8}
               maxWidth={width}
+              projectId={projectId}
               onConfirm={confirmPendingBoxLabel}
               onCancel={cancelPendingBoxLabel}
             />
@@ -3957,6 +3961,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           onTagsChange={setMultiHighlightInput}
           onEscape={clearSelection}
           onDeleteWhenEmpty={deleteSelection}
+          projectId={projectId}
         />
       )}
 
@@ -4132,7 +4137,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       </div>
 
       <div className="hud hud-top-right">
-        <SavedTagsPopover />
+        <SavedTagsPopover projectId={projectId} />
         {settingsPillGlass.filterSvg}
         <div
           ref={settingsPillGlass.ref}
