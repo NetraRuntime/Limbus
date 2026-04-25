@@ -1,8 +1,9 @@
-/* Multi-project surfaces — Home, project cards, chip, modals.
-   Design language mirrors apps/app/src/App.css patterns
-   (.settings-card, .context-menu, .floating-sidebar) and consumes
-   the @netrart/design-system tokens. Dark-mode aware via the same
-   [data-theme="dark"] selector the canvas already uses. */
+/* Home (project picker) and project surfaces. The visual language is
+   the canvas HUD: floating pills (.wordmark / .btn-cluster /
+   .status-pill / .btn-ghost), .modal-* shells, --shadow-card-sm,
+   --border-muted. This file owns only what's home-specific —
+   layout, project palette, project card, label chip pill, modal
+   form scaffolding, deleted banner. */
 
 /* ---------- Project accent palette ---------- */
 
@@ -20,88 +21,68 @@
 [data-theme="dark"] .project-color-rose    { --project-accent-soft: var(--color-danger-900); }
 [data-theme="dark"] .project-color-violet  { --project-accent-soft: #2A1A4D; }
 
-/* ---------- Home shell ---------- */
+/* ---------- Home shell — fills the viewport like .ic-root ---------- */
 
-.home {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  background: var(--bg-section);
+.home-root {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  isolation: isolate;
 }
 
-.home-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-6);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-muted);
-}
-
-.home-title {
-  margin-right: auto;
-  font: 600 16px/1.2 var(--font-display);
-  letter-spacing: -0.4px;
-  color: var(--fg);
-}
-
-.home-search {
-  width: 280px;
-  height: 36px;
-  padding: 0 var(--space-3);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font: 400 14px/1 var(--font-sans);
-  color: var(--fg);
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-.home-search::placeholder {
-  color: var(--fg-subtle);
-}
-.home-search:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
-}
-
-.home-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font: 400 13px/1 var(--font-sans);
-  color: var(--fg-muted);
-}
-.home-sort select {
-  appearance: none;
-  -webkit-appearance: none;
-  height: 36px;
-  padding: 0 28px 0 var(--space-3);
-  background:
-    var(--bg)
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%239b9b9b' stroke-width='1.5' d='M1 1l4 4 4-4'/></svg>")
-    no-repeat right 10px center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font: 400 14px/1 var(--font-sans);
-  color: var(--fg);
-  cursor: pointer;
-}
-.home-sort select:hover {
-  border-color: var(--fg-subtle);
-}
-
-.home-main {
-  flex: 1;
+.home-content {
+  /* Side padding matches the HUD's --space-5 inset so the project
+     list edges align with the wordmark and "+ New project" pills.
+     Top padding clears the wordmark; bottom clears the search HUD. */
+  padding: 80px var(--space-5) 96px;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
+  gap: var(--space-5);
+}
+
+.home-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  /* Don't clip with overflow:hidden — the per-row .project-menu
+     dropdown needs to escape the list bounds. Corners are handled
+     by giving the header and last row their own border-radius. */
+}
+
+.home-list-header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 110px 130px 32px;
+  align-items: center;
+  column-gap: var(--space-3);
+  padding: 10px var(--space-4);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-muted);
+  border-top-left-radius: calc(var(--radius-md) - 1px);
+  border-top-right-radius: calc(var(--radius-md) - 1px);
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+.home-list-header > span:nth-child(1) { /* icon col */ }
+.home-list-header > span:nth-child(2) { /* name */ }
+.home-list-header > span:nth-child(3) { /* items */ text-align: left; }
+.home-list-header > span:nth-child(4) { /* opened */ text-align: left; }
+.home-list-header > span:nth-child(5) { /* menu */ }
+
+.home-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  padding: 0;
 }
 
 .home-empty {
@@ -119,185 +100,248 @@
   font: 400 14px/1.5 var(--font-sans);
 }
 
-.home-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-4);
-  padding: var(--space-6);
+/* Wordmark count tag — slots into the same wordmark pill the canvas uses. */
+.home-count {
+  font: 400 12px/16px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg-muted);
+  white-space: nowrap;
 }
 
-/* ---------- Buttons (extend the design-system .btn-* family) ---------- */
+/* ---------- Search input pill — sits inside a .btn-cluster so the
+   shell matches the canvas search/zoom clusters. ---------- */
 
-.home-btn {
+.home-search-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  font: 500 14px/1 var(--font-sans);
-  letter-spacing: 0.1px;
-  cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
-}
-.home-btn-primary {
-  background: var(--color-text);
-  color: var(--color-neutral);
-  border-color: var(--color-text);
-}
-.home-btn-primary:hover {
-  background: var(--color-text-800);
-  border-color: var(--color-text-800);
-}
-.home-btn-outline {
-  background: var(--bg);
-  color: var(--fg);
-  border-color: var(--border);
-}
-.home-btn-outline:hover {
-  border-color: var(--fg-subtle);
-}
-.home-btn-danger {
-  background: var(--color-danger-500);
-  color: #fff;
-  border-color: var(--color-danger-500);
-}
-.home-btn-danger:hover {
-  background: var(--color-danger-600);
-  border-color: var(--color-danger-600);
-}
-.home-btn-danger:disabled {
-  background: var(--color-grey-700);
+  width: 24px;
+  height: 24px;
   color: var(--fg-subtle);
-  border-color: var(--border);
-  cursor: not-allowed;
+  font-size: 14px;
+  flex-shrink: 0;
+  pointer-events: none;
 }
-.home-btn-ghost {
+
+.home-search {
+  width: 220px;
+  height: 24px;
+  padding: 0 var(--space-2) 0 0;
   background: transparent;
+  border: 0;
+  font: 400 12px/1 var(--font-mono);
+  letter-spacing: -0.4px;
   color: var(--fg);
-  border-color: transparent;
-  height: 32px;
-  padding: 0 10px;
+  outline: none;
 }
-.home-btn-ghost:hover {
-  background: var(--color-grey-500);
+.home-search::placeholder {
+  color: var(--fg-subtle);
 }
-.home-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.home-search::-webkit-search-cancel-button {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--fg-subtle);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 3l6 6M9 3l-6 6' stroke='black' stroke-width='1.5' stroke-linecap='round'/></svg>") no-repeat center;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 3l6 6M9 3l-6 6' stroke='black' stroke-width='1.5' stroke-linecap='round'/></svg>") no-repeat center;
+  cursor: pointer;
 }
 
-/* ---------- Label filter row ---------- */
+/* ---------- Sort menu — a btn-cluster of ghost buttons ----------
+   The .btn-cluster + .btn-ghost classes from App.css already cover
+   everything except the active state, which we add here. */
 
-.label-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: var(--space-3) var(--space-6);
+.btn-ghost.is-active {
+  background: var(--bg-subtle);
+  color: var(--fg);
+}
+
+/* ---------- Label filter pill ---------- */
+
+.home-labels {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
   background: var(--bg);
-  border-bottom: 1px solid var(--border-muted);
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  box-shadow: var(--shadow-card-sm);
+  pointer-events: auto;
+  flex-wrap: wrap;
+  max-width: min(60vw, 520px);
+}
+/* Mirrors the .btn-cluster.is-liquid-glass rule in App.css so the
+   labels pill picks up the same translucent tint as the wordmark and
+   sort/search clusters on Chromium. WKWebView falls back to the
+   useAutoLiquidGlassFilter blur+saturate fallback. */
+.home-labels.is-liquid-glass {
+  background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-neutral) 60%, transparent);
+}
+.home-labels-prefix {
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: -0.2px;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  padding: 0 6px;
 }
 .label-chip {
   appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 26px;
+  height: 24px;
   padding: 0 10px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-muted);
+  background: transparent;
+  border: 0;
   border-radius: 999px;
-  font: 400 12px/1 var(--font-sans);
+  font: 400 11px/1 var(--font-mono);
+  letter-spacing: -0.2px;
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  transition: background 120ms ease, color 120ms ease;
 }
 .label-chip:hover {
-  border-color: var(--fg-subtle);
+  background: var(--bg-subtle);
   color: var(--fg);
 }
 .label-chip.is-active {
-  background: var(--color-text);
-  border-color: var(--color-text);
-  color: var(--color-neutral);
+  background: var(--bg-subtle);
+  color: var(--fg);
 }
 .label-chip-clear {
   color: var(--color-danger-500);
 }
 .label-chip-clear:hover {
   background: var(--color-danger-100);
-  border-color: var(--color-danger-200);
   color: var(--color-danger-600);
 }
 
-/* ---------- Project card ---------- */
+/* ---------- Project row — mirrors .settings-row from App.css ---------- */
 
 .project-card {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 110px 130px 32px;
+  align-items: center;
+  column-gap: var(--space-3);
+  padding: 12px var(--space-4);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-muted);
   cursor: pointer;
   text-align: left;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
   font-family: var(--font-sans);
   color: var(--fg);
+  transition: background 100ms ease;
+}
+.project-card:last-child {
+  border-bottom: 0;
+  border-bottom-left-radius: calc(var(--radius-md) - 1px);
+  border-bottom-right-radius: calc(var(--radius-md) - 1px);
 }
 .project-card:hover {
-  border-color: var(--fg-subtle);
-  box-shadow: var(--shadow-card-md);
-  transform: translateY(-2px);
+  background: var(--bg-subtle);
+}
+.project-card:active {
+  background: var(--bg-section);
 }
 .project-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--accent);
+  outline-offset: -2px;
+}
+.project-card:hover .project-card-name {
+  color: var(--project-accent);
 }
 
-.project-card-thumb {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  background: linear-gradient(135deg, var(--project-accent) 0%, color-mix(in srgb, var(--project-accent) 70%, #000) 100%);
-  background-size: cover;
-  background-position: center;
-  display: grid;
-  place-items: center;
-}
-.project-card-thumb-icon {
-  font-size: 56px;
-  color: rgba(255, 255, 255, 0.92);
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
-}
-
-.project-card-body {
-  padding: var(--space-3) var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.project-card-row {
-  display: flex;
+.project-card-glyph {
+  grid-column: 1;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-}
-.project-card-icon {
+  justify-content: center;
   font-size: 16px;
   color: var(--project-accent);
-  flex-shrink: 0;
 }
-.project-card-name {
-  flex: 1;
+
+.project-card-main {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
-  font: 500 14px/1.2 var(--font-sans);
+}
+
+.project-card-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font: 500 14px/16px var(--font-display, system-ui);
+  letter-spacing: -0.4px;
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 120ms ease;
 }
+
+.project-card-labels {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow: hidden;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.project-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 400 11px/16px var(--font-mono);
+  letter-spacing: -0.2px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+/* Coloured dot tinted with the tag's canvas accent (set inline via
+   --tag-color on the element). Falls back to fg-subtle when missing. */
+.project-card-label::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tag-color, var(--fg-subtle));
+  flex: none;
+}
+
+.project-card-items {
+  grid-column: 3;
+  font: 400 12px/16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.4px;
+  color: var(--fg-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.project-card-opened {
+  grid-column: 4;
+  font: 400 12px/16px var(--font-mono);
+  letter-spacing: -0.4px;
+  color: var(--fg-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.project-card-aside {
+  grid-column: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
 .project-card-menu-btn {
   appearance: none;
   border: 0;
@@ -305,46 +349,27 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-xs);
-  color: var(--fg-muted);
+  color: var(--fg-subtle);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
+  flex-shrink: 0;
   transition: background 120ms ease, color 120ms ease;
 }
 .project-card-menu-btn:hover {
-  background: var(--color-grey-500);
-  color: var(--fg);
-}
-
-.project-card-labels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-.project-card-label {
-  font: 400 11px/1 var(--font-mono);
-  letter-spacing: -0.2px;
-  padding: 3px 6px;
   background: var(--bg-subtle);
-  border-radius: var(--radius-xs);
-  color: var(--fg-muted);
-}
-
-.project-card-meta {
-  font: 400 12px/1.4 var(--font-sans);
-  color: var(--fg-muted);
+  color: var(--fg);
 }
 
 /* ---------- Card menu (matches .context-menu) ---------- */
 
 .project-menu {
   position: absolute;
-  top: calc(100% - 8px);
-  right: var(--space-3);
+  top: 24px;
+  right: 0;
   z-index: 20;
   min-width: 160px;
   padding: 4px;
@@ -381,7 +406,7 @@
 }
 .project-menu-item:hover,
 .project-menu-item:focus-visible {
-  background: var(--color-grey-500);
+  background: var(--bg-subtle);
   outline: none;
 }
 .project-menu-item.is-danger {
@@ -402,62 +427,8 @@
   color: var(--fg);
 }
 
-/* ---------- Modals (matches .settings-backdrop / .settings-card) ---------- */
+/* ---------- Modal form scaffolding (extends .modal-card from App.css) ---------- */
 
-.project-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--fg) 28%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  animation: project-modal-fade 120ms ease-out;
-  font-family: var(--font-sans);
-  color: var(--fg);
-}
-@keyframes project-modal-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.project-modal-card {
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-card-lg);
-  overflow: hidden;
-  outline: none;
-  animation: project-modal-rise 160ms ease-out;
-}
-.project-modal-card-wide {
-  width: min(520px, calc(100vw - 32px));
-}
-@keyframes project-modal-rise {
-  from { transform: translateY(8px) scale(0.98); opacity: 0; }
-  to   { transform: none; opacity: 1; }
-}
-.project-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-muted);
-}
-.project-modal-title {
-  margin: 0;
-  font: 600 14px/1.2 var(--font-display);
-  letter-spacing: -0.2px;
-  color: var(--fg);
-}
-.project-modal-title.is-danger {
-  color: var(--color-danger-500);
-}
 .project-modal-body {
   padding: var(--space-5);
   display: flex;
@@ -486,13 +457,49 @@
   border-top: 1px solid var(--border-muted);
   background: var(--bg-subtle);
 }
+
+/* Re-apply the canvas .settings-footer button styling so the
+   "btn-ghost btn-primary" combo (where btn-ghost wins specificity by
+   source order in kit.css) still renders the canvas's accent
+   primary-action treatment. Mirrors the App.css .settings-footer
+   block so light/dark text colour follow theme via --bg. */
+.project-modal-footer .btn-ghost {
+  height: 32px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font: 500 12px/1 var(--font-display, system-ui);
+}
+.project-modal-footer .btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.project-modal-footer .btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+.project-modal-footer .btn-primary:disabled {
+  background: var(--border-muted);
+  color: var(--fg-subtle);
+  border-color: var(--border-muted);
+  cursor: not-allowed;
+}
+/* Match the canvas SettingsModal danger pill (.settings-project-btn
+   .is-danger). Disabled state isn't defined upstream — scoped here so
+   the typed-name confirm gate reads as inactive. */
+.project-modal-footer .settings-project-btn.is-danger:disabled {
+  color: var(--fg-subtle);
+  border-color: var(--border-muted);
+  background: transparent;
+  cursor: not-allowed;
+}
+.project-modal-footer .settings-project-btn.is-danger:disabled:hover {
+  background: transparent;
+}
 .project-modal-error {
   font: 400 12px/1.4 var(--font-sans);
   color: var(--color-danger-500);
   margin: 0;
 }
-
-/* ---------- Form fields ---------- */
 
 .project-field {
   display: flex;
@@ -614,7 +621,7 @@
   border-radius: 50%;
 }
 .project-label-edit-chip-remove:hover {
-  background: var(--color-grey-500);
+  background: var(--bg-subtle);
   color: var(--fg);
 }
 .project-label-edit-row {
@@ -652,4 +659,10 @@
 }
 .project-deleted-banner button:hover {
   background: rgba(255, 255, 255, 0.26);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-menu {
+    animation: none;
+  }
 }

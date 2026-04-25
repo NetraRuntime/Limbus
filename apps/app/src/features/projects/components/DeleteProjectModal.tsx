@@ -59,7 +59,7 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: Props) {
         <footer className="project-modal-footer">
           <button
             type="button"
-            className="home-btn home-btn-outline"
+            className="btn-ghost"
             onClick={onClose}
             disabled={submitting}
           >
@@ -67,10 +67,11 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: Props) {
           </button>
           <button
             type="submit"
-            className="home-btn home-btn-danger"
+            className="btn-ghost settings-project-btn is-danger"
             disabled={!matches || submitting}
           >
-            {submitting ? 'Deleting…' : 'Delete'}
+            <i className="ri-delete-bin-line" aria-hidden />
+            {submitting ? 'Deleting…' : 'Delete project'}
           </button>
         </footer>
       </form>
