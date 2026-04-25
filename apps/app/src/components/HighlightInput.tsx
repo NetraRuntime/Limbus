@@ -17,6 +17,7 @@ type ScreenRect = { x: number; y: number; width: number; height: number };
 type Props = {
   rect: ScreenRect;
   tags: string[];
+  projectId: string;
   onTagsChange: (next: string[]) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -47,6 +48,7 @@ const dedupeKey = (tag: string) => tag.trim().toLowerCase();
 export function HighlightInput({
   rect,
   tags,
+  projectId,
   onTagsChange,
   onMouseEnter,
   onMouseLeave,
@@ -62,7 +64,7 @@ export function HighlightInput({
   const [draft, setDraft] = useState('');
   const [suggestionIndex, setSuggestionIndex] = useState(-1);
   const [focused, setFocused] = useState(false);
-  const { remember, search } = useSavedTags();
+  const { remember, search } = useSavedTags(projectId);
 
   useLayoutEffect(() => {
     if (autoFocus) inputRef.current?.focus({ preventScroll: true });
@@ -111,7 +113,7 @@ export function HighlightInput({
     const key = dedupeKey(clean);
     if (tags.some((t) => dedupeKey(t) === key)) return false;
     onTagsChange([...tags, clean]);
-    remember(clean);
+    void remember(clean);
     return true;
   };
 
@@ -133,7 +135,7 @@ export function HighlightInput({
       if (seen.has(key)) continue;
       seen.add(key);
       updated.push(clean);
-      remember(clean);
+      void remember(clean);
     }
     if (updated.length !== tags.length) onTagsChange(updated);
     setDraft(tail);

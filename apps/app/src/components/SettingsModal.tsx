@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DEFAULT_SETTINGS,
   SETTINGS_BOUNDS,
@@ -6,6 +6,13 @@ import {
   type Settings,
   type ThemePreference,
 } from '../hooks/useSettings';
+import { Modal } from './Modal';
+
+type ProjectSummary = {
+  name: string;
+  icon: string;
+  color: string;
+};
 
 const THEME_LABELS: Record<ThemePreference, string> = {
   light: 'Light',
@@ -19,6 +26,9 @@ type Props = {
   onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   onReset: () => void;
   onClose: () => void;
+  project?: ProjectSummary;
+  onRenameProject?: (name: string) => Promise<void> | void;
+  onDeleteProject?: () => void;
 };
 
 const formatNumber = (n: number) => {
@@ -50,84 +60,89 @@ const ROWS: Row[] = [
   },
 ];
 
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+export function SettingsModal({
+  open,
+  settings,
+  onChange,
+  onReset,
+  onClose,
+  project,
+  onRenameProject,
+  onDeleteProject,
+}: Props) {
+  const [nameDraft, setNameDraft] = useState(project?.name ?? '');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
 
-export function SettingsModal({ open, settings, onChange, onReset, onClose }: Props) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-
+  // Reset the draft when the dialog opens or the project changes — the
+  // input mirrors PocketBase realtime updates between openings.
   useEffect(() => {
-    if (!open) return;
-    returnFocusRef.current = document.activeElement as HTMLElement | null;
-    cardRef.current?.focus();
-    return () => {
-      returnFocusRef.current?.focus();
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key !== 'Tab') return;
-      const card = cardRef.current;
-      if (!card) return;
-      const focusable = card.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      const active = document.activeElement;
-      if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
+    if (open) {
+      setNameDraft(project?.name ?? '');
+      setRenameError(null);
+    }
+  }, [open, project?.name]);
 
   return (
-    <div
-      className="settings-backdrop"
-      role="presentation"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={cardRef}
-        className="settings-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        tabIndex={-1}
-      >
-        <div className="settings-header">
-          <h2 id="settings-title" className="settings-title">
-            Settings
-          </h2>
-          <button
-            type="button"
-            className="settings-close"
-            aria-label="Close settings"
-            onClick={onClose}
-          >
-            <i className="ri-close-line" aria-hidden />
-          </button>
-        </div>
-
+    <Modal open={open} onClose={onClose} title="Settings">
         <div className="settings-body">
+          {project && (onRenameProject || onDeleteProject) && (
+            <div className={`settings-row settings-project project-color-${project.color}`}>
+              <div className="settings-row-head">
+                <label className="settings-label" htmlFor="setting-project-name">
+                  Project name
+                </label>
+              </div>
+              {onRenameProject ? (
+                <input
+                  id="setting-project-name"
+                  type="text"
+                  className="settings-project-input"
+                  value={nameDraft}
+                  maxLength={256}
+                  disabled={renaming}
+                  onChange={(e) => {
+                    setNameDraft(e.target.value);
+                    if (renameError) setRenameError(null);
+                  }}
+                  onBlur={async () => {
+                    const trimmed = nameDraft.trim();
+                    if (!trimmed || trimmed === project.name) {
+                      setNameDraft(project.name);
+                      return;
+                    }
+                    setRenaming(true);
+                    try {
+                      await onRenameProject(trimmed);
+                    } catch (err) {
+                      setRenameError(err instanceof Error ? err.message : String(err));
+                      setNameDraft(project.name);
+                    } finally {
+                      setRenaming(false);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setNameDraft(project.name);
+                      e.currentTarget.blur();
+                    }
+                  }}
+                />
+              ) : (
+                <div className="settings-project-name" title={project.name}>
+                  {project.name}
+                </div>
+              )}
+              {renameError && (
+                <p className="settings-project-error" role="alert">{renameError}</p>
+              )}
+            </div>
+          )}
+
           <div className="settings-row">
             <div className="settings-row-head">
               <span className="settings-label" id="setting-theme-label">
@@ -194,6 +209,23 @@ export function SettingsModal({ open, settings, onChange, onReset, onClose }: Pr
               </div>
             );
           })}
+
+          {project && onDeleteProject && (
+            <div className="settings-row settings-danger">
+              <hr className="settings-danger-divider" aria-hidden />
+              <span className="settings-label is-danger">Danger Zone</span>
+              <button
+                type="button"
+                className="btn-ghost settings-project-btn is-danger settings-danger-btn"
+                onClick={onDeleteProject}
+              >
+                <i className="ri-delete-bin-line" aria-hidden /> Delete project…
+              </button>
+              <span className="settings-description">
+                Permanently removes the project and all its media. This cannot be undone.
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="settings-footer">
@@ -204,7 +236,6 @@ export function SettingsModal({ open, settings, onChange, onReset, onClose }: Pr
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

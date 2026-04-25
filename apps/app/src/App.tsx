@@ -9,7 +9,11 @@ type BootState =
   | { status: 'ready' }
   | { status: 'error'; message: string };
 
-export function App() {
+type AppProps = {
+  projectId: string;
+};
+
+export function App({ projectId }: AppProps) {
   const [boot, setBoot] = useState<BootState>({ status: 'loading' });
   const { settings } = useSettings();
   // Apply the persisted theme at the top level so the boot screen matches
@@ -40,7 +44,7 @@ export function App() {
   }, []);
 
   if (boot.status === 'loading') return <BootScreen />;
-  return <Canvas sam3Error={boot.status === 'error' ? boot.message : null} />;
+  return <Canvas projectId={projectId} sam3Error={boot.status === 'error' ? boot.message : null} />;
 }
 
 function BootScreen() {

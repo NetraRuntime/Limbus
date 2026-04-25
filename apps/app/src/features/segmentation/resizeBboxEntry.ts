@@ -10,6 +10,7 @@ export type ResizeBboxMeta = {
 };
 
 export type ResizeBboxEntryArgs = {
+  projectId: string;
   imageId: string;
   tag: string;
   maskIndex: number;
@@ -23,12 +24,13 @@ export type ResizeBboxEntryArgs = {
 };
 
 const persistTag = async (
+  projectId: string,
   imageId: string,
   target: ReadyMaskEntry,
   onConn: (state: 'ready' | 'offline') => void,
 ): Promise<void> => {
   try {
-    await upsertSegmentation({
+    await upsertSegmentation(projectId, {
       image: imageId,
       tag: target.tag,
       masks: target.response.masks,
@@ -45,17 +47,17 @@ const persistTag = async (
 export function resizeBboxEntry(
   args: ResizeBboxEntryArgs,
 ): HistoryEntry<ResizeBboxMeta> {
-  const { imageId, tag, maskIndex, before, after, replaceTag, onConn } = args;
+  const { projectId, imageId, tag, maskIndex, before, after, replaceTag, onConn } = args;
   return {
     label: `resize bbox ${tag}`,
     meta: { kind: 'resize-bbox', imageId, tag, maskIndex },
     do: () => {
       replaceTag(imageId, tag, after);
-      void persistTag(imageId, after, onConn);
+      void persistTag(projectId, imageId, after, onConn);
     },
     undo: () => {
       replaceTag(imageId, tag, before);
-      void persistTag(imageId, before, onConn);
+      void persistTag(projectId, imageId, before, onConn);
     },
   };
 }

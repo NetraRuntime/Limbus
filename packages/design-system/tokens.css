@@ -46,19 +46,22 @@
 }
 
 :root {
-  
-  --color-text-900: #0D0E0F;   
-  --color-text-800: #3C3E40;
-  --color-text-700: #6A6F73;   
-  --color-text-600: #9C9FA1;   
-  --color-text-500: #CECFD0;
+  /* Neutral grayscale primitives — derived from the canonical
+     palette (--color-text, --color-subtitle, --color-stroke,
+     --color-background, etc.) so every shade stays hue-free. */
 
-  
-  --color-grey-900: #DDE1E3;   
-  --color-grey-800: #E4E7E9;
-  --color-grey-700: #EBEDEE;   
-  --color-grey-600: #F1F3F4;
-  --color-grey-500: #F8F9F9;   
+  --color-text-900: #091413;
+  --color-text-800: #3C3C3C;
+  --color-text-700: #6A6A6A;
+  --color-text-600: #9b9b9b;
+  --color-text-500: #B5B5B5;
+
+
+  --color-grey-900: #DEDEDE;
+  --color-grey-800: #E2E2E2;
+  --color-grey-700: #ECECEC;
+  --color-grey-600: #F0F0F0;
+  --color-grey-500: #F8F8F8;
 
   
   --color-information-900: #001431;
@@ -183,26 +186,28 @@
    Overrides primitives only; all semantic aliases (--fg, --bg, --border, etc.)
    inherit through the mappings above. */
 [data-theme="dark"] {
-  --color-text-900: #F1F3F4;
-  --color-text-800: #CECFD0;
-  --color-text-700: #9C9FA1;
-  --color-text-600: #6A6F73;
-  --color-text-500: #3C3E40;
+  /* Neutral inverse — same hue-free family as the light scale, just
+     flipped. No blue tinting. */
+  --color-text-900: #F1F1F1;
+  --color-text-800: #CECECE;
+  --color-text-700: #9b9b9b;
+  --color-text-600: #6A6A6A;
+  --color-text-500: #3C3C3C;
 
-  --color-grey-900: #2E3135;
-  --color-grey-800: #26292D;
-  --color-grey-700: #1F2224;
-  --color-grey-600: #1A1D20;
-  --color-grey-500: #14171A;
+  --color-grey-900: #2E2E2E;
+  --color-grey-800: #272727;
+  --color-grey-700: #202020;
+  --color-grey-600: #1A1A1A;
+  --color-grey-500: #141414;
 
-  --color-text:             #F1F3F4;
-  --color-subtitle:         #9C9FA1;
-  --color-subtitle-muted:   #6A6F73;
-  --color-stroke:           #3C3E40;
-  --color-stroke-muted:     #26292D;
-  --color-background:       #1A1D20;
-  --color-background-muted: #14171A;
-  --color-neutral:          #0D0E0F;
+  --color-text:             #F1F1F1;
+  --color-subtitle:         #9b9b9b;
+  --color-subtitle-muted:   #6A6A6A;
+  --color-stroke:           #3C3C3C;
+  --color-stroke-muted:     #272727;
+  --color-background:       #1A1A1A;
+  --color-background-muted: #141414;
+  --color-neutral:          #0A0A0A;
 
   --shadow-input:     0px 3px 4px -4px rgb(0 0 0 / 0.55);
   --shadow-card-sm:   0px 12px 12px -16px rgb(0 0 0 / 0.6);
