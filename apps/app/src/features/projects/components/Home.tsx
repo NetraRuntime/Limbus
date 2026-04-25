@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useProjects } from '../api/useProjects';
 import { ProjectGrid } from './ProjectGrid';
 import { NewProjectModal } from './NewProjectModal';
+import { SortMenu, type SortKey } from './SortMenu';
+import { LabelFilterRow } from './LabelFilterRow';
 import { pb } from '../../../lib/pb';
 import '../Home.css';
 
@@ -38,14 +40,53 @@ export function Home() {
   const [newOpen, setNewOpen] = useState(false);
   const itemCounts = useItemCounts();
 
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('recent');
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+
+  const projects = state.status === 'ready' ? state.projects : [];
+
+  const allLabels = useMemo(() => {
+    const set = new Set<string>();
+    projects.forEach((p) => p.labels.forEach((l) => set.add(l)));
+    return Array.from(set).sort();
+  }, [projects]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return projects
+      .filter((p) => {
+        if (selectedLabels.length && !selectedLabels.every((l) => p.labels.includes(l))) {
+          return false;
+        }
+        if (!q) return true;
+        return p.name.toLowerCase().includes(q) || p.labels.some((l) => l.toLowerCase().includes(q));
+      })
+      .sort((a, b) => {
+        if (sort === 'name') return a.name.localeCompare(b.name);
+        if (sort === 'created') return b.created.localeCompare(a.created);
+        const aT = a.last_opened_at ?? a.created;
+        const bT = b.last_opened_at ?? b.created;
+        return bT.localeCompare(aT);
+      });
+  }, [projects, query, sort, selectedLabels]);
+
   return (
     <div className="home">
       <header className="home-header">
         <div className="home-title">NetraRT</div>
+        <input
+          className="home-search"
+          placeholder="Search projects…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <SortMenu value={sort} onChange={setSort} />
         <button type="button" onClick={() => setNewOpen(true)}>
           <i className="ri-add-line" aria-hidden /> New project
         </button>
       </header>
+      <LabelFilterRow available={allLabels} selected={selectedLabels} onChange={setSelectedLabels} />
       <main>
         {state.status === 'loading' && <div className="home-empty">Loading…</div>}
         {state.status === 'error' && (
@@ -60,7 +101,7 @@ export function Home() {
           </div>
         )}
         {state.status === 'ready' && state.projects.length > 0 && (
-          <ProjectGrid projects={state.projects} itemCounts={itemCounts} />
+          <ProjectGrid projects={visible} itemCounts={itemCounts} />
         )}
       </main>
       {newOpen && <NewProjectModal onClose={() => setNewOpen(false)} />}
