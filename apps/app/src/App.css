@@ -1176,6 +1176,7 @@
   color: var(--fg);
   width: 26px;
   height: 26px;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1201,6 +1202,36 @@
 
 .media-toolbar-btn.is-active:hover {
   background: var(--accent);
+}
+
+/* Shortcut hint — tiny letter tucked into the bottom-right corner of the
+   button, overlapping the edge so it reads as a badge rather than part of
+   the icon. Uses the toolbar background so it visually "punches through"
+   the bezel even when the button is in its active accent state. */
+.media-toolbar-btn-shortcut {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 8px/1 var(--font-mono);
+  letter-spacing: 0;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--color-neutral) 80%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
+  border-radius: 3px;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+.media-toolbar-btn.is-active .media-toolbar-btn-shortcut {
+  color: var(--accent);
+  background: var(--bg);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
