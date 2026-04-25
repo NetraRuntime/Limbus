@@ -69,17 +69,25 @@ export function ProjectCard({ project, itemCount, tags, onEdit, onDelete }: Prop
       <div className="project-card-main">
         <span className="project-card-name">{project.name}</span>
         {tags.length > 0 && (
-          <div className="project-card-labels" aria-label="Canvas labels">
-            {tags.map((t) => (
+          <div
+            className="project-card-labels"
+            aria-label={`${tags.length} canvas label${tags.length === 1 ? '' : 's'}`}
+            title={tags.map((t) => t.name).join(', ')}
+          >
+            {tags.slice(0, 3).map((t) => (
               <span
                 key={t.id}
                 className="project-card-label"
                 style={{ '--tag-color': t.color } as React.CSSProperties}
-                title={t.name}
               >
                 {t.name}
               </span>
             ))}
+            {tags.length > 3 && (
+              <span className="project-card-label-more" aria-hidden>
+                +{tags.length - 3}
+              </span>
+            )}
           </div>
         )}
       </div>

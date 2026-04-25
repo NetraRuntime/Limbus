@@ -10,39 +10,83 @@ import { TagRecordSchema, type TagRecord } from '../api/tags';
 import { useAutoLiquidGlassFilter } from '../../../components/LiquidGlass';
 import { useSettings } from '../../../hooks/useSettings';
 import { useAppliedTheme } from '../../../hooks/useAppliedTheme';
-import { onCanvasCloseRequested, listOpenCanvasLabels } from '../../../lib/windows';
+import { onHomeCloseQuit } from '../../../lib/windows';
 import '../Home.css';
 
 const ProjectFieldSchema = z.object({ project: z.string() });
 
-// Fetch every project's `tags` collection once and bucket by project id.
-// Tags are populated when the user creates labels through box / text
-// prompts on the canvas — this is the actual labelling vocabulary used
-// in the project. Surfaces in each row's chip strip.
+// Fetch every project's `tags` collection and bucket by project id. Tags
+// are populated when the user creates labels through box / text prompts
+// on the canvas. We subscribe to '*' so chips appear on Home as soon as
+// the canvas writes them, and disappear when a project is cascade-
+// deleted. We also re-fetch when the Home window regains focus so a
+// long-running session catches anything missed while subscribed.
 function useProjectTags(): Record<string, TagRecord[]> {
   const [byProject, setByProject] = useState<Record<string, TagRecord[]>>({});
+
   useEffect(() => {
     let cancelled = false;
+
+    const reload = () => {
+      pb.collection('tags')
+        .getFullList({ sort: '-updated' })
+        .then((raw) => {
+          if (cancelled) return;
+          const next: Record<string, TagRecord[]> = {};
+          for (const item of raw) {
+            const parsed = TagRecordSchema.safeParse(item);
+            if (!parsed.success) continue;
+            const id = parsed.data.project;
+            (next[id] ??= []).push(parsed.data);
+          }
+          setByProject(next);
+        })
+        .catch((err) => {
+          console.warn('[home] failed to load tags', err);
+        });
+    };
+
+    reload();
+
+    let unsub: (() => void) | null = null;
     pb.collection('tags')
-      .getFullList({ sort: '-updated' })
-      .then((raw) => {
+      .subscribe('*', (e) => {
         if (cancelled) return;
-        const next: Record<string, TagRecord[]> = {};
-        for (const item of raw) {
-          const parsed = TagRecordSchema.safeParse(item);
-          if (!parsed.success) continue;
-          const id = parsed.data.project;
-          (next[id] ??= []).push(parsed.data);
-        }
-        setByProject(next);
+        const parsed = TagRecordSchema.safeParse(e.record);
+        if (!parsed.success) return;
+        const tag = parsed.data;
+        setByProject((prev) => {
+          const list = prev[tag.project] ?? [];
+          const idx = list.findIndex((t) => t.id === tag.id);
+          let nextList: TagRecord[];
+          if (e.action === 'delete') {
+            if (idx === -1) return prev;
+            nextList = list.filter((t) => t.id !== tag.id);
+          } else if (idx >= 0) {
+            nextList = list.slice();
+            nextList[idx] = tag;
+          } else {
+            nextList = [tag, ...list];
+          }
+          return { ...prev, [tag.project]: nextList };
+        });
       })
-      .catch((err) => {
-        console.warn('[home] failed to load tags', err);
-      });
+      .then((u) => {
+        unsub = u as unknown as () => void;
+        if (cancelled) unsub?.();
+      })
+      .catch((err) => console.warn('[home] tags subscribe failed', err));
+
+    const onFocus = () => reload();
+    window.addEventListener('focus', onFocus);
+
     return () => {
       cancelled = true;
+      unsub?.();
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
+
   return byProject;
 }
 
@@ -92,37 +136,29 @@ export function Home() {
 
   const projects = state.status === 'ready' ? state.projects : [];
 
-  const allLabels = useMemo(() => {
-    const set = new Set<string>();
-    projects.forEach((p) => p.labels.forEach((l) => set.add(l)));
-    return Array.from(set).sort();
-  }, [projects]);
-
+  // Closing the Home window quits the whole app on every platform.
+  // Without this, macOS leaves the process alive after the home window
+  // dies and focus jumps to a canvas window — confusing UX.
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     let cancelled = false;
-
-    onCanvasCloseRequested(async () => {
-      const open = await listOpenCanvasLabels();
-      if (open.length === 0) return;
-      const ok = window.confirm(
-        `${open.length} project window${open.length === 1 ? '' : 's'} ${open.length === 1 ? 'is' : 'are'} still open.\n\nClose Home anyway?`,
-      );
-      if (!ok) {
-        throw new Error('home-close-canceled');
-      }
-    })
+    onHomeCloseQuit()
       .then((c) => {
         if (cancelled) c();
         else cleanup = c;
       })
       .catch(() => {});
-
     return () => {
       cancelled = true;
       cleanup?.();
     };
   }, []);
+
+  const allLabels = useMemo(() => {
+    const set = new Set<string>();
+    projects.forEach((p) => p.labels.forEach((l) => set.add(l)));
+    return Array.from(set).sort();
+  }, [projects]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
