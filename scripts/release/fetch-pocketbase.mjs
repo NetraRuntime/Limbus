@@ -8,12 +8,13 @@
  * pb/pocketbase exists locally).
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, existsSync, createWriteStream } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { open as yauzlOpen } from 'yauzl';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDir, '..', '..');
@@ -26,7 +27,6 @@ if (!version.startsWith('v')) {
   console.error(`[fetch-pocketbase] expected version to start with "v": ${version}`);
   process.exit(1);
 }
-const versionNoV = version.slice(1);
 
 const triple =
   process.env.TAURI_ENV_TARGET_TRIPLE ||
@@ -55,7 +55,18 @@ const url = `https://github.com/pocketbase/pocketbase/releases/download/${versio
 const zipPath = resolve(tmpdir(), entry.asset);
 
 console.log(`[fetch-pocketbase] downloading ${url}`);
-execSync(`curl -sLfo "${zipPath}" "${url}"`, { stdio: 'inherit' });
+execFileSync(
+  'curl',
+  [
+    '-sLf',
+    '--retry', '3',
+    '--retry-delay', '2',
+    '--retry-all-errors',
+    '-o', zipPath,
+    url,
+  ],
+  { stdio: 'inherit' },
+);
 
 const actualSha = createHash('sha256').update(readFileSync(zipPath)).digest('hex');
 if (actualSha !== entry.sha) {
@@ -66,23 +77,53 @@ if (actualSha !== entry.sha) {
 }
 console.log(`[fetch-pocketbase] sha256 ok: ${actualSha}`);
 
-const extractDir = resolve(tmpdir(), `pb-${versionNoV}-${triple}`);
-mkdirSync(extractDir, { recursive: true });
-execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: 'inherit' });
-
 const isWindows = triple.includes('windows');
 const srcName = isWindows ? 'pocketbase.exe' : 'pocketbase';
 const destExt = isWindows ? '.exe' : '';
-const srcPath = resolve(extractDir, srcName);
-if (!existsSync(srcPath)) {
-  console.error(`[fetch-pocketbase] expected binary not found: ${srcPath}`);
-  process.exit(1);
-}
 
 const destDir = resolve(projectRoot, 'apps', 'app', 'src-tauri', 'binaries');
 mkdirSync(destDir, { recursive: true });
 const destPath = resolve(destDir, `pocketbase-${triple}${destExt}`);
-writeFileSync(destPath, readFileSync(srcPath));
+
+await extractBinary(zipPath, srcName, destPath);
+
+if (!existsSync(destPath)) {
+  console.error(`[fetch-pocketbase] expected binary not found in zip: ${srcName}`);
+  process.exit(1);
+}
 if (!isWindows) chmodSync(destPath, 0o755);
 
 console.log(`[fetch-pocketbase] staged ${destPath}`);
+
+function extractBinary(zip, entryName, outPath) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    yauzlOpen(zip, { lazyEntries: true }, (err, zipfile) => {
+      if (err) return rejectPromise(err);
+      let found = false;
+      zipfile.on('error', rejectPromise);
+      zipfile.on('end', () => {
+        if (!found) rejectPromise(new Error(`entry not found: ${entryName}`));
+        else resolvePromise();
+      });
+      zipfile.on('entry', (entry) => {
+        if (entry.fileName !== entryName) {
+          zipfile.readEntry();
+          return;
+        }
+        found = true;
+        zipfile.openReadStream(entry, (streamErr, readStream) => {
+          if (streamErr) return rejectPromise(streamErr);
+          const writeStream = createWriteStream(outPath);
+          writeStream.on('error', rejectPromise);
+          writeStream.on('finish', () => {
+            zipfile.close();
+            resolvePromise();
+          });
+          readStream.on('error', rejectPromise);
+          readStream.pipe(writeStream);
+        });
+      });
+      zipfile.readEntry();
+    });
+  });
+}
