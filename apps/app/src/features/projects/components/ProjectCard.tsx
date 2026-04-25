@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProjectRecord } from '../types/project';
 import { thumbnailUrl } from '../api/projects';
 import { useOpenProject } from '../hooks/useOpenProject';
@@ -26,127 +26,113 @@ export function ProjectCard({ project, itemCount, onEdit, onDelete }: Props) {
   const open = useOpenProject();
   const thumb = thumbnailUrl(project);
   const [menuOpen, setMenuOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // Close menu on outside click / Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  const thumbStyle = thumb
+    ? { backgroundImage: `url(${thumb})` }
+    : undefined;
 
   return (
     <div
+      ref={cardRef}
       role="button"
       tabIndex={0}
-      onClick={() => open(project)}
+      className={`project-card project-color-${project.color}`}
+      onClick={() => void open(project)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          open(project);
+          void open(project);
         }
       }}
-      style={{
-        border: '1px solid #e5e5e5',
-        borderRadius: 12,
-        overflow: 'hidden',
-        cursor: 'pointer',
-        background: 'white',
-        position: 'relative',
-      }}
     >
-      <div
-        className={`project-color-${project.color}`}
-        style={{
-          aspectRatio: '16 / 9',
-          display: 'grid',
-          placeItems: 'center',
-          backgroundImage: thumb ? `url(${thumb})` : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      >
+      <div className="project-card-thumb" style={thumbStyle}>
         {!thumb && (
-          <i className={project.icon} style={{ fontSize: 48, color: 'white' }} aria-hidden />
+          <i className={`${project.icon} project-card-thumb-icon`} aria-hidden />
         )}
       </div>
-      <div style={{ padding: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <i className={project.icon} aria-hidden />
-          <div
-            style={{
-              fontWeight: 600,
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {project.name}
-          </div>
+      <div className="project-card-body">
+        <div className="project-card-row">
+          <i className={`${project.icon} project-card-icon`} aria-hidden />
+          <div className="project-card-name">{project.name}</div>
           <button
             type="button"
-            aria-label="More"
+            aria-label="Project menu"
+            className="project-card-menu-btn"
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen((v) => !v);
             }}
           >
-            ⋯
+            <i className="ri-more-2-fill" aria-hidden />
           </button>
         </div>
         {project.labels.length > 0 && (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+          <div className="project-card-labels">
             {project.labels.map((l) => (
-              <span
-                key={l}
-                style={{ fontSize: 12, padding: '2px 6px', background: '#eee', borderRadius: 4 }}
-              >
+              <span key={l} className="project-card-label">
                 #{l}
               </span>
             ))}
           </div>
         )}
-        <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+        <div className="project-card-meta">
           {itemCount} items · opened {formatRelative(project.last_opened_at)}
         </div>
       </div>
       {menuOpen && (
-        <div
-          role="menu"
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            top: '50%',
-            right: 12,
-            background: 'white',
-            border: '1px solid #ddd',
-            borderRadius: 6,
-            padding: 4,
-            zIndex: 10,
-          }}
-        >
+        <div className="project-menu" role="menu" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             role="menuitem"
+            className="project-menu-item"
             onClick={() => {
               setMenuOpen(false);
-              open(project);
+              void open(project);
             }}
           >
-            Open
+            <i className="ri-folder-open-line" aria-hidden /> Open
           </button>
           <button
             type="button"
             role="menuitem"
+            className="project-menu-item"
             onClick={() => {
               setMenuOpen(false);
               onEdit();
             }}
           >
-            Edit details…
+            <i className="ri-edit-line" aria-hidden /> Edit details…
           </button>
           <button
             type="button"
             role="menuitem"
+            className="project-menu-item is-danger"
             onClick={() => {
               setMenuOpen(false);
               onDelete();
             }}
           >
-            Delete…
+            <i className="ri-delete-bin-line" aria-hidden /> Delete…
           </button>
         </div>
       )}

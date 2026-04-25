@@ -109,12 +109,16 @@ export function Home() {
           onChange={(e) => setQuery(e.target.value)}
         />
         <SortMenu value={sort} onChange={setSort} />
-        <button type="button" onClick={() => setNewOpen(true)}>
+        <button
+          type="button"
+          className="home-btn home-btn-primary"
+          onClick={() => setNewOpen(true)}
+        >
           <i className="ri-add-line" aria-hidden /> New project
         </button>
       </header>
       <LabelFilterRow available={allLabels} selected={selectedLabels} onChange={setSelectedLabels} />
-      <main>
+      <main className="home-main">
         {state.status === 'loading' && <div className="home-empty">Loading…</div>}
         {state.status === 'error' && (
           <div className="home-empty">Failed to load projects: {state.error.message}</div>
@@ -122,7 +126,11 @@ export function Home() {
         {state.status === 'ready' && state.projects.length === 0 && (
           <div className="home-empty">
             <p>No projects yet.</p>
-            <button type="button" onClick={() => setNewOpen(true)}>
+            <button
+              type="button"
+              className="home-btn home-btn-primary"
+              onClick={() => setNewOpen(true)}
+            >
               Create your first project
             </button>
           </div>

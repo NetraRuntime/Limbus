@@ -5,7 +5,8 @@ Owns NetraRT's multi-project surface: the Home window, project CRUD, the in-canv
 ## Public API (via `index.ts`)
 
 - `<Home />` — top-level project picker. Mounted by `main.tsx` when no `?project=` is in the URL.
-- `<ProjectChip />` — top-left chip rendered inside the canvas. Owns rename/edit/delete affordances.
+- `<ProjectChip />` — inline breadcrumb segment composed inside the canvas wordmark pill. Renders the project name; the canvas owns the wordmark home-button and routes Edit/Delete through `<SettingsModal />`.
+- `<EditProjectModal />` / `<DeleteProjectModal />` — project mutation modals; canvas mounts these in response to settings actions.
 - `ProjectRecord` — the type for a project row.
 
 ## Known limitation in v1
@@ -21,9 +22,9 @@ Run `pnpm tauri:dev`, then walk through:
 - [ ] **Open existing**: From Home, click the Default Project card. A canvas window opens (or focuses if already open).
 - [ ] **No duplicates**: Click the same card twice — only one window exists for that project; the second click focuses the first.
 - [ ] **Edit details from Home**: Open card menu → "Edit details…", change color/icon/labels, save. Card reflects the change.
-- [ ] **Edit details from canvas**: Open `<ProjectChip />` menu → "Edit details…", change name. Title bar + chip update without reload.
+- [ ] **Edit details from canvas**: Open canvas settings → Project section → "Edit details…", change name. Title bar + breadcrumb update without reload.
 - [ ] **Delete from Home**: Create a throwaway project, add an image, then delete from Home (type the name to confirm). Cascade drops the image; Default Project's media is unaffected.
-- [ ] **Delete from canvas**: Open the throwaway project's canvas, then `<ProjectChip />` menu → "Delete project…". Banner appears in the canvas; window closes; Home reflects the removal.
+- [ ] **Delete from canvas**: Open the throwaway project's canvas, then settings → Project section → "Delete project…". Banner appears in the canvas; window closes; Home reflects the removal.
 - [ ] **Saved tags are per-project**: In project A, label an image "cells". In project B, the saved-tag autocomplete should not surface "cells".
 - [ ] **Theme stays global**: Toggle theme in one canvas; another canvas reflects it on next paint.
 - [ ] **Quit confirm**: With at least one canvas open, attempt to close Home. Confirm prompt appears.
@@ -33,4 +34,4 @@ Run `pnpm tauri:dev`, then walk through:
       first canvas open; the legacy key is then cleared. The migration runs once per
       project that has zero existing tags — opening a different empty project later
       will not duplicate them because the localStorage key is gone after first success.
-- [ ] **Web fallback**: `pnpm dev:app` opens Home at `/`; clicking a card navigates to `/?project=<id>`; the Home button in the chip navigates back.
+- [ ] **Web fallback**: `pnpm dev:app` opens Home at `/`; clicking a card navigates to `/?project=<id>`; the wordmark home button (`⌂ NetraRT`) navigates back to `/`.

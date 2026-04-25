@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createProject } from '../api/projects';
 import { ProjectColors, type ProjectColor } from '../types/project';
 import { useOpenProject } from '../hooks/useOpenProject';
@@ -20,6 +20,14 @@ export function NewProjectModal({ onClose }: Props) {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,52 +54,50 @@ export function NewProjectModal({ onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label="New project"
+      className="project-modal-backdrop"
       onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'grid',
-        placeItems: 'center',
-        zIndex: 50,
-      }}
     >
       <form
+        className="project-modal-card"
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        style={{
-          background: 'white',
-          padding: 24,
-          borderRadius: 12,
-          minWidth: 360,
-        }}
       >
-        <h2 style={{ marginTop: 0 }}>New project</h2>
-        <label style={{ display: 'block', marginBottom: 16 }}>
-          <div style={{ marginBottom: 4, fontSize: 13 }}>Name</div>
-          <input
-            ref={inputRef}
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={256}
+        <header className="project-modal-header">
+          <h2 className="project-modal-title">New project</h2>
+        </header>
+        <div className="project-modal-body">
+          <label className="project-field">
+            <span className="project-field-label">Name</span>
+            <input
+              ref={inputRef}
+              type="text"
+              className="project-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={256}
+              disabled={submitting}
+              placeholder="e.g. Cell biology dataset"
+            />
+          </label>
+          {error && <p className="project-modal-error" role="alert">{error}</p>}
+        </div>
+        <footer className="project-modal-footer">
+          <button
+            type="button"
+            className="home-btn home-btn-outline"
+            onClick={onClose}
             disabled={submitting}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </label>
-        {error && (
-          <div role="alert" style={{ color: '#b00', marginBottom: 8 }}>
-            {error}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} disabled={submitting}>
+          >
             Cancel
           </button>
-          <button type="submit" disabled={!name.trim() || submitting}>
+          <button
+            type="submit"
+            className="home-btn home-btn-primary"
+            disabled={!name.trim() || submitting}
+          >
             {submitting ? 'Creating…' : 'Create'}
           </button>
-        </div>
+        </footer>
       </form>
     </div>
   );

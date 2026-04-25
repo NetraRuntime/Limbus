@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { updateProject } from '../api/projects';
 import {
   type ProjectRecord,
@@ -21,6 +21,14 @@ export function EditProjectModal({ project, onClose }: Props) {
   const [labelDraft, setLabelDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,74 +56,98 @@ export function EditProjectModal({ project, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label="Edit project"
+      className="project-modal-backdrop"
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'grid', placeItems: 'center', zIndex: 50 }}
     >
       <form
+        className="project-modal-card project-modal-card-wide"
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        style={{ background: 'white', padding: 24, borderRadius: 12, minWidth: 420 }}
       >
-        <h2 style={{ marginTop: 0 }}>Edit project</h2>
-        <label style={{ display: 'block', marginBottom: 16 }}>
-          <div style={{ marginBottom: 4, fontSize: 13 }}>Name</div>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={256}
-            disabled={submitting}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </label>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 4, fontSize: 13 }}>Color</div>
-          <ColorPicker value={color} onChange={setColor} />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 4, fontSize: 13 }}>Icon</div>
-          <IconPicker value={icon} onChange={setIcon} />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 4, fontSize: 13 }}>Labels</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-            {labels.map((l) => (
-              <span key={l} style={{ fontSize: 12, padding: '2px 6px', background: '#eee', borderRadius: 4 }}>
-                #{l}{' '}
-                <button
-                  type="button"
-                  onClick={() => setLabels(labels.filter((x) => x !== l))}
-                  style={{ marginLeft: 4 }}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 4 }}>
+        <header className="project-modal-header">
+          <h2 className="project-modal-title">Edit project</h2>
+        </header>
+        <div className="project-modal-body">
+          <label className="project-field">
+            <span className="project-field-label">Name</span>
             <input
               type="text"
-              value={labelDraft}
-              onChange={(e) => setLabelDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  addLabel();
-                }
-              }}
-              placeholder="Add a label"
-              style={{ flex: 1, padding: 8 }}
+              className="project-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={256}
+              disabled={submitting}
             />
-            <button type="button" onClick={addLabel}>Add</button>
+          </label>
+          <div className="project-field">
+            <span className="project-field-label">Color</span>
+            <ColorPicker value={color} onChange={setColor} />
           </div>
+          <div className="project-field">
+            <span className="project-field-label">Icon</span>
+            <IconPicker value={icon} onChange={setIcon} />
+          </div>
+          <div className="project-field">
+            <span className="project-field-label">Labels</span>
+            {labels.length > 0 && (
+              <div className="project-card-labels">
+                {labels.map((l) => (
+                  <span key={l} className="project-label-edit-chip">
+                    #{l}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${l}`}
+                      className="project-label-edit-chip-remove"
+                      onClick={() => setLabels(labels.filter((x) => x !== l))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="project-label-edit-row">
+              <input
+                type="text"
+                className="project-input"
+                value={labelDraft}
+                onChange={(e) => setLabelDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addLabel();
+                  }
+                }}
+                placeholder="Add a label"
+              />
+              <button
+                type="button"
+                className="home-btn home-btn-outline"
+                onClick={addLabel}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+          {error && <p className="project-modal-error" role="alert">{error}</p>}
         </div>
-        {error && <div role="alert" style={{ color: '#b00', marginBottom: 8 }}>{error}</div>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} disabled={submitting}>Cancel</button>
-          <button type="submit" disabled={!name.trim() || submitting}>
+        <footer className="project-modal-footer">
+          <button
+            type="button"
+            className="home-btn home-btn-outline"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="home-btn home-btn-primary"
+            disabled={!name.trim() || submitting}
+          >
             {submitting ? 'Saving…' : 'Save'}
           </button>
-        </div>
+        </footer>
       </form>
     </div>
   );
