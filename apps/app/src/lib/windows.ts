@@ -85,9 +85,9 @@ export async function onCanvasCloseRequested(handler: () => Promise<void> | void
     event.preventDefault();
     try {
       await handler();
-    } finally {
-      // Resolving the prevention via destroy() is the documented Tauri 2 path.
       await cur.destroy();
+    } catch {
+      // Handler threw → abort the close. Window stays alive.
     }
   });
   return () => unlisten();
