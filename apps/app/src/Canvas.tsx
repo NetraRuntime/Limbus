@@ -101,6 +101,7 @@ import {
 import { ProjectChip } from './features/projects';
 import { useProject } from './features/projects/api/useProject';
 import { DeletedBanner } from './features/projects/components/DeletedBanner';
+import { useProjectThumbnail } from './features/projects/hooks/useProjectThumbnail';
 import { setCanvasTitle } from './lib/windows';
 import './App.css';
 
@@ -958,6 +959,12 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
   const [lodCache, setLodCache] = useState<LodCache | null>(null);
   const [lodWorker, setLodWorker] = useState<MipWorkerClient | null>(null);
+
+  const getLodCanvas = useCallback((): HTMLCanvasElement | null => {
+    const el = document.querySelector('canvas.lod-layer');
+    return el instanceof HTMLCanvasElement ? el : null;
+  }, []);
+  useProjectThumbnail(projectId, getLodCanvas);
 
   useEffect(() => {
     let cancelled = false;
