@@ -27,5 +27,10 @@ Run `pnpm tauri:dev`, then walk through:
 - [ ] **Saved tags are per-project**: In project A, label an image "cells". In project B, the saved-tag autocomplete should not surface "cells".
 - [ ] **Theme stays global**: Toggle theme in one canvas; another canvas reflects it on next paint.
 - [ ] **Quit confirm**: With at least one canvas open, attempt to close Home. Confirm prompt appears.
-- [ ] **First-launch migration** (clean DB): Drop `pb_data`, restart, run migrations. A Default Project exists; legacy `localStorage` saved tags (if any) migrate into the project's `tags` collection on first canvas open; the legacy key is cleared.
+- [ ] **Legacy tags migration** (clean DB with localStorage seeded by an older build):
+      Drop `pb_data`, restart, run migrations, then open the Default Project's canvas.
+      Legacy `localStorage` saved tags migrate into the project's `tags` collection on
+      first canvas open; the legacy key is then cleared. The migration runs once per
+      project that has zero existing tags — opening a different empty project later
+      will not duplicate them because the localStorage key is gone after first success.
 - [ ] **Web fallback**: `pnpm dev:app` opens Home at `/`; clicking a card navigates to `/?project=<id>`; the Home button in the chip navigates back.
