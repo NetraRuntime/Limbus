@@ -57,20 +57,26 @@ for (const level of ['log', 'warn', 'error'] as const) {
   };
 }
 
-let projectId: string | null = null;
-try {
-  projectId = readProjectIdFromLocation();
-} catch (err) {
-  if (err instanceof ProjectIdMissingError) {
-    console.warn('[main] empty project query, treating as Home');
-    projectId = null;
-  } else {
-    throw err;
-  }
-}
+const root = createRoot(document.getElementById('root')!);
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {projectId ? <App projectId={projectId} /> : <Home />}
-  </StrictMode>,
-);
+const renderForCurrentLocation = () => {
+  let projectId: string | null = null;
+  try {
+    projectId = readProjectIdFromLocation();
+  } catch (err) {
+    if (err instanceof ProjectIdMissingError) {
+      console.warn('[main] empty project query, treating as Home');
+      projectId = null;
+    } else {
+      throw err;
+    }
+  }
+  root.render(
+    <StrictMode>
+      {projectId ? <App projectId={projectId} /> : <Home />}
+    </StrictMode>,
+  );
+};
+
+renderForCurrentLocation();
+window.addEventListener('popstate', renderForCurrentLocation);

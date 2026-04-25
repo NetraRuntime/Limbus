@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { openCanvasWindow, focusHome } from './windows';
 
 describe('windows (web fallback)', () => {
@@ -17,5 +17,24 @@ describe('windows (web fallback)', () => {
     window.history.replaceState({}, '', '/?project=proj_abc');
     focusHome();
     expect(window.location.search).toBe('');
+  });
+
+  it('openCanvasWindow dispatches a popstate event after updating the URL', async () => {
+    const handler = vi.fn();
+    window.addEventListener('popstate', handler);
+    await openCanvasWindow('proj_xyz', 'Test Project');
+    expect(window.location.search).toBe('?project=proj_xyz');
+    expect(handler).toHaveBeenCalledTimes(1);
+    window.removeEventListener('popstate', handler);
+  });
+
+  it('focusHome dispatches a popstate event after navigating to /', async () => {
+    window.history.replaceState({}, '', '/?project=proj_abc');
+    const handler = vi.fn();
+    window.addEventListener('popstate', handler);
+    await focusHome();
+    expect(window.location.search).toBe('');
+    expect(handler).toHaveBeenCalledTimes(1);
+    window.removeEventListener('popstate', handler);
   });
 });
