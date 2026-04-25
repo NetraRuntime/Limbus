@@ -8,7 +8,8 @@ import '@netrart/design-system/responsive.css';
 import '@netrart/design-system/global.css';
 import './App.css';
 import { App } from './App';
-import { pb } from './lib/pb';
+import { readProjectIdFromLocation, ProjectIdMissingError } from './lib/projectId';
+import { Home } from './features/projects';
 
 // Forward uncaught errors/rejections AND console.{log,warn,error} to the
 // Tauri process stderr via the `debug_log` command so webview diagnostics
@@ -56,13 +57,20 @@ for (const level of ['log', 'warn', 'error'] as const) {
   };
 }
 
-(async () => {
-  const projects = await pb.collection('projects').getList(1, 1, { sort: '-created' });
-  const projectId = projects.items[0]?.id;
-  if (!projectId) throw new Error('No projects found — run migrations');
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <App projectId={projectId} />
-    </StrictMode>,
-  );
-})();
+let projectId: string | null = null;
+try {
+  projectId = readProjectIdFromLocation();
+} catch (err) {
+  if (err instanceof ProjectIdMissingError) {
+    console.warn('[main] empty project query, treating as Home');
+    projectId = null;
+  } else {
+    throw err;
+  }
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    {projectId ? <App projectId={projectId} /> : <Home />}
+  </StrictMode>,
+);
