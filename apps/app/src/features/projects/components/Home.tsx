@@ -6,6 +6,7 @@ import { NewProjectModal } from './NewProjectModal';
 import { SortMenu, type SortKey } from './SortMenu';
 import { LabelFilterRow } from './LabelFilterRow';
 import { pb } from '../../../lib/pb';
+import { onCanvasCloseRequested, listOpenCanvasLabels } from '../../../lib/windows';
 import '../Home.css';
 
 const ProjectFieldSchema = z.object({ project: z.string() });
@@ -51,6 +52,32 @@ export function Home() {
     projects.forEach((p) => p.labels.forEach((l) => set.add(l)));
     return Array.from(set).sort();
   }, [projects]);
+
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+
+    onCanvasCloseRequested(async () => {
+      const open = await listOpenCanvasLabels();
+      if (open.length === 0) return;
+      const ok = window.confirm(
+        `${open.length} project window${open.length === 1 ? '' : 's'} ${open.length === 1 ? 'is' : 'are'} still open.\n\nClose Home anyway?`,
+      );
+      if (!ok) {
+        throw new Error('home-close-canceled');
+      }
+    })
+      .then((c) => {
+        if (cancelled) c();
+        else cleanup = c;
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
