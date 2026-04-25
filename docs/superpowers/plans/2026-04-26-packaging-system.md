@@ -357,7 +357,7 @@ the existing `bundle` object with:
 ```json
 "bundle": {
   "active": true,
-  "targets": "all",
+  "targets": ["app", "dmg", "deb", "appimage", "nsis"],
   "icon": [
     "icons/32x32.png",
     "icons/128x128.png",
@@ -383,10 +383,9 @@ the existing `bundle` object with:
     }
   },
   "windows": {
-    "wix": null,
     "nsis": {
       "installerIcon": "icons/icon.ico",
-      "installMode": "perUser"
+      "installMode": "currentUser"
     }
   },
   "category": "Productivity",
@@ -422,8 +421,6 @@ Create `apps/app/src-tauri/entitlements.plist`:
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-  <true/>
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
   <key>com.apple.security.cs.allow-jit</key>
