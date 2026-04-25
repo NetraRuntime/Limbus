@@ -26,23 +26,199 @@
 .home-root {
   position: fixed;
   inset: 0;
-  overflow: auto;
+  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
   isolation: isolate;
 }
 
+/* ---------- Scrollbars (WebKit + Firefox) ---------- */
+
+.home-content,
+.home-content *,
+.modal-card,
+.modal-card *,
+.settings-card,
+.settings-card * {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 18%, transparent) transparent;
+}
+
+.home-content::-webkit-scrollbar,
+.modal-card::-webkit-scrollbar,
+.settings-card::-webkit-scrollbar,
+.home-content *::-webkit-scrollbar,
+.modal-card *::-webkit-scrollbar,
+.settings-card *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.home-content::-webkit-scrollbar-track,
+.modal-card::-webkit-scrollbar-track,
+.settings-card::-webkit-scrollbar-track,
+.home-content *::-webkit-scrollbar-track,
+.modal-card *::-webkit-scrollbar-track,
+.settings-card *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.home-content::-webkit-scrollbar-thumb,
+.modal-card::-webkit-scrollbar-thumb,
+.settings-card::-webkit-scrollbar-thumb,
+.home-content *::-webkit-scrollbar-thumb,
+.modal-card *::-webkit-scrollbar-thumb,
+.settings-card *::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+  transition: background 160ms ease;
+}
+
+.home-content::-webkit-scrollbar-thumb:hover,
+.modal-card::-webkit-scrollbar-thumb:hover,
+.settings-card::-webkit-scrollbar-thumb:hover,
+.home-content *::-webkit-scrollbar-thumb:hover,
+.modal-card *::-webkit-scrollbar-thumb:hover,
+.settings-card *::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--fg) 32%, transparent);
+  background-clip: padding-box;
+}
+
+.home-content::-webkit-scrollbar-corner,
+.modal-card::-webkit-scrollbar-corner,
+.settings-card::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .home-content {
-  /* Generous side padding so the content sits inside the floating HUD
-     pills with breathing room. Top padding clears the wordmark; bottom
-     clears the search HUD. */
-  padding: 80px clamp(20px, 3vw, 36px) 96px;
-  min-height: 100%;
+  /* The content layer is the actual scroll container — keeps the
+     toolbar/titlebar above visually pinned (they're not in the
+     scroller). Top clears titlebar (32px) + toolbar (52px); bottom
+     padding is bumped only on Projects to clear the search HUD. */
+  position: absolute;
+  top: 84px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px clamp(20px, 3vw, 36px);
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
   animation: home-view-fade 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.home-content[data-view="projects"] {
+  padding-bottom: 96px;
+}
+
+/* ---------- Slim drag-only titlebar (covers traffic lights) ---------- */
+
+.home-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  z-index: 21;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---------- Toolbar (under titlebar) ---------- */
+
+.home-toolbar {
+  position: fixed;
+  top: 32px;
+  left: 0;
+  right: 0;
+  height: 52px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(20px, 3vw, 36px);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.home-toolbar-left,
+.home-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.home-toolbar-right {
+  gap: 6px;
+}
+
+.home-toolbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 13px/1 var(--font-display, system-ui);
+  letter-spacing: -0.2px;
+  color: var(--fg);
+}
+
+.home-toolbar-brand i {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.home-toolbar-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 12px/1 var(--font-display, system-ui);
+  letter-spacing: -0.1px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.home-toolbar-btn i {
+  font-size: 14px;
+}
+
+.home-toolbar-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+
+.home-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.home-toolbar-btn.is-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.home-toolbar-btn.is-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 90%, black);
+  color: var(--bg);
+}
+
+.home-toolbar-btn.is-icon {
+  padding: 0;
+  width: 30px;
+  justify-content: center;
 }
 
 @keyframes home-view-fade {
@@ -703,9 +879,9 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border-radius: var(--radius-md);
+  padding: 3px;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 999px;
 }
 
 .home-view-tab {
@@ -715,18 +891,18 @@
   color: var(--fg-muted);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: calc(var(--radius-md) - 2px);
+  gap: 5px;
+  padding: 6px 12px;
   font: 600 12px/1 var(--font-display, system-ui);
   letter-spacing: -0.1px;
+  border-radius: 999px;
   cursor: pointer;
   position: relative;
-  transition: color 140ms ease, background 140ms ease;
+  transition: color 140ms ease, background 140ms ease, box-shadow 200ms ease;
 }
 
 .home-view-tab i {
-  font-size: 14px;
+  font-size: 13px;
   opacity: 0.85;
 }
 
@@ -737,7 +913,7 @@
 .home-view-tab.is-active {
   background: var(--bg);
   color: var(--fg);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
 }
 
 .home-view-tab-count {

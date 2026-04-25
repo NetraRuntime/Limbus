@@ -206,8 +206,6 @@ export function Home() {
   const [sort, setSort] = useState<SortKey>('recent');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
-  const wordmarkGlass = useAutoLiquidGlassFilter({ radius: 10 });
-  const newProjectGlass = useAutoLiquidGlassFilter({ radius: 12 });
   const searchGlass = useAutoLiquidGlassFilter({ radius: 999 });
 
   const projects = state.status === 'ready' ? state.projects : [];
@@ -320,19 +318,14 @@ export function Home() {
         )}
       </main>
 
-      <div className="hud hud-top-left">
-        {wordmarkGlass.filterSvg}
-        <div
-          ref={wordmarkGlass.ref}
-          className="wordmark is-liquid-glass"
-          aria-label="NetraRT — Home"
-          style={wordmarkGlass.style}
-        >
-          <span className="wordmark-home" aria-hidden>
-            <i className="ri-home-2-line wordmark-home-icon" />
-            <span className="wordmark-glyph">NetraRT</span>
+      <div className="home-titlebar" data-tauri-drag-region aria-hidden />
+
+      <header className="home-toolbar">
+        <div className="home-toolbar-left">
+          <span className="home-toolbar-brand" aria-hidden>
+            <i className="ri-eye-line" />
+            <span>NetraRT</span>
           </span>
-          <span className="wordmark-divider" aria-hidden />
           <div className="home-view-switch" role="tablist" aria-label="Home views">
             <button
               type="button"
@@ -364,23 +357,12 @@ export function Home() {
             </button>
           </div>
         </div>
-      </div>
 
-      <DownloadChip onClick={() => setView('models')} />
-
-      <div className="hud hud-top-right">
-        {newProjectGlass.filterSvg}
-        <div
-          ref={newProjectGlass.ref}
-          className="btn-cluster is-liquid-glass"
-          role="group"
-          aria-label="App actions"
-          style={newProjectGlass.style}
-        >
+        <div className="home-toolbar-right">
           {view === 'projects' && (
             <button
               type="button"
-              className="btn-ghost"
+              className="home-toolbar-btn is-primary"
               onClick={() => setNewOpen(true)}
               disabled={activeModelMissing}
               title={projectsDisabledReason}
@@ -390,7 +372,7 @@ export function Home() {
           )}
           <button
             type="button"
-            className="btn-ghost"
+            className="home-toolbar-btn is-icon"
             aria-label="Open settings"
             title="Settings"
             onClick={() => setSettingsOpen(true)}
@@ -398,7 +380,9 @@ export function Home() {
             <i className="ri-settings-3-line" aria-hidden />
           </button>
         </div>
-      </div>
+      </header>
+
+      <DownloadChip onClick={() => setView('models')} />
 
       {view === 'projects' && (
         <div className="hud hud-bottom-center">
