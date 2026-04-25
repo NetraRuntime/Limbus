@@ -11,12 +11,13 @@ import { colorForTag, sanitizeTag, useSavedTags } from './savedTags';
 import { useAutoLiquidGlassFilter } from './LiquidGlass';
 
 type Props = {
+  projectId: string;
   /** Glyph-only button; the label is supplied via aria-label. */
   className?: string;
 };
 
-export function SavedTagsPopover({ className }: Props = {}) {
-  const { tags, remove, rename } = useSavedTags();
+export function SavedTagsPopover({ projectId, className }: Props) {
+  const { tags, remove, rename } = useSavedTags(projectId);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -97,7 +98,7 @@ export function SavedTagsPopover({ className }: Props = {}) {
   const commitEdit = useCallback(() => {
     if (!editing) return;
     const next = sanitizeTag(draft);
-    if (next && next !== editing) rename(editing, next);
+    if (next && next !== editing) void rename(editing, next);
     setEditing(null);
     setDraft('');
   }, [editing, draft, rename]);
@@ -273,7 +274,7 @@ export function SavedTagsPopover({ className }: Props = {}) {
                       title="Remove"
                       onClick={() => {
                         if (isEditing) cancelEdit();
-                        remove(tag);
+                        void remove(tag);
                       }}
                     >
                       <i className="ri-close-line" aria-hidden />
