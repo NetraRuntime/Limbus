@@ -331,11 +331,16 @@ struct EntryInfo {
 }
 
 fn is_supported_ext(ext: &str) -> bool {
+    // Mirror the JS classifier in apps/app/src/lib/mediaIngest.ts (IMAGE_EXTS,
+    // VIDEO_EXTS, ANNOTATION_EXTS). Annotation files have to ride along so
+    // detectAnnotations() can pair them with images on Tauri-native drops —
+    // browser drops use the JS classifier directly and don't hit this path.
     matches!(
         ext,
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "bmp" | "heic" | "heif" | "svg" |
         "mp4" | "webm" | "mov" | "m4v" | "mkv" | "ogv" | "avi" | "3gp" |
-        "zip"
+        "zip" |
+        "json" | "txt" | "xml" | "yaml" | "yml" | "names"
     )
 }
 
