@@ -164,8 +164,24 @@ Store-specific tier. This gets you:
    - Click **Continue**, save the `.certSigningRequest` file somewhere safe.
    - Next screen: Key Size **2048**, Algorithm **RSA**. Click **Continue**, then **Done**.
 4. Back in the developer portal, upload the `.certSigningRequest` file. Click **Continue**.
-5. Download the resulting `developerID_application.cer` file. Double-click it — Keychain Access opens and imports it into your **login** keychain. The matching private key (which Keychain generated locally during step 3) pairs with it automatically.
-6. **Verify the cert is paired.** In Keychain Access → "login" → "My Certificates", you should see "Developer ID Application: <Your Name/Org> (TEAMID)" with a disclosure triangle that expands to show the private key.
+5. Download the resulting `developerID_application.cer` file. **Import it into your login keychain.** On macOS 14+ double-clicking a `.cer` may silently do nothing (Apple changed the default handler), so use the command line:
+
+   ```bash
+   security import ~/Downloads/developerID_application.cer \
+     -k ~/Library/Keychains/login.keychain-db
+   ```
+
+   Expected output: `1 identity imported.` (or `1 certificate imported.` if it was already present). The matching private key — which Keychain generated locally during step 3 — pairs with it automatically.
+
+   GUI alternative: `open -a "Keychain Access"` then drag the `.cer` file onto the window. Pick **login** as the destination keychain.
+
+6. **Verify the cert is paired with its private key:**
+
+   ```bash
+   security find-identity -v -p codesigning
+   ```
+
+   You should see a numbered entry like `1) ABCDEF1234… "Developer ID Application: Kolosal AI Inc. (AB12CD34EF)"`. If the cert shows up in Keychain Access but **not** in this list, the private key is missing — usually because the CSR was generated on a different Mac. Redo the CSR on this Mac, or transfer the private key over.
 
 **Capture one value:**
 
