@@ -6,8 +6,24 @@
   pointer-events: none;
 }
 
+/* Slim transparent drag region covering the macOS traffic lights.
+   Matches .home-titlebar so the canvas window can be dragged from the
+   top edge while keeping the infinite canvas visible underneath. */
+.canvas-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  z-index: 9;
+  background: transparent;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .hud-top-left {
-  top: var(--space-5);
+  top: calc(32px + var(--space-1));
   left: var(--space-5);
   display: flex;
   align-items: center;
@@ -38,7 +54,7 @@
 
 
 .hud-top-right {
-  top: var(--space-5);
+  top: calc(32px + var(--space-1));
   right: var(--space-5);
   display: flex;
   align-items: center;
@@ -199,7 +215,7 @@
 .saved-tags-popover {
   position: fixed;
   z-index: 21;
-  top: calc(var(--space-5) + 40px);
+  top: calc(32px + var(--space-1) + 40px);
   right: var(--space-5);
   width: 260px;
   max-height: 60vh;

@@ -3283,6 +3283,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
 
   return (
     <>
+      <div className="canvas-titlebar" data-tauri-drag-region aria-hidden />
       <InfiniteCanvas
         ref={canvasRef}
         initial={initial}
