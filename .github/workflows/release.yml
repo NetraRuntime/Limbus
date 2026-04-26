@@ -146,6 +146,38 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Persistent keychain so sign-mac.mjs can run codesign post-bundle.
+      - name: Set up macOS signing keychain
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_B64: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/netrart-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+
+          printf '%s' "$APPLE_CERTIFICATE_B64" | base64 -D -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" >/dev/null
+
+          existing=$(security list-keychain -d user | tr -d '"' | tr -s ' ')
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $existing
+
+          rm "$CERT_PATH"
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
       - run: node scripts/release/fetch-pocketbase.mjs
 
       - run: node scripts/build-sam3.mjs
