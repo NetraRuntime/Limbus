@@ -33,3 +33,9 @@ apps/app/src-tauri/binaries/
 
 # Superpowers git worktrees for isolated task workspaces.
 .worktrees/
+
+# Sample datasets fetched for local dev/testing (not meant to be committed).
+datasets/
+*.certSigningRequest
+*.cer
+*.p8
