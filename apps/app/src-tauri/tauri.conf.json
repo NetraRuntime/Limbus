@@ -32,6 +32,17 @@
       "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8090 ws://127.0.0.1:8090 https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:8090; media-src 'self' blob: http://127.0.0.1:8090; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self'"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/<ORG>/netrart-releases/releases/latest/download/latest.json"
+      ],
+      "pubkey": "<PASTE-TAURI-UPDATER-PUBLIC-KEY-FROM-TASK-3.1>",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg", "deb", "appimage", "nsis"],
