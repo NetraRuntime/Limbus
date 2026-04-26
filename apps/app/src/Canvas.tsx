@@ -86,7 +86,7 @@ import {
 } from './lib/mediaIngest';
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
 import { runAnnotationPlan } from './lib/annotations';
-import type { AnnotationFormat, AnnotationPlan } from './lib/annotations';
+import type { AnnotationFormat, AnnotationPlan, SegGroup } from './lib/annotations';
 import { placeGrid } from './lib/gridPlacement';
 import { useImportPreview } from './hooks/useImportPreview';
 import { ImportPreviewModal } from './components/ImportPreviewModal';
@@ -2542,21 +2542,48 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
 
       if (annotationPlan && chosenFormat !== 'none' && imageIdByDescriptorPath.size > 0) {
         try {
+          const importedGroups: SegGroup[] = [];
           const { errors } = await runAnnotationPlan({
             plan: annotationPlan,
             chosenFormat,
             descriptors,
             imageIdByDescriptorPath,
-            upsert: (group) =>
-              upsertSegmentation(projectId, {
+            upsert: async (group) => {
+              await upsertSegmentation(projectId, {
                 image: group.imageId,
                 tag: group.tag,
                 masks: group.masks,
                 source_width: group.sourceWidth,
                 source_height: group.sourceHeight,
-              }).then(() => undefined),
+              });
+              importedGroups.push(group);
+            },
           });
           if (errors.length > 0) console.warn('[annotations] errors:', errors);
+          if (importedGroups.length > 0) {
+            // Push the newly-upserted groups into local canvas state so masks
+            // light up immediately — without this, the user would have to
+            // reload the project to see imported segmentations.
+            setSegments((prev) => {
+              const next = { ...prev };
+              for (const group of importedGroups) {
+                const existing = next[group.imageId]?.entries ?? [];
+                const byTag = new Map<string, TagSegment>();
+                for (const entry of existing) byTag.set(entry.tag.toLowerCase(), entry);
+                byTag.set(group.tag.toLowerCase(), {
+                  tag: group.tag,
+                  status: 'ready',
+                  response: {
+                    masks: group.masks,
+                    source_width: group.sourceWidth,
+                    source_height: group.sourceHeight,
+                  },
+                });
+                next[group.imageId] = { entries: Array.from(byTag.values()) };
+              }
+              return next;
+            });
+          }
         } catch (err) {
           console.error('[annotations] plan failed', err);
         }
