@@ -35,7 +35,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/<ORG>/netrart-releases/releases/latest/download/latest.json"
+        "https://github.com/rifkybujana/netrart-releases/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5QjBDRkYyRTY3NTM5OTMKUldTVE9YWG04cyt3MmZWOStYcFhWalBhaDhZaC80RkdpSkdTVFFZTTdvVnFEWmc2L0tyU2w1ZlkK",
       "windows": {
