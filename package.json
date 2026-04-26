@@ -17,6 +17,7 @@
     "typecheck": "pnpm -r typecheck",
     "tauri:dev": "pnpm --filter @netrart/app tauri:dev",
     "tauri:build": "pnpm --filter @netrart/app tauri:build",
+    "release:prepare": "node scripts/release/bump-version.mjs",
     "stage:pb": "node scripts/stage-pocketbase.mjs",
     "db:start": "node scripts/dev-pocketbase.mjs",
     "db:migrate": "node scripts/dev-pocketbase.mjs migrate up",
@@ -32,6 +33,7 @@
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
-    "typescript-eslint": "^8.19.1"
+    "typescript-eslint": "^8.19.1",
+    "yauzl": "^3.3.0"
   }
 }

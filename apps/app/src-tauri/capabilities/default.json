@@ -21,6 +21,8 @@
           "args": true
         }
       ]
-    }
+    },
+    "updater:default",
+    "process:default"
   ]
 }

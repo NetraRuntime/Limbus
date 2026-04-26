@@ -1,0 +1,249 @@
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to re-build (e.g. v0.2.0)'
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag || github.ref }}
+
+      - id: ver
+        name: Extract + verify version
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          TAURI_VER=$(node -p "require('./apps/app/src-tauri/tauri.conf.json').version")
+          if [ "$VERSION" != "$TAURI_VER" ]; then
+            echo "tag $TAG (=$VERSION) does not match tauri.conf.json version $TAURI_VER"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release version: $VERSION"
+
+      - name: Verify pocketbase.sha256 covers all triples
+        run: |
+          for triple in aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do
+            grep -q "^$triple " pb/pocketbase.sha256 || { echo "missing: $triple"; exit 1; }
+          done
+
+      - name: Verify required secrets present
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # WINDOWS_CERTIFICATE: skipped — macOS-only smoke release
+          # WINDOWS_CERTIFICATE_PASSWORD: skipped — macOS-only smoke release
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_MIRROR_PAT: ${{ secrets.RELEASE_MIRROR_PAT }}
+        run: |
+          for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD RELEASE_MIRROR_PAT; do
+            if [ -z "${!var}" ]; then echo "missing: $var"; exit 1; fi
+          done
+
+  build:
+    needs: preflight
+    strategy:
+      fail-fast: true
+      matrix:
+        # macOS-only smoke release for v0.2.0. Re-enable Windows + Linux
+        # legs once WINDOWS_CERTIFICATE lands and the Linux libsam3 RPATH
+        # path has been exercised in a rehearsal PR.
+        include:
+          - os: macos-14
+            triple: aarch64-apple-darwin
+            bundles: dmg,app,updater
+            label: macos-aarch64
+          - os: macos-13
+            triple: x86_64-apple-darwin
+            bundles: dmg,app,updater
+            label: macos-x86_64
+          # - os: windows-2022
+          #   triple: x86_64-pc-windows-msvc
+          #   bundles: nsis,updater
+          #   label: windows-x64
+          # - os: ubuntu-22.04
+          #   triple: x86_64-unknown-linux-gnu
+          #   bundles: deb,appimage,updater
+          #   label: linux-x64
+
+    runs-on: ${{ matrix.os }}
+    env:
+      TAURI_ENV_TARGET_TRIPLE: ${{ matrix.triple }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/app/src-tauri -> target
+          key: ${{ matrix.triple }}
+
+      - name: Cache sam3 build
+        uses: actions/cache@v4
+        with:
+          path: vendor/sam3.c/build
+          key: sam3-${{ matrix.os }}-${{ hashFiles('vendor/sam3.c/CMakeLists.txt', '.gitmodules') }}-${{ hashFiles('vendor/sam3.c/**/*.c', 'vendor/sam3.c/**/*.h') }}
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev cmake
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: node scripts/release/fetch-pocketbase.mjs
+
+      - run: node scripts/build-sam3.mjs
+
+      - if: runner.os == 'Windows'
+        run: node scripts/release/sign-windows.mjs
+
+      - run: pnpm --filter @netrart/app build
+
+      - run: pnpm --filter @netrart/app tauri build --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
+
+      - if: runner.os == 'macOS'
+        run: node scripts/release/verify-mac-binary.mjs
+
+      - if: runner.os == 'macOS'
+        run: node scripts/release/sign-mac.mjs
+
+      - name: Self-check
+        shell: bash
+        run: |
+          case "${{ matrix.triple }}" in
+            aarch64-apple-darwin|x86_64-apple-darwin)
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
+              ;;
+            x86_64-pc-windows-msvc)
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/NetraRT.exe --self-check
+              ;;
+            x86_64-unknown-linux-gnu)
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
+              ;;
+          esac
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts/${{ matrix.label }}
+          find apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle -type f \( \
+            -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' \
+            -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \) \
+            -exec cp {} artifacts/${{ matrix.label }}/ \;
+          ls -la artifacts/${{ matrix.label }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: artifacts/${{ matrix.label }}
+          retention-days: 30
+
+  publish:
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      RELEASE_MIRROR_PAT: ${{ secrets.RELEASE_MIRROR_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Build latest.json
+        env:
+          MIRROR_REPO: ${{ vars.NETRART_RELEASES_REPO }}
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          BASE_URL="https://github.com/${MIRROR_REPO}/releases/download/v${VERSION}"
+          node scripts/release/sync-latest-json.mjs \
+            --version "$VERSION" \
+            --artifacts ./artifacts \
+            --base-url "$BASE_URL" \
+            --out ./latest.json
+
+      - name: Publish release on mirror repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_MIRROR_PAT }}
+          MIRROR_REPO: ${{ vars.NETRART_RELEASES_REPO }}
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          TAG="v$VERSION"
+          NOTES_FILE=$(mktemp)
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" 'BEGIN{p=0} /^## /{p=0} $0 ~ "^## .*"ver{p=1; next} p' CHANGELOG.md > "$NOTES_FILE"
+          fi
+          [ -s "$NOTES_FILE" ] || echo "Release $TAG" > "$NOTES_FILE"
+
+          mapfile -t ASSETS < <(find artifacts -type f \( \
+            -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' \
+            -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \))
+          ASSETS+=(latest.json latest.json.sig)
+
+          if gh release view "$TAG" --repo "$MIRROR_REPO" >/dev/null 2>&1; then
+            echo "release exists — uploading with --clobber"
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$MIRROR_REPO" --clobber
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --repo "$MIRROR_REPO" \
+              --title "NetraRT $VERSION" \
+              --notes-file "$NOTES_FILE"
+          fi
+          gh release edit "$TAG" --latest --repo "$MIRROR_REPO"

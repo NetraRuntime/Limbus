@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../../../pb/pb_migrations": "pb_migrations",
+      "../../../vendor/sam3.c/models/bpe_simple_vocab_16e6.txt.gz": "models/bpe_simple_vocab_16e6.txt.gz",
+      "../../../vendor/sam3.c/build/Release/sam3.dll": "."
+    }
+  }
+}
