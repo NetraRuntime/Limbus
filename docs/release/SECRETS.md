@@ -44,11 +44,11 @@ un-updatable.
 
 | Secret | Purpose | Owner | Rotation |
 |---|---|---|---|
-| `RELEASE_MIRROR_PAT` | Fine-grained PAT scoped to `contents:write` on `<ORG>/netrart-releases` only | Org admin | 90 days |
+| `RELEASE_MIRROR_PAT` | Fine-grained PAT scoped to `contents:write` on `rifkybujana/netrart-releases` only | Org admin | 90 days |
 
 The PAT is generated via GitHub Settings → Developer settings → Personal
 access tokens (fine-grained). When generating: select repository
-`<ORG>/netrart-releases` only, repository permissions: Contents = Read & write.
+`rifkybujana/netrart-releases` only, repository permissions: Contents = Read & write.
 No other scopes.
 
 ## Repository variables (not secrets)

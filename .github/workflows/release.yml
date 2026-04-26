@@ -52,13 +52,13 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          # WINDOWS_CERTIFICATE: skipped — macOS-only smoke release
+          # WINDOWS_CERTIFICATE_PASSWORD: skipped — macOS-only smoke release
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           RELEASE_MIRROR_PAT: ${{ secrets.RELEASE_MIRROR_PAT }}
         run: |
-          for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER WINDOWS_CERTIFICATE WINDOWS_CERTIFICATE_PASSWORD TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD RELEASE_MIRROR_PAT; do
+          for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD RELEASE_MIRROR_PAT; do
             if [ -z "${!var}" ]; then echo "missing: $var"; exit 1; fi
           done
 
@@ -67,6 +67,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # macOS-only smoke release for v0.2.0. Re-enable Windows + Linux
+        # legs once WINDOWS_CERTIFICATE lands and the Linux libsam3 RPATH
+        # path has been exercised in a rehearsal PR.
         include:
           - os: macos-14
             triple: aarch64-apple-darwin
@@ -76,14 +79,14 @@ jobs:
             triple: x86_64-apple-darwin
             bundles: dmg,app,updater
             label: macos-x86_64
-          - os: windows-2022
-            triple: x86_64-pc-windows-msvc
-            bundles: nsis,updater
-            label: windows-x64
-          - os: ubuntu-22.04
-            triple: x86_64-unknown-linux-gnu
-            bundles: deb,appimage,updater
-            label: linux-x64
+          # - os: windows-2022
+          #   triple: x86_64-pc-windows-msvc
+          #   bundles: nsis,updater
+          #   label: windows-x64
+          # - os: ubuntu-22.04
+          #   triple: x86_64-unknown-linux-gnu
+          #   bundles: deb,appimage,updater
+          #   label: linux-x64
 
     runs-on: ${{ matrix.os }}
     env:

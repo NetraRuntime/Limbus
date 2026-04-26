@@ -371,7 +371,7 @@ Source never leaves this private repo.
 
 ### 4.1 Create the repo
 
-1. Go to <https://github.com/organizations/<ORG>/repositories/new> (replace `<ORG>` with your GitHub org slug, e.g. `kolosal-ai`). For a personal account, use <https://github.com/new>.
+1. Go to <https://github.com/organizations/rifkybujana/repositories/new> (replace `rifkybujana` with your GitHub org slug, e.g. `kolosal-ai`). For a personal account, use <https://github.com/new>.
 2. Name: `netrart-releases`.
 3. Description: `Public installer downloads for NetraRT.`
 4. Visibility: **Public**.
@@ -411,7 +411,7 @@ Public installer downloads for [NetraRT](https://netrart.com).
 
 ## Install
 
-Pick the latest release on the [Releases page](https://github.com/<ORG>/netrart-releases/releases).
+Pick the latest release on the [Releases page](https://github.com/rifkybujana/netrart-releases/releases).
 
 - **macOS (Apple Silicon):** `NetraRT_<version>_aarch64.dmg`
 - **macOS (Intel):** `NetraRT_<version>_x64.dmg`
@@ -456,7 +456,7 @@ Push:
 ```bash
 git add README.md LICENSE
 git commit -m "chore: initial scaffold"
-git remote add origin git@github.com:<ORG>/netrart-releases.git
+git remote add origin git@github.com:rifkybujana/netrart-releases.git
 git push -u origin main
 ```
 
@@ -468,9 +468,9 @@ exactly that one repo, with exactly one permission.
 
 1. <https://github.com/settings/personal-access-tokens/new>
 2. Token name: `NetraRT release publisher`.
-3. Resource owner: `<ORG>` (the org owning `netrart-releases`).
+3. Resource owner: `rifkybujana` (the org owning `netrart-releases`).
 4. Expiration: **90 days** maximum (per `SECRETS.md` rotation policy).
-5. Repository access: **Only select repositories** → pick `<ORG>/netrart-releases`. **Do not** grant access to anything else, including the private `netrart` repo (the workflow runs in `netrart`'s context with built-in `GITHUB_TOKEN` for that repo's own actions; the PAT is purely for cross-repo upload).
+5. Repository access: **Only select repositories** → pick `rifkybujana/netrart-releases`. **Do not** grant access to anything else, including the private `netrart` repo (the workflow runs in `netrart`'s context with built-in `GITHUB_TOKEN` for that repo's own actions; the PAT is purely for cross-repo upload).
 6. Repository permissions: scroll to **Contents** → **Read and write**. Leave all other permissions at "No access".
 7. Click **Generate token**. Copy the value immediately — GitHub only shows it once.
 
@@ -482,45 +482,45 @@ Add a calendar reminder for 7 days before the PAT expires (~83 days from now)
 to rotate it. Per `SECRETS.md` §"Procedure: rotating a secret", you can stage
 a new PAT alongside the old one for a zero-downtime swap.
 
-### 4.5 Replace `<ORG>` placeholders in this repo
+### 4.5 Replace `rifkybujana` placeholders in this repo
 
-The implementation phase left literal `<ORG>` placeholders in places that
+The implementation phase left literal `rifkybujana` placeholders in places that
 need the real org slug. From the worktree:
 
 ```bash
 cd /Users/rbisri/Documents/netrart/.claude/worktrees/packaging-system
 
 # Find the placeholders
-grep -rn '<ORG>' \
+grep -rn 'rifkybujana' \
   apps/app/src-tauri/tauri.conf.json \
   scripts/release/sync-latest-json.mjs \
   docs/release/
 
 # Replace (substitute kolosal-ai with your real org)
 ORG=kolosal-ai
-grep -rl '<ORG>' \
+grep -rl 'rifkybujana' \
   apps/app/src-tauri/tauri.conf.json \
   scripts/release/sync-latest-json.mjs \
   docs/release/ \
-  | xargs sed -i '' "s|<ORG>|${ORG}|g"   # macOS sed
+  | xargs sed -i '' "s|rifkybujana|${ORG}|g"   # macOS sed
 # Linux: drop the empty quotes after -i
 
 # Verify (should produce no output)
-grep -rn '<ORG>' \
+grep -rn 'rifkybujana' \
   apps/app/src-tauri/tauri.conf.json \
   scripts/release/sync-latest-json.mjs \
   docs/release/
 
 git add apps/app/src-tauri/tauri.conf.json scripts/release/sync-latest-json.mjs docs/release/
-git commit -m "chore(release): replace <ORG> placeholder with ${ORG}"
+git commit -m "chore(release): replace rifkybujana placeholder with ${ORG}"
 ```
 
 ### 4.6 Mirror-repo checklist
 
-- Public repo `<ORG>/netrart-releases` exists with README + LICENSE.
+- Public repo `rifkybujana/netrart-releases` exists with README + LICENSE.
 - Issues, PRs, Wiki disabled.
 - Fine-grained PAT generated with `Contents: read+write` scoped to that repo only.
-- `<ORG>` placeholders replaced in this private repo's config.
+- `rifkybujana` placeholders replaced in this private repo's config.
 - One value noted: `RELEASE_MIRROR_PAT`.
 
 ---
@@ -530,7 +530,7 @@ git commit -m "chore(release): replace <ORG> placeholder with ${ORG}"
 You should now have 13 secret values + 1 repo-variable value in your password
 manager. Plug them into the **private `netrart` repo** (not the public mirror):
 
-1. Go to <https://github.com/<ORG>/netrart/settings/secrets/actions>.
+1. Go to <https://github.com/rifkybujana/netrart/settings/secrets/actions>.
 2. Click **New repository secret** for each of the following.
 3. Name them exactly as shown — `release.yml` references them by literal name.
 
@@ -571,7 +571,7 @@ From §4.4:
 Same settings page → **Variables** tab → **New repository variable**:
 
 - Name: `NETRART_RELEASES_REPO`
-- Value: `<ORG>/netrart-releases` (e.g. `kolosal-ai/netrart-releases`)
+- Value: `rifkybujana/netrart-releases` (e.g. `kolosal-ai/netrart-releases`)
 
 Variables are visible to read in workflow runs (which is fine for a repo
 slug); secrets are masked. Don't put `RELEASE_MIRROR_PAT` here by accident.
@@ -680,7 +680,7 @@ Expected steps: preflight (~30s) → 4 build jobs in parallel (~10-20 min each)
 ### 7.1 Verify the GitHub Release on the mirror repo
 
 ```bash
-gh release view v0.2.0 --repo <ORG>/netrart-releases
+gh release view v0.2.0 --repo rifkybujana/netrart-releases
 ```
 
 Should list these assets (`<v>` = `0.2.0`):

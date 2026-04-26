@@ -6,7 +6,7 @@
  * Usage: node scripts/release/sync-latest-json.mjs \
  *          --version 0.2.0 \
  *          --artifacts ./artifacts \
- *          --base-url https://github.com/<ORG>/netrart-releases/releases/download/v0.2.0 \
+ *          --base-url https://github.com/rifkybujana/netrart-releases/releases/download/v0.2.0 \
  *          --out ./latest.json
  *
  * Expected artifact layout:
@@ -45,12 +45,14 @@ const platforms = {};
 for (const p of PLATFORMS) {
   const dir = resolve(artifactsDir, p.dir);
   if (!existsSync(dir)) {
-    throw new Error(`missing artifact dir: ${dir}`);
+    console.warn(`[sync-latest-json] skip ${p.id}: ${dir} not produced`);
+    continue;
   }
   const files = readdirSync(dir);
   const bundle = files.find((f) => p.match.test(f));
   if (!bundle) {
-    throw new Error(`no matching updater bundle in ${dir} (regex ${p.match})`);
+    console.warn(`[sync-latest-json] skip ${p.id}: no updater bundle in ${dir}`);
+    continue;
   }
   const sigPath = resolve(dir, `${bundle}.sig`);
   if (!existsSync(sigPath)) {
@@ -61,6 +63,10 @@ for (const p of PLATFORMS) {
     signature,
     url: `${baseUrl}/${bundle}`,
   };
+}
+
+if (Object.keys(platforms).length === 0) {
+  throw new Error('no platforms produced any artifacts — refusing to publish empty manifest');
 }
 
 const manifest = {

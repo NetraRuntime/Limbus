@@ -3,7 +3,7 @@
  * Prints per-asset download counts for releases on the netrart-releases repo.
  * Requires `gh` CLI authenticated.
  *
- * Usage: node scripts/release/download-stats.mjs [--repo <ORG>/netrart-releases]
+ * Usage: node scripts/release/download-stats.mjs [--repo rifkybujana/netrart-releases]
  */
 
 import { execFileSync } from 'node:child_process';
@@ -15,7 +15,7 @@ function arg(name, fallback) {
 
 const repo = arg('repo', process.env.NETRART_RELEASES_REPO);
 if (!repo) {
-  console.error('usage: download-stats.mjs --repo <ORG>/netrart-releases');
+  console.error('usage: download-stats.mjs --repo rifkybujana/netrart-releases');
   process.exit(1);
 }
 

@@ -17,7 +17,7 @@ and publish; this checklist is the human envelope around it.
 
 - [ ] On `main` (post-merge): `git tag v<version> && git push origin v<version>`
 - [ ] `release.yml` runs to completion. ~15–25 min.
-- [ ] GitHub Release on `<ORG>/netrart-releases` exists with all expected
+- [ ] GitHub Release on `rifkybujana/netrart-releases` exists with all expected
       assets:
   - [ ] `NetraRT_<v>_aarch64.dmg` + `.sig`
   - [ ] `NetraRT_<v>_x64.dmg` + `.sig`
@@ -51,7 +51,7 @@ Roll forward. **Do not delete or unpublish.**
 - [ ] Identify the failing change.
 - [ ] On `main`: revert (or fix-forward) + `pnpm release:prepare <next-patch>`.
 - [ ] Tag + push the next-patch version.
-- [ ] Edit the bad release on `<ORG>/netrart-releases`: prefix title with
+- [ ] Edit the bad release on `rifkybujana/netrart-releases`: prefix title with
       `[Withdrawn] ` and add a notes line linking to the patch.
-- [ ] `gh release edit v<next-patch> --latest --repo <ORG>/netrart-releases`
+- [ ] `gh release edit v<next-patch> --latest --repo rifkybujana/netrart-releases`
       (this should already happen automatically, but verify).
