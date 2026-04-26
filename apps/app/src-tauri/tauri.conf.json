@@ -2,11 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "NetraRT",
   "version": "0.1.0",
-  "identifier": "ai.kolosal.netrart",
+  "identifier": "app.netrart.com",
   "build": {
     "beforeDevCommand": "pnpm stage:pb && pnpm sam3:build && pnpm dev",
     "devUrl": "http://localhost:5174",
     "beforeBuildCommand": "pnpm stage:pb && pnpm sam3:build && pnpm build",
+    "beforeBundleCommand": "node ../../scripts/release/patch-rpath.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -31,9 +32,20 @@
       "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8090 ws://127.0.0.1:8090 https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:8090; media-src 'self' blob: http://127.0.0.1:8090; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self'"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/rifkybujana/netrart-releases/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5QjBDRkYyRTY3NTM5OTMKUldTVE9YWG04cyt3MmZWOStYcFhWalBhaDhZaC80RkdpSkdTVFFZTTdvVnFEWmc2L0tyU2w1ZlkK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "deb", "appimage", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -47,7 +59,22 @@
       "../../../vendor/sam3.c/models/bpe_simple_vocab_16e6.txt.gz": "models/bpe_simple_vocab_16e6.txt.gz"
     },
     "macOS": {
-      "frameworks": ["../../../vendor/sam3.c/build/libsam3.dylib"]
+      "frameworks": ["../../../vendor/sam3.c/build/libsam3.dylib"],
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/netrart/libsam3.so": "../../../vendor/sam3.c/build/libsam3.so"
+        }
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
+      }
     },
     "category": "Productivity",
     "shortDescription": "NetraRT infinite canvas",
