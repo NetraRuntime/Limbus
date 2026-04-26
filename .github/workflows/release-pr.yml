@@ -1,0 +1,175 @@
+name: release rehearsal
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: release-pr-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    if: startsWith(github.head_ref, 'release/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify version consistency
+        run: |
+          TAURI_VER=$(node -p "require('./apps/app/src-tauri/tauri.conf.json').version")
+          PKG_VER=$(node -p "require('./apps/app/package.json').version")
+          ROOT_VER=$(node -p "require('./package.json').version")
+          CARGO_VER=$(grep -m1 '^version' apps/app/src-tauri/Cargo.toml | cut -d'"' -f2)
+          echo "tauri=$TAURI_VER pkg=$PKG_VER root=$ROOT_VER cargo=$CARGO_VER"
+          test "$TAURI_VER" = "$PKG_VER" -a "$PKG_VER" = "$ROOT_VER" -a "$ROOT_VER" = "$CARGO_VER"
+
+      - name: Verify pocketbase.sha256 covers all triples
+        run: |
+          for triple in aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do
+            grep -q "^$triple " pb/pocketbase.sha256 || { echo "missing: $triple"; exit 1; }
+          done
+
+      - name: Verify required secrets configured (existence only)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER WINDOWS_CERTIFICATE WINDOWS_CERTIFICATE_PASSWORD TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [ -z "${!var}" ]; then echo "missing secret: $var"; exit 1; fi
+          done
+          echo "all secrets configured"
+
+  build:
+    needs: preflight
+    if: startsWith(github.head_ref, 'release/') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            triple: aarch64-apple-darwin
+            bundles: dmg,app
+          - os: macos-13
+            triple: x86_64-apple-darwin
+            bundles: dmg,app
+          - os: windows-2022
+            triple: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+
+    runs-on: ${{ matrix.os }}
+    env:
+      TAURI_ENV_TARGET_TRIPLE: ${{ matrix.triple }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/app/src-tauri -> target
+          key: ${{ matrix.triple }}
+
+      - name: Cache sam3 build
+        uses: actions/cache@v4
+        with:
+          path: vendor/sam3.c/build
+          key: sam3-${{ matrix.os }}-${{ hashFiles('vendor/sam3.c/CMakeLists.txt', '.gitmodules') }}-${{ hashFiles('vendor/sam3.c/**/*.c', 'vendor/sam3.c/**/*.h') }}
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev cmake
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Stage PocketBase
+        run: node scripts/release/fetch-pocketbase.mjs
+
+      - name: Build sam3
+        run: node scripts/build-sam3.mjs
+
+      - name: Sign libsam3.dll (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/release/sign-windows.mjs
+
+      - name: Build app
+        run: pnpm --filter @netrart/app build
+
+      - name: Tauri build
+        run: pnpm --filter @netrart/app tauri build --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
+
+      - name: Verify mac binary @rpath
+        if: runner.os == 'macOS'
+        run: node scripts/release/verify-mac-binary.mjs
+
+      - name: Sign mac binaries
+        if: runner.os == 'macOS'
+        run: node scripts/release/sign-mac.mjs
+
+      - name: Self-check (rehearsal smoke)
+        shell: bash
+        run: |
+          case "${{ matrix.triple }}" in
+            aarch64-apple-darwin|x86_64-apple-darwin)
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
+              ;;
+            x86_64-pc-windows-msvc)
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/NetraRT.exe --self-check
+              ;;
+            x86_64-unknown-linux-gnu)
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
+              ;;
+          esac
+
+      - name: Upload artifacts (rehearsal)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rehearsal-${{ matrix.triple }}
+          path: |
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.dmg
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.exe
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.deb
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.AppImage
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.tar.gz
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.zip
+            apps/app/src-tauri/target/${{ matrix.triple }}/release/bundle/**/*.sig
+          retention-days: 7
