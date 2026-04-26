@@ -58,30 +58,26 @@ function SegmentBakeLayerImpl({
   // Track the last mask under the pointer by stable identity string so
   // onMaskHover only fires on transitions, not every pointermove sample.
   const lastHoverKeyRef = useRef<string | null>(null);
-  // `transferFromImageBitmap` is DESTRUCTIVE — after the first call the
-  // bitmap is neutered and subsequent calls throw `InvalidStateError`.
-  // React StrictMode double-invokes effects in dev, so guard the second
-  // invocation by remembering the last bitmap we successfully consumed.
-  // (Ref persists across StrictMode's simulated unmount → remount.)
-  const consumedBitmapRef = useRef<ImageBitmap | null>(null);
-
-  // Publish the latest bitmap into the canvas (zero-copy).
+  // Paint the bake bitmap into the canvas via 2D drawImage. We deliberately
+  // do NOT use bitmaprenderer.transferFromImageBitmap: that call is destructive
+  // (the bitmap gets neutered on first transfer), so when the layer unmounts
+  // on viewport cull / image switch and later remounts, the cached BakeEntry's
+  // bitmap can't be transferred a second time and the canvas stays blank —
+  // visually indistinguishable from the mask "disappearing" or "degrading".
+  // drawImage is idempotent and supports re-painting the same bitmap on every
+  // remount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !bake) return;
-    if (consumedBitmapRef.current === bake.bitmap) return;
     if (canvas.width !== bake.width) canvas.width = bake.width;
     if (canvas.height !== bake.height) canvas.height = bake.height;
-    const ctx = canvas.getContext('bitmaprenderer') as ImageBitmapRenderingContext | null;
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     try {
-      ctx.transferFromImageBitmap(bake.bitmap);
-      consumedBitmapRef.current = bake.bitmap;
+      ctx.drawImage(bake.bitmap, 0, 0);
     } catch (err) {
-      // Defensive: if the bitmap was already consumed by another canvas
-      // (bake cache sharing, hot-reload edge cases), swallow the throw so
-      // the whole tree doesn't unmount — the canvas just stays blank.
-      console.warn('[bake] transferFromImageBitmap failed', err);
+      console.warn('[bake] drawImage failed', err);
     }
   }, [bake]);
 
