@@ -123,11 +123,17 @@ jobs:
           workspaces: apps/app/src-tauri -> target
           key: ${{ matrix.triple }}
 
+      - name: Resolve sam3.c submodule SHA
+        id: sam3
+        # Cache key = parent-pinned submodule SHA. Stable across releases
+        # that don't bump the submodule.
+        run: echo "sha=$(git ls-tree HEAD vendor/sam3.c | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache sam3 build
         uses: actions/cache@v4
         with:
           path: vendor/sam3.c/build
-          key: sam3-${{ matrix.os }}-${{ hashFiles('vendor/sam3.c/CMakeLists.txt', '.gitmodules') }}-${{ hashFiles('vendor/sam3.c/**/*.c', 'vendor/sam3.c/**/*.h') }}
+          key: sam3-${{ matrix.os }}-${{ steps.sam3.outputs.sha }}
 
       - name: Linux deps
         if: runner.os == 'Linux'
@@ -139,12 +145,7 @@ jobs:
 
       - run: node scripts/release/fetch-pocketbase.mjs
 
-      - name: Build sam3
-        env:
-          # macOS-only smoke release for v0.2.0 — disable Metal/MLX-C.
-          # Re-enable in v0.3.0 once pipeline is validated.
-          SAM3_METAL: '0'
-        run: node scripts/build-sam3.mjs
+      - run: node scripts/build-sam3.mjs
 
       - if: runner.os == 'Windows'
         run: node scripts/release/sign-windows.mjs
