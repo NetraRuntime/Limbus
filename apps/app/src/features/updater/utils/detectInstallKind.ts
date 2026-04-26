@@ -1,9 +1,7 @@
 import { resourceDir } from '@tauri-apps/api/path';
 import type { InstallKind } from '../types';
 
-export async function detectInstallKind(
-  platform: NodeJS.Platform | string,
-): Promise<InstallKind> {
+export async function detectInstallKind(platform: string): Promise<InstallKind> {
   let dir: string;
   try {
     dir = await resourceDir();

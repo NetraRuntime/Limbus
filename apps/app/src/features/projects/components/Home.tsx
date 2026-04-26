@@ -15,6 +15,7 @@ import { useAppliedTheme } from '../../../hooks/useAppliedTheme';
 import { onHomeCloseQuit } from '../../../lib/windows';
 import { ModelsView } from '../../models/components/ModelsView';
 import { DownloadChip } from '../../models/components/DownloadChip';
+import { UpdaterPill, DebNotice } from '../../updater';
 import '../Home.css';
 
 const ProjectFieldSchema = z.object({ project: z.string() });
@@ -422,6 +423,11 @@ export function Home() {
         onReset={resetSettings}
         onClose={() => setSettingsOpen(false)}
       />
+
+      <DebNotice />
+      <div className="home__footer-bar">
+        <UpdaterPill />
+      </div>
     </div>
   );
 }
