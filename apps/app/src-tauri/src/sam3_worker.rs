@@ -271,14 +271,24 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
     // model swap drops the old Ctx automatically.
     let mut loaded_path: Option<PathBuf> = None;
     let mut active_override: Option<PathBuf> = None;
+    // Image ids whose features are already populated in the live Ctx's image
+    // cache. Used to skip redundant cache_load_image / claim_slot calls that
+    // would otherwise duplicate or evict slots on every visit. Reset whenever
+    // the Ctx is dropped (model swap) so a fresh Ctx starts from empty.
+    let mut in_memory_loaded: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     while let Ok(job) = rx.recv() {
         match job {
             Job::EncodeImage { id, src_path, reply } => {
                 let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
                     .and_then(|ctx| encode_and_persist(ctx, &cfg.cache_dir, &id, &src_path));
+                if res.is_ok() {
+                    in_memory_loaded.insert(id.clone());
+                }
                 let _ = reply.send(res);
             }
             Job::DeleteCache { id, reply } => {
+                in_memory_loaded.remove(&id);
                 let _ = reply.send(delete_cache(&cfg.cache_dir, &id));
             }
             Job::CacheStatus { id, reply } => {
@@ -305,6 +315,7 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                         if differs {
                             ctx = None;
                             loaded_path = None;
+                            in_memory_loaded.clear();
                         }
                     }
                 }
@@ -317,7 +328,16 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                 reply,
             } => {
                 let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
-                    .and_then(|ctx| segment_text(ctx, &cfg.cache_dir, &id, &src_path, &text));
+                    .and_then(|ctx| {
+                        segment_text(
+                            ctx,
+                            &cfg.cache_dir,
+                            &id,
+                            &src_path,
+                            &text,
+                            &mut in_memory_loaded,
+                        )
+                    });
                 let _ = reply.send(res);
             }
             Job::SegmentBox {
@@ -327,7 +347,16 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                 reply,
             } => {
                 let res = ensure_ctx(&mut ctx, &mut loaded_path, &active_override, &cfg)
-                    .and_then(|ctx| segment_box(ctx, &cfg.cache_dir, &id, &src_path, bbox));
+                    .and_then(|ctx| {
+                        segment_box(
+                            ctx,
+                            &cfg.cache_dir,
+                            &id,
+                            &src_path,
+                            bbox,
+                            &mut in_memory_loaded,
+                        )
+                    });
                 let _ = reply.send(res);
             }
         }
@@ -346,6 +375,7 @@ fn ensure_image_loaded(
     cache_dir: &Path,
     id: &str,
     src_path: &Path,
+    in_memory_loaded: &mut std::collections::HashSet<String>,
 ) -> Result<(u32, u32), String> {
     let target = match ctx.image_size() {
         0 => DEFAULT_MODEL_IMAGE_SIZE,
@@ -357,17 +387,30 @@ fn ensure_image_loaded(
     // Best-effort: pull persisted encoder cache into memory. A stale cache
     // (model mismatch, schema change) returns an error we ignore — the
     // subsequent precache will just re-encode.
-    if dst.exists() {
-        if let Err(e) = ctx.cache_load_image(&dst) {
-            eprintln!(
-                "[sam3] cache_load_image {} failed ({e}) — re-encoding",
-                dst.display()
-            );
+    //
+    // Skip the disk-load when we've already loaded this id into the Ctx during
+    // this session. Re-running cache_load_image claims a fresh image-cache slot
+    // every call, which (a) duplicates a slot already in cache and (b) can
+    // evict an unrelated image's slot via LRU. Once an id is in-memory the
+    // subsequent precache_image hits the existing slot and no disk reload is
+    // needed.
+    if dst.exists() && !in_memory_loaded.contains(id) {
+        match ctx.cache_load_image(&dst) {
+            Ok(()) => {
+                in_memory_loaded.insert(id.to_string());
+            }
+            Err(e) => {
+                eprintln!(
+                    "[sam3] cache_load_image {} failed ({e}) — re-encoding",
+                    dst.display()
+                );
+            }
         }
     }
 
     ctx.precache_image(&pixels, width, height)
         .map_err(|e| format!("precache_image: {e}"))?;
+    in_memory_loaded.insert(id.to_string());
 
     if !dst.exists() {
         let tmp = dst.with_extension("sam3cache.tmp");
@@ -389,8 +432,10 @@ fn segment_text(
     id: &str,
     src_path: &Path,
     text: &str,
+    in_memory_loaded: &mut std::collections::HashSet<String>,
 ) -> Result<SegmentResponse, String> {
-    let (src_w, src_h) = ensure_image_loaded(ctx, cache_dir, id, src_path)?;
+    let (src_w, src_h) =
+        ensure_image_loaded(ctx, cache_dir, id, src_path, in_memory_loaded)?;
     let result = ctx
         .segment(&[Prompt::Text(text)])
         .map_err(|e| format!("segment: {e}"))?;
@@ -410,8 +455,10 @@ fn segment_box(
     id: &str,
     src_path: &Path,
     bbox: [f32; 4],
+    in_memory_loaded: &mut std::collections::HashSet<String>,
 ) -> Result<SegmentResponse, String> {
-    let (src_w, src_h) = ensure_image_loaded(ctx, cache_dir, id, src_path)?;
+    let (src_w, src_h) =
+        ensure_image_loaded(ctx, cache_dir, id, src_path, in_memory_loaded)?;
     let w = src_w as f32;
     let h = src_h as f32;
     let box_prompt = Sam3Box {
@@ -583,7 +630,14 @@ fn ensure_ctx<'a>(
             })?;
 
         eprintln!("[sam3] loading model: {}", model_path.display());
-        let mut c = Ctx::new().map_err(|e| format!("sam3 init: {e}"))?;
+        // n_image_slots=64 (vs default 8) so a typical project's image set
+        // fits in cache without LRU eviction. budget=0 (via new_with_cache)
+        // disables disk spilling — slots stay resident in RAM. Without this,
+        // demote-to-disk write failures (`image_cache: demote write failed`)
+        // silently drop encoded features, forcing re-encodes on subsequent
+        // visits and producing degraded masks under cycling workloads.
+        let mut c = Ctx::new_with_cache(64, 64)
+            .map_err(|e| format!("sam3 init: {e}"))?;
         c.load_model(&model_path)
             .map_err(|e| format!("sam3 load_model {}: {e}", model_path.display()))?;
 
