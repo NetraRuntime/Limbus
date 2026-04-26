@@ -47,6 +47,8 @@ export async function openCanvasWindow(
     dragDropEnabled: true,
     focus: true,
     visible: true,
+    titleBarStyle: 'overlay',
+    hiddenTitle: true,
   });
   await new Promise<void>((resolve, reject) => {
     win.once('tauri://created', () => resolve());
@@ -78,6 +80,8 @@ export async function focusHome(): Promise<void> {
     height: 820,
     minWidth: 900,
     minHeight: 600,
+    titleBarStyle: 'overlay',
+    hiddenTitle: true,
   });
   await new Promise<void>((resolve, reject) => {
     win.once('tauri://created', () => resolve());
