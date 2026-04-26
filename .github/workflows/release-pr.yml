@@ -128,6 +128,11 @@ jobs:
         run: node scripts/release/fetch-pocketbase.mjs
 
       - name: Build sam3
+        env:
+          # macOS-only smoke release for v0.2.0 — disable Metal/MLX-C to
+          # keep cold-cache builds under ~10 min. Re-enable in v0.3.0
+          # once the pipeline is validated and CI caches are warm.
+          SAM3_METAL: '0'
         run: node scripts/build-sam3.mjs
 
       - name: Sign libsam3.dll (Windows)
