@@ -139,7 +139,12 @@ jobs:
 
       - run: node scripts/release/fetch-pocketbase.mjs
 
-      - run: node scripts/build-sam3.mjs
+      - name: Build sam3
+        env:
+          # macOS-only smoke release for v0.2.0 — disable Metal/MLX-C.
+          # Re-enable in v0.3.0 once pipeline is validated.
+          SAM3_METAL: '0'
+        run: node scripts/build-sam3.mjs
 
       - if: runner.os == 'Windows'
         run: node scripts/release/sign-windows.mjs
