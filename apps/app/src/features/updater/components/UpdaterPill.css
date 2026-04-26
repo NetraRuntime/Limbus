@@ -1,0 +1,30 @@
+.updater-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  background: var(--color-surface-2, #f4f4f5);
+  color: var(--color-text, #18181b);
+  cursor: default;
+  user-select: none;
+}
+
+.updater-pill--available,
+.updater-pill--ready {
+  cursor: pointer;
+  background: var(--color-accent-soft, #e0f2fe);
+  border-color: var(--color-accent-border, #7dd3fc);
+}
+
+.updater-pill--available:hover,
+.updater-pill--ready:hover {
+  background: var(--color-accent-soft-hover, #bae6fd);
+}
+
+.updater-pill--downloading {
+  background: var(--color-surface-2, #f4f4f5);
+}
