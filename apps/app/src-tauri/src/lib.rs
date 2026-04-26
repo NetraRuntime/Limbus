@@ -1,5 +1,6 @@
 mod models;
 mod sam3_worker;
+mod self_check;
 
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -431,6 +432,10 @@ fn debug_log(level: String, message: String) {
 #[tauri::command]
 fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))
+}
+
+pub fn run_self_check() -> ! {
+    self_check::run()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
