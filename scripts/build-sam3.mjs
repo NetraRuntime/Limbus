@@ -32,18 +32,25 @@ mkdirSync(buildDir, { recursive: true });
 const isMac = platform() === 'darwin';
 const libName = isMac ? 'libsam3.dylib' : 'libsam3.so';
 
+// Metal backend (MLX-C) on macOS: enabled by default for dev builds.
+// Disabled when SAM3_METAL=0 is set — used by CI for the v0.2.0 smoke
+// release to keep cold-cache builds under ~10 min while we validate the
+// signing/notarization pipeline. Re-enable once caches warm.
+const metalEnabled = isMac && process.env.SAM3_METAL !== '0';
+
 const configureArgs = [
   '-S', sam3Dir,
   '-B', buildDir,
   '-DSAM3_SHARED=ON',
   '-DCMAKE_BUILD_TYPE=Release',
   '-DSAM3_TESTS=OFF',
-  // Metal backend (MLX-C) for GPU acceleration. The CMake option() at the
-  // top of vendor/sam3.c/CMakeLists.txt defaults to OFF and defeats the
-  // "auto-enable on APPLE" fallback below it, so we set it explicitly.
-  // First configure pulls mlx-c over git; subsequent builds are cached.
-  ...(isMac ? ['-DSAM3_METAL=ON'] : []),
+  // The CMake option() at the top of vendor/sam3.c/CMakeLists.txt defaults
+  // to OFF and defeats the "auto-enable on APPLE" fallback below it, so we
+  // set it explicitly when enabled.
+  ...(metalEnabled ? ['-DSAM3_METAL=ON'] : []),
 ];
+
+console.log(`[build-sam3] metal=${metalEnabled ? 'on' : 'off'}`);
 
 const buildArgs = [
   '--build', buildDir,
