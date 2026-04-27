@@ -1,27 +1,44 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-export type SearchItem = {
+// Generic palette: any caller can plug in a list of items, a row
+// renderer, and a free-text matcher. Existing call sites use the
+// `MediaSearchPalette` wrapper; the LLM canvas uses this directly with
+// its own item shape ("steps").
+
+export type SearchPaletteItem = {
   id: string;
-  name: string;
-  kind: 'image' | 'video';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 };
 
-type Props = {
+type Props<T extends SearchPaletteItem> = {
   open: boolean;
-  items: SearchItem[];
-  onSelect: (item: SearchItem) => void;
+  items: T[];
+  onSelect: (item: T) => void;
   onClose: () => void;
+  /** Returns true when the item should be included for the given query. */
+  match: (item: T, query: string) => boolean;
+  /** Renders a single result row. */
+  renderItem: (item: T, ctx: { active: boolean }) => ReactNode;
+  placeholder?: string;
+  ariaLabel?: string;
+  emptyText?: string;
+  emptyWhenNoItemsText?: string;
 };
 
-// Cap rendered rows so pathological libraries don't make the palette slow.
 const MAX_RESULTS = 50;
 const LISTBOX_ID = 'search-palette-listbox';
 
-export function SearchPalette({ open, items, onSelect, onClose }: Props) {
+export function SearchPalette<T extends SearchPaletteItem>({
+  open,
+  items,
+  onSelect,
+  onClose,
+  match,
+  renderItem,
+  placeholder = 'Search…',
+  ariaLabel = 'Search',
+  emptyText = 'No matches',
+  emptyWhenNoItemsText = 'Nothing here yet',
+}: Props<T>) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,23 +47,20 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items.slice(0, MAX_RESULTS);
-    return items.filter((it) => it.name.toLowerCase().includes(q)).slice(0, MAX_RESULTS);
-  }, [items, query]);
+    return items.filter((it) => match(it, q)).slice(0, MAX_RESULTS);
+  }, [items, query, match]);
 
   const activeIdx = results.length === 0 ? 0 : Math.min(cursor, results.length - 1);
   const activeId = results[activeIdx]?.id;
 
-  // Fresh state on every open — Spotlight-like: always starts empty.
   useEffect(() => {
     if (!open) return;
     setQuery('');
     setCursor(0);
-    // Defer one frame so the input is mounted before focus moves.
     const raf = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
   }, [open]);
 
-  // Scroll the active row into view as the user arrows through a long list.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
@@ -85,7 +99,7 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
         className="search-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Search canvas"
+        aria-label={ariaLabel}
       >
         <div className="search-input-row">
           <i className="ri-search-line search-input-icon" aria-hidden />
@@ -98,8 +112,8 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
             aria-autocomplete="list"
             aria-activedescendant={activeId ? `search-result-${activeId}` : undefined}
             className="search-input"
-            placeholder="Search images and videos…"
-            aria-label="Search images and videos"
+            placeholder={placeholder}
+            aria-label={ariaLabel}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -136,7 +150,7 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
         >
           {results.length === 0 ? (
             <div className="search-empty">
-              {items.length === 0 ? 'No media on the canvas yet' : 'No matches'}
+              {items.length === 0 ? emptyWhenNoItemsText : emptyText}
             </div>
           ) : (
             results.map((it, idx) => (
@@ -151,14 +165,7 @@ export function SearchPalette({ open, items, onSelect, onClose }: Props) {
                 onMouseEnter={() => setCursor(idx)}
                 onClick={() => onSelect(it)}
               >
-                <i
-                  className={`${
-                    it.kind === 'video' ? 'ri-film-line' : 'ri-image-line'
-                  } search-result-icon`}
-                  aria-hidden
-                />
-                <span className="search-result-name">{it.name}</span>
-                <span className="search-result-kind">{it.kind}</span>
+                {renderItem(it, { active: idx === activeIdx })}
               </button>
             ))
           )}

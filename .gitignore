@@ -39,3 +39,4 @@ datasets/
 *.certSigningRequest
 *.cer
 *.p8
+*.p12

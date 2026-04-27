@@ -1,14 +1,22 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Canvas } from './Canvas';
+import { LlmCanvas } from './LlmCanvas';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
 import { focusHome } from './lib/windows';
+import { getProject } from './features/projects/api/projects';
+import type { ProjectKind } from './features/projects/types/project';
 
 type BootState =
   | { status: 'loading' }
   | { status: 'ready' }
   | { status: 'no-model' }
+  | { status: 'error'; message: string };
+
+type ProjectKindState =
+  | { status: 'loading' }
+  | { status: 'ready'; kind: ProjectKind }
   | { status: 'error'; message: string };
 
 type AppProps = {
@@ -18,11 +26,10 @@ type AppProps = {
 type LocalModel = { name: string };
 
 export function App({ projectId }: AppProps) {
-  const [boot, setBoot] = useState<BootState>({ status: 'loading' });
+  const [kindState, setKindState] = useState<ProjectKindState>({ status: 'loading' });
   const { settings } = useSettings();
   // Apply the persisted theme at the top level so the boot screen matches
-  // the user's preference before Canvas mounts. Canvas also calls this hook
-  // for reactivity to in-session changes; both calls are idempotent.
+  // the user's preference before any canvas mounts.
   useAppliedTheme(settings.theme);
 
   useEffect(() => {
@@ -30,21 +37,54 @@ export function App({ projectId }: AppProps) {
     return () => document.body.classList.remove('is-canvas');
   }, []);
 
+  // Resolve the project's kind first — vision projects need SAM3 warmup,
+  // LLM projects skip it entirely. The fetch is cheap and avoids loading
+  // a vision pipeline for an LLM canvas.
   useEffect(() => {
     let cancelled = false;
-    const activeModel = settings.activeModel;
+    getProject(projectId)
+      .then((p) => {
+        if (!cancelled) setKindState({ status: 'ready', kind: p.kind });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setKindState({ status: 'error', message });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  if (kindState.status === 'loading') return <BootScreen />;
+  if (kindState.status === 'error') {
+    return <ErrorScreen message={kindState.message} />;
+  }
+  if (kindState.kind === 'llm') {
+    return <LlmCanvas projectId={projectId} />;
+  }
+  return <VisionApp projectId={projectId} settingsModel={settings.activeModel} />;
+}
+
+type VisionAppProps = {
+  projectId: string;
+  settingsModel: string | null | undefined;
+};
+
+function VisionApp({ projectId, settingsModel }: VisionAppProps) {
+  const [boot, setBoot] = useState<BootState>({ status: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    const activeModel = settingsModel;
 
     async function run() {
       try {
-        // Confirm the pinned model is actually present on disk — a stale
-        // setting (user deleted the file outside the app) shouldn't crash
-        // warmup with a confusing missing-file error.
         const installed = await invoke<LocalModel[]>('models_list_local');
         if (cancelled) return;
         const exists =
           activeModel != null && installed.some((m) => m.name === activeModel);
         if (!activeModel || !exists) {
-          // Tell the worker explicitly so any earlier override is cleared.
           await invoke('sam3_set_active_model', { name: null });
           if (!cancelled) setBoot({ status: 'no-model' });
           return;
@@ -63,11 +103,16 @@ export function App({ projectId }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [settings.activeModel]);
+  }, [settingsModel]);
 
   if (boot.status === 'loading') return <BootScreen />;
   if (boot.status === 'no-model') return <NoModelScreen />;
-  return <Canvas projectId={projectId} sam3Error={boot.status === 'error' ? boot.message : null} />;
+  return (
+    <Canvas
+      projectId={projectId}
+      sam3Error={boot.status === 'error' ? boot.message : null}
+    />
+  );
 }
 
 function BootScreen() {
@@ -90,6 +135,24 @@ function NoModelScreen() {
       <div className="boot-card">
         <div className="boot-title">No model active</div>
         <div className="boot-subtitle">Install one from Home → Models.</div>
+        <button
+          type="button"
+          className="btn btn-md btn-primary"
+          onClick={() => void focusHome()}
+        >
+          Open Home
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ErrorScreen({ message }: { message: string }) {
+  return (
+    <div className="boot-screen" role="alert">
+      <div className="boot-card">
+        <div className="boot-title">Couldn't open project</div>
+        <div className="boot-subtitle">{message}</div>
         <button
           type="button"
           className="btn btn-md btn-primary"

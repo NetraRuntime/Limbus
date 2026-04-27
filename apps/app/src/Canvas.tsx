@@ -44,7 +44,7 @@ import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
 import { Sam3VersionBadge } from './components/Sam3VersionBadge';
 import { SavedTagsPopover } from './components/SavedTagsPopover';
-import { SearchPalette, type SearchItem } from './components/SearchPalette';
+import { MediaSearchPalette, type SearchItem } from './components/MediaSearchPalette';
 import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
 import { MediaTagList } from './components/MediaTagList';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
@@ -107,6 +107,14 @@ import {
   updateProject,
 } from './features/projects';
 import { setCanvasTitle, closeCurrentCanvas, focusHome } from './lib/windows';
+import {
+  VIEW_PERSIST_DEBOUNCE_MS,
+  formatZoom as formatZoomShared,
+  formatCoord as formatCoordShared,
+  getInitialView as getInitialViewShared,
+  readStoredView as readStoredViewShared,
+  writeStoredView as writeStoredViewShared,
+} from './lib/canvasView';
 import './App.css';
 
 type CanvasMedia = {
@@ -126,18 +134,8 @@ type CanvasMedia = {
   file?: string;
 };
 
-const formatZoom = (scale: number) => {
-  if (scale >= 1) return `${(scale * 100).toFixed(0)}%`;
-  if (scale >= 0.01) return `${(scale * 100).toFixed(1)}%`;
-  return scale.toExponential(1);
-};
-
-const formatCoord = (n: number | undefined) => {
-  if (n === undefined) return '—';
-  const abs = Math.abs(n);
-  if (abs >= 1e5) return n.toExponential(1);
-  return n.toFixed(abs < 10 ? 2 : abs < 1000 ? 1 : 0);
-};
+const formatZoom = formatZoomShared;
+const formatCoord = formatCoordShared;
 
 const loadImage = (file: File): Promise<{ src: string; width: number; height: number }> =>
   new Promise((resolve, reject) => {
@@ -331,9 +329,6 @@ type UploadPlan = {
   meta: { x: number; y: number; width: number; height: number; name: string };
 };
 
-const VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
-const VIEW_PERSIST_DEBOUNCE_MS = 200;
-
 const STACK_ORDER_STORAGE_KEY = 'netrart:canvas:stack-order:v1';
 const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
 
@@ -348,33 +343,8 @@ const EMPTY_TAGS: readonly string[] = Object.freeze([]);
 // already bounded by the active canvas, not history.
 const CULL_BUFFER_FACTOR = 50;
 
-const StoredViewSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
-  scale: z.number().finite().positive(),
-});
-
-const readStoredView = (): View | null => {
-  if (typeof localStorage === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = StoredViewSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    
-    return null;
-  }
-};
-
-const writeStoredView = (v: View) => {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(v));
-  } catch {
-
-  }
-};
+const readStoredView = readStoredViewShared;
+const writeStoredView = writeStoredViewShared;
 
 const StoredStackOrderSchema = z.array(z.string());
 
@@ -658,13 +628,7 @@ const MediaItem = memo(function MediaItem({
   );
 });
 
-const getInitialView = (): View => {
-  const stored = readStoredView();
-  if (stored) return stored;
-  const w = typeof window !== 'undefined' ? window.innerWidth : 0;
-  const h = typeof window !== 'undefined' ? window.innerHeight : 0;
-  return { x: w / 2, y: h / 2, scale: 1 };
-};
+const getInitialView = getInitialViewShared;
 
 type CanvasProps = {
   projectId: string;
@@ -4286,7 +4250,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onChangeFormat={preview.setChosenFormat}
       />
 
-      <SearchPalette
+      <MediaSearchPalette
         open={searchOpen}
         items={searchItems}
         onSelect={handleSearchSelect}
