@@ -110,11 +110,26 @@ jobs:
           workspaces: apps/app/src-tauri -> target
           key: ${{ matrix.triple }}
 
-      - name: Cache sam3 build
-        uses: actions/cache@v4
+      - name: Resolve sam3.c submodule SHA
+        id: sam3
+        # Cache key is the parent-pinned submodule commit. Stable across
+        # releases that don't bump the submodule, even if the parent repo
+        # has incidental changes elsewhere. First build on a given submodule
+        # SHA is cold (~60 min on macOS due to mlx-c + Metal); subsequent
+        # builds on the same SHA hit the cache (~seconds).
+        run: echo "sha=$(git ls-tree HEAD vendor/sam3.c | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      # Split restore/save so the sam3 cache persists even if a later
+      # step (Tauri build, signing, notarization) fails. Default
+      # actions/cache@v4 only saves on full job success — we want the
+      # 60+ min sam3 build to survive across iterations of unrelated
+      # downstream fixes.
+      - name: Restore sam3 build cache
+        id: sam3cache
+        uses: actions/cache/restore@v4
         with:
           path: vendor/sam3.c/build
-          key: sam3-${{ matrix.os }}-${{ hashFiles('vendor/sam3.c/CMakeLists.txt', '.gitmodules') }}-${{ hashFiles('vendor/sam3.c/**/*.c', 'vendor/sam3.c/**/*.h') }}
+          key: sam3-${{ matrix.os }}-${{ steps.sam3.outputs.sha }}
 
       - name: Linux deps
         if: runner.os == 'Linux'
@@ -124,11 +139,54 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Persistent keychain so sign-mac.mjs can run codesign after
+      # Tauri's bundler has done its own (temp-keychain-based) signing
+      # and cleaned up. Without this, codesign post-bundle errors with
+      # "The specified item could not be found in the keychain."
+      - name: Set up macOS signing keychain
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_B64: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/netrart-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+
+          printf '%s' "$APPLE_CERTIFICATE_B64" | base64 -D -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" >/dev/null
+
+          # Add ours to the user search list, keeping the runner's existing ones.
+          existing=$(security list-keychain -d user | tr -d '"' | tr -s ' ')
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $existing
+
+          rm "$CERT_PATH"
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
       - name: Stage PocketBase
         run: node scripts/release/fetch-pocketbase.mjs
 
       - name: Build sam3
         run: node scripts/build-sam3.mjs
+
+      - name: Save sam3 build cache
+        if: always() && steps.sam3cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/sam3.c/build
+          key: sam3-${{ matrix.os }}-${{ steps.sam3.outputs.sha }}
 
       - name: Sign libsam3.dll (Windows)
         if: runner.os == 'Windows'

@@ -32,11 +32,21 @@ const sourcePath = resolve(projectRoot, 'pb', sourceName);
 const destDir = resolve(projectRoot, 'apps', 'app', 'src-tauri', 'binaries');
 const destPath = resolve(destDir, `pocketbase-${triple}${targetExt}`);
 
+// Idempotent: if the destination is already staged (e.g. CI's
+// scripts/release/fetch-pocketbase.mjs ran first, or a previous local
+// build already copied it), don't fail just because the dev-only
+// pb/pocketbase source is missing.
+if (existsSync(destPath)) {
+  console.log(`[stage-pocketbase] already staged: ${destPath}`);
+  process.exit(0);
+}
+
 if (!existsSync(sourcePath)) {
   console.error(`[stage-pocketbase] missing source binary: ${sourcePath}`);
   console.error(
     '[stage-pocketbase] download the matching PocketBase release and place it at pb/pocketbase',
   );
+  console.error('[stage-pocketbase] (or in CI, run scripts/release/fetch-pocketbase.mjs first)');
   console.error('[stage-pocketbase] https://github.com/pocketbase/pocketbase/releases');
   process.exit(1);
 }
