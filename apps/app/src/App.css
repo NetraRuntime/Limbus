@@ -633,6 +633,7 @@
   border-color: var(--border-muted);
 }
 .node-inspector-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -640,6 +641,25 @@
   /* Establish a size container so .node-io-grid (and its children)
      can switch layouts based on the inspector width via @container. */
   container-type: inline-size;
+}
+/* Decorative full-height column divider painted on the body itself
+   so the line runs from the top of the table all the way to the
+   bottom of the sidebar — independent of the card's content height.
+   Hidden in the stacked single-column layout. */
+.node-inspector-body::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-muted);
+  pointer-events: none;
+}
+@container (max-width: 459px) {
+  .node-inspector-body::before {
+    display: none;
+  }
 }
 /* ---------- I/O grid that lives flush inside the inspector body ----------
    No card frame, no drop shadow — the grid extends edge-to-edge of
@@ -649,12 +669,8 @@
   --tone-in: var(--accent);
   --tone-out: color-mix(in srgb, var(--accent) 70%, #8b5cf6 30%);
   position: relative;
-  /* Stretch to the full body height so the column divider runs all
-     the way down even when the textareas are shorter than the
-     viewport. */
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
+  /* Hugs content — the full-height column divider is painted on
+     `.node-inspector-body::before`, not by stretching the card. */
 }
 .node-io-card-glow {
   display: none;
@@ -664,7 +680,6 @@
    the sidebar is narrow. `auto-fit` + minmax handles the breakpoint
    without media or container queries. */
 .node-io-grid {
-  flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   font: 400 13px/1.5 var(--font-sans);
@@ -688,9 +703,14 @@
 }
 
 .node-io-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 10px 14px;
   background: var(--bg-subtle);
   border-bottom: 1px solid var(--border-muted);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .node-io-th-pill {
@@ -762,7 +782,12 @@
 
 .node-io-field {
   position: relative;
-  z-index: 1;
+  /* No explicit z-index — keeps the textarea below the sticky column
+     header (which sits at z:1) so the placeholder doesn't bleed
+     through when scrolled behind. The cell's ::before accent strip
+     uses absolute positioning and DOM-order stacking, so the
+     textarea still paints above it without needing to fight the
+     header. */
   width: 100%;
   resize: vertical;
   min-height: 88px;
@@ -775,6 +800,83 @@
 }
 .node-io-field::placeholder {
   color: var(--fg-subtle);
+}
+
+/* Per-row delete button on the input column. Hidden until the cell
+   is hovered or focused so it doesn't compete with the textarea. */
+.node-io-row-remove {
+  appearance: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.node-io-cell:hover .node-io-row-remove,
+.node-io-cell:focus-within .node-io-row-remove,
+.node-io-row-remove:focus-visible {
+  opacity: 1;
+}
+.node-io-row-remove:hover {
+  background: color-mix(in srgb, var(--color-danger-500) 14%, transparent);
+  color: var(--color-danger-500);
+  border-color: color-mix(in srgb, var(--color-danger-500) 30%, transparent);
+}
+
+/* "Add row" affordance sitting directly under the last row when the
+   table fits, sticking to the bottom of the scrollable inspector
+   body when the rows overflow — so it stays visible no matter how
+   far down the user has scrolled. */
+.node-io-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-start;
+  padding: 8px 14px 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 0%, transparent) 0%,
+    var(--bg) 35%,
+    var(--bg) 100%
+  );
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.node-io-add-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border-muted);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: 500 12px/1 var(--font-display, system-ui);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.node-io-add-btn:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: var(--fg);
+}
+.node-io-add-btn i {
+  font-size: 14px;
 }
 
 /* SVG overlay lives INSIDE the world-transformed canvas content, so

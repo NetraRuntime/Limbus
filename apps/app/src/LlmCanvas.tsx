@@ -23,6 +23,7 @@ import {
   updateEdge,
   updateNode,
   type EdgeRecord,
+  type NodeExample,
   type NodeRecord,
 } from './features/llm-canvas';
 import { SettingsModal } from './components/SettingsModal';
@@ -438,6 +439,38 @@ export function LlmCanvas({ projectId }: Props) {
     [history],
   );
 
+  // Per-node patch (input / output edits from the inspector). Local
+  // state updates instantly, the API write is debounced per node so
+  // typing fast doesn't flood PocketBase.
+  const patchTimersRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      for (const t of patchTimersRef.current.values()) clearTimeout(t);
+      patchTimersRef.current.clear();
+    };
+  }, []);
+
+  const handleNodePatch = useCallback(
+    (id: string, patch: { examples?: NodeExample[] }) => {
+      setNodes((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+      );
+      const existing = patchTimersRef.current.get(id);
+      if (existing !== undefined) clearTimeout(existing);
+      const timer = window.setTimeout(() => {
+        patchTimersRef.current.delete(id);
+        const fresh = nodesRef.current.find((n) => n.id === id);
+        if (!fresh) return;
+        void updateNode(id, {
+          examples: fresh.examples,
+        }).catch((err) => warn('persist patch failed', err));
+      }, 500);
+      patchTimersRef.current.set(id, timer);
+    },
+    [],
+  );
+
   const handleStepRename = useCallback(
     (id: string, prevName: string, nextName: string) => {
       const apply = () => {
@@ -851,6 +884,7 @@ export function LlmCanvas({ projectId }: Props) {
           <NodeInspectorSidebar
             node={selected}
             onClose={() => setSelectedId(null)}
+            onPatch={handleNodePatch}
           />
         );
       })()}

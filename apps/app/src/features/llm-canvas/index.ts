@@ -10,6 +10,7 @@ export type {
   NodeRecord,
   NewNodeInput,
   UpdateNodeInput,
+  NodeExample,
   EdgeRecord,
   NewEdgeInput,
   NodeKind,

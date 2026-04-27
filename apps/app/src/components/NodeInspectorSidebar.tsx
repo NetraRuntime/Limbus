@@ -1,12 +1,11 @@
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import type { NodeRecord } from '../features/llm-canvas';
+import type { NodeExample, NodeRecord } from '../features/llm-canvas';
 
 type Props = {
   /** Currently selected node. Parent mounts/unmounts the component to
@@ -14,7 +13,10 @@ type Props = {
    *  with a new `node` prop. */
   node: NodeRecord;
   onClose: () => void;
-  /** Optional override slot for the body — defaults to a placeholder. */
+  /** Patch the node's persisted fields (examples). Parent owns the
+   *  debounce + API write. */
+  onPatch?: (id: string, patch: { examples?: NodeExample[] }) => void;
+  /** Optional override slot for the body — defaults to the I/O table. */
   children?: ReactNode;
 };
 
@@ -56,7 +58,7 @@ const clampWidth = (w: number): number => {
 
 // Floating right-side inspector for canvas nodes. Resizable via the
 // left-edge drag handle; "expanded" toggle goes full-width and back.
-export function NodeInspectorSidebar({ node, onClose, children }: Props) {
+export function NodeInspectorSidebar({ node, onClose, onPatch, children }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState<number>(() => clampWidth(readWidth()));
   const [resizing, setResizing] = useState(false);
@@ -143,52 +145,58 @@ export function NodeInspectorSidebar({ node, onClose, children }: Props) {
         </button>
       </header>
       <div className="node-inspector-body">
-        {children ?? <NodeIOTable />}
+        {children ?? <NodeIOTable node={node} onPatch={onPatch} />}
       </div>
     </aside>
   );
 }
 
-function NodeIOTable() {
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const outputRef = useRef<HTMLTextAreaElement | null>(null);
+type IOTableProps = {
+  node: NodeRecord;
+  onPatch?: (id: string, patch: { examples?: NodeExample[] }) => void;
+};
 
-  // When the user drags one textarea's vertical resize handle, mirror
-  // the new height onto the other textarea so the two cells stay
-  // visually aligned across the row. We keep the height imperative
-  // (no React state) so the native drag stays smooth.
-  useLayoutEffect(() => {
-    const a = inputRef.current;
-    const b = outputRef.current;
-    if (!a || !b) return;
+function NodeIOTable({ node, onPatch }: IOTableProps) {
+  // Render at least one row even when the node has no saved examples
+  // so users always have somewhere to type. The empty row isn't
+  // persisted until they actually type into it (handled in patchRow).
+  const rows: NodeExample[] =
+    node.examples.length > 0 ? node.examples : [{ input: '', output: '' }];
 
-    let raf: number | null = null;
-    const sync = () => {
-      raf = null;
-      const aEl = inputRef.current;
-      const bEl = outputRef.current;
-      if (!aEl || !bEl) return;
-      const target = Math.max(aEl.offsetHeight, bEl.offsetHeight);
-      if (aEl.offsetHeight !== target) aEl.style.height = `${target}px`;
-      if (bEl.offsetHeight !== target) bEl.style.height = `${target}px`;
-    };
+  const updateRow = (
+    rowIdx: number,
+    patch: { input?: string; output?: string },
+  ) => {
+    const next = node.examples.length > 0 ? node.examples.slice() : [];
+    while (next.length <= rowIdx) next.push({ input: '', output: '' });
+    next[rowIdx] = { ...next[rowIdx]!, ...patch };
+    onPatch?.(node.id, { examples: next });
+  };
 
-    const ro = new ResizeObserver(() => {
-      if (raf !== null) return;
-      raf = requestAnimationFrame(sync);
-    });
-    ro.observe(a);
-    ro.observe(b);
-    return () => {
-      ro.disconnect();
-      if (raf !== null) cancelAnimationFrame(raf);
-    };
-  }, []);
+  const addRow = () => {
+    const next: NodeExample[] = [
+      ...(node.examples.length > 0
+        ? node.examples
+        : [{ input: '', output: '' }]),
+      { input: '', output: '' },
+    ];
+    onPatch?.(node.id, { examples: next });
+  };
+
+  const removeRow = (rowIdx: number) => {
+    const base = node.examples.length > 0 ? node.examples : [{ input: '', output: '' }];
+    const next = base.filter((_, i) => i !== rowIdx);
+    onPatch?.(node.id, { examples: next });
+  };
 
   return (
     <div className="node-io-card">
       <div className="node-io-card-glow" aria-hidden />
-      <div className="node-io-grid" role="table" aria-label="Step input and output">
+      <div
+        className="node-io-grid"
+        role="table"
+        aria-label="Step input and output examples"
+      >
         <section className="node-io-section" data-tone="in" role="rowgroup">
           <header className="node-io-section-header" role="row">
             <span className="node-io-th-pill" role="columnheader">
@@ -198,15 +206,17 @@ function NodeIOTable() {
               Input
             </span>
           </header>
-          <div className="node-io-cell" role="cell">
-            <textarea
-              ref={inputRef}
-              className="node-io-field"
-              rows={4}
-              placeholder="Describe the input for this step…"
-              spellCheck={false}
+          {rows.map((row, idx) => (
+            <NodeIOCell
+              key={`in-${idx}`}
+              column="input"
+              row={row}
+              rowIdx={idx}
+              rowCount={rows.length}
+              onChange={(v) => updateRow(idx, { input: v })}
+              onRemove={() => removeRow(idx)}
             />
-          </div>
+          ))}
         </section>
         <section className="node-io-section" data-tone="out" role="rowgroup">
           <header className="node-io-section-header" role="row">
@@ -217,17 +227,72 @@ function NodeIOTable() {
               Output
             </span>
           </header>
-          <div className="node-io-cell" role="cell">
-            <textarea
-              ref={outputRef}
-              className="node-io-field"
-              rows={4}
-              placeholder="Describe the expected output…"
-              spellCheck={false}
+          {rows.map((row, idx) => (
+            <NodeIOCell
+              key={`out-${idx}`}
+              column="output"
+              row={row}
+              rowIdx={idx}
+              rowCount={rows.length}
+              onChange={(v) => updateRow(idx, { output: v })}
+              onRemove={() => removeRow(idx)}
             />
-          </div>
+          ))}
         </section>
       </div>
+      <div className="node-io-actions">
+        <button
+          type="button"
+          className="node-io-add-btn"
+          onClick={addRow}
+          aria-label="Add a new input/output row"
+        >
+          <i className="ri-add-line" aria-hidden />
+          <span>Add row</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type NodeIOCellProps = {
+  column: 'input' | 'output';
+  row: NodeExample;
+  rowIdx: number;
+  rowCount: number;
+  onChange: (next: string) => void;
+  onRemove: () => void;
+};
+
+// One I/O cell. Removal lives on the input column only so it doesn't
+// get rendered twice per row.
+function NodeIOCell({ column, row, rowIdx, rowCount, onChange, onRemove }: NodeIOCellProps) {
+  const placeholder =
+    column === 'input'
+      ? 'Describe the input for this step…'
+      : 'Describe the expected output…';
+  const value = column === 'input' ? row.input : row.output;
+  return (
+    <div className="node-io-cell" role="cell" data-row={rowIdx}>
+      <textarea
+        className="node-io-field"
+        rows={3}
+        placeholder={placeholder}
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {column === 'input' && rowCount > 1 && (
+        <button
+          type="button"
+          className="node-io-row-remove"
+          onClick={onRemove}
+          aria-label={`Remove row ${rowIdx + 1}`}
+          title="Remove row"
+        >
+          <i className="ri-delete-bin-line" aria-hidden />
+        </button>
+      )}
     </div>
   );
 }
