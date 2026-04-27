@@ -439,10 +439,11 @@ fn segment_text(
     let result = ctx
         .segment(&[Prompt::Text(text)])
         .map_err(|e| format!("segment: {e}"))?;
-    // Text prompts produce stable quality scores — 0.8 filters noise cleanly.
-    // The shared reducer interprets this as the prob/IoU-score cutoff
-    // (`nms_prob_thresh`), NOT the post-NMS stability threshold.
-    build_segment_response(result, src_w, src_h, 0.8)
+    // Match libsam3 CLI default `nms_prob_thresh = 0.5`. The full SAM3 model
+    // can return best IoU around 0.4–0.6, so 0.3 keeps reasonable detections
+    // visible while still filtering obvious noise. 0.8 was too aggressive
+    // and dropped every candidate on cat_1.jpeg/"cat" (best IoU = 0.46).
+    build_segment_response(result, src_w, src_h, 0.3)
 }
 
 /// Run a single box prompt. `bbox` is normalized `[x1, y1, x2, y2]` in `[0, 1]`
@@ -472,8 +473,8 @@ fn segment_box(
         .map_err(|e| format!("segment: {e}"))?;
     // After the upstream prompt-encoder fix (vendor/sam3.c 894dc93) libsam3
     // scores box-prompt candidates correctly, so NMS + score filtering work
-    // the same way as text prompts. 0.8 score cutoff — same as text.
-    build_segment_response(result, src_w, src_h, 0.8)
+    // the same way as text prompts. Use 0.3 (see segment_text comment).
+    build_segment_response(result, src_w, src_h, 0.3)
 }
 
 /// Reduce (NMS), sort best-first, PNG-encode masks, and bundle with the
