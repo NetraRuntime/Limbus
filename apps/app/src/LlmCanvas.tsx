@@ -26,7 +26,7 @@ import {
   type NodeRecord,
 } from './features/llm-canvas';
 import { SettingsModal } from './components/SettingsModal';
-import { SearchPalette } from './components/SearchPalette';
+import { StepSearchPalette } from './components/StepSearchPalette';
 import { Node as CanvasNode } from './components/Node';
 import { StepNameInput } from './components/StepNameInput';
 import { NodeInspectorSidebar } from './components/NodeInspectorSidebar';
@@ -111,7 +111,7 @@ export function LlmCanvas({ projectId }: Props) {
   const [view, setView] = useState<View>(() => getLlmInitialView());
   const [nodes, setNodes] = useState<NodeRecord[]>([]);
   const [edges, setEdges] = useState<EdgeRecord[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  const [, setHydrated] = useState(false);
   // In-progress connection. `fromNodeId` anchors to a live node so the
   // bezier tail follows when that node moves; `toX/toY` are world
   // coords following the cursor. Cleared on pointer-up.
@@ -264,11 +264,6 @@ export function LlmCanvas({ projectId }: Props) {
       }
       setCursor({ worldX: p.worldX, worldY: p.worldY });
     },
-    [],
-  );
-
-  const matchStep = useCallback(
-    (n: NodeRecord, q: string) => n.name.toLowerCase().includes(q),
     [],
   );
 
@@ -1039,22 +1034,11 @@ export function LlmCanvas({ projectId }: Props) {
         />
       )}
 
-      <SearchPalette
+      <StepSearchPalette
         open={searchOpen}
-        items={stepNodes}
+        steps={stepNodes}
         onSelect={() => setSearchOpen(false)}
         onClose={() => setSearchOpen(false)}
-        match={matchStep}
-        placeholder="Search step…"
-        ariaLabel="Search steps"
-        emptyText="No matches"
-        emptyWhenNoItemsText={hydrated ? 'No steps yet' : 'Loading…'}
-        renderItem={(s) => (
-          <>
-            <i className="ri-list-check-2 search-result-icon" aria-hidden />
-            <span className="search-result-name">{s.name}</span>
-          </>
-        )}
       />
     </>
   );
