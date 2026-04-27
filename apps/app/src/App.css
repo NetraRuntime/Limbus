@@ -448,7 +448,405 @@
   margin: 0 auto;
 }
 
+/* ---------- Generic canvas node (modular, reusable) ---------- */
 
+.canvas-node {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-card-md);
+  color: var(--fg);
+  font: 500 14px/1 var(--font-display, system-ui);
+  white-space: nowrap;
+  user-select: none;
+  cursor: grab;
+  touch-action: none;
+}
+.canvas-node:active {
+  cursor: grabbing;
+}
+.canvas-node.is-selected {
+  border-color: var(--accent);
+  box-shadow:
+    var(--shadow-card-md),
+    0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.canvas-node-accent {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-success-500) 12%, var(--bg));
+  border-color: color-mix(in srgb, var(--color-success-500) 50%, var(--border));
+  color: color-mix(in srgb, var(--color-success-500) 80%, var(--fg));
+}
+.canvas-node-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: var(--fg);
+}
+.canvas-node-accent .canvas-node-icon {
+  color: var(--color-success-500);
+}
+.canvas-node-label {
+  letter-spacing: 0.02em;
+}
+.canvas-node-edit {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.02em;
+  min-width: 60px;
+  width: auto;
+  padding: 0;
+}
+
+.canvas-node-port {
+  appearance: none;
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--border);
+  padding: 0;
+  cursor: crosshair;
+  touch-action: none;
+  transition: transform 100ms ease, box-shadow 120ms ease;
+}
+.canvas-node-port:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.canvas-node-port-right {
+  top: 50%;
+  right: -6px;
+  transform: translateY(-50%);
+}
+.canvas-node-port-right:hover {
+  transform: translateY(-50%) scale(1.2);
+}
+
+/* ---------- Floating node inspector sidebar ---------- */
+
+.node-inspector {
+  position: fixed;
+  top: 72px;
+  right: 12px;
+  bottom: 12px;
+  width: 360px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 24px 48px -16px rgb(0 0 0 / 0.35),
+    0 0 0 1px color-mix(in srgb, var(--fg) 4%, transparent);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 30;
+  animation: node-inspector-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.node-inspector.is-expanded {
+  width: calc(100vw - 24px) !important;
+}
+/* While the user is dragging the resizer, kill the transition so the
+   width tracks the cursor directly instead of easing every frame. */
+.node-inspector.is-resizing {
+  transition: none;
+}
+
+.node-inspector-resizer {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.node-inspector-resizer::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+  border-radius: 2px;
+}
+.node-inspector-resizer:hover::after,
+.node-inspector.is-resizing .node-inspector-resizer::after {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+@keyframes node-inspector-in {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.node-inspector-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--bg-subtle);
+}
+.node-inspector-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 14px/1.2 var(--font-display, system-ui);
+  color: var(--fg);
+  letter-spacing: 0.01em;
+}
+.node-inspector-icon-btn {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.node-inspector-icon-btn:hover {
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--border-muted);
+}
+.node-inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  /* Establish a size container so .node-io-grid (and its children)
+     can switch layouts based on the inspector width via @container. */
+  container-type: inline-size;
+}
+/* ---------- I/O grid that lives flush inside the inspector body ----------
+   No card frame, no drop shadow — the grid extends edge-to-edge of
+   the sidebar so it reads as part of the inspector itself. */
+
+.node-io-card {
+  --tone-in: var(--accent);
+  --tone-out: color-mix(in srgb, var(--accent) 70%, #8b5cf6 30%);
+  position: relative;
+  /* Stretch to the full body height so the column divider runs all
+     the way down even when the textareas are shorter than the
+     viewport. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.node-io-card-glow {
+  display: none;
+}
+
+/* Two columns when there's room for them, single stacked column when
+   the sidebar is narrow. `auto-fit` + minmax handles the breakpoint
+   without media or container queries. */
+.node-io-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  font: 400 13px/1.5 var(--font-sans);
+}
+
+.node-io-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Side-by-side (wide): hairline vertical divider between sections */
+.node-io-section + .node-io-section {
+  border-left: 1px solid var(--border-muted);
+}
+/* Stacked (narrow): swap the vertical divider for a horizontal one */
+@container (max-width: 459px) {
+  .node-io-section + .node-io-section {
+    border-left: 0;
+    border-top: 1px solid var(--border-muted);
+  }
+}
+
+.node-io-section-header {
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.node-io-th-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px 5px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 14%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--tone) 32%, transparent);
+  font: 600 10.5px/1 var(--font-display, system-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--tone) 75%, var(--fg));
+  box-shadow: 0 1px 0 0 color-mix(in srgb, var(--tone) 20%, transparent) inset;
+}
+[data-tone='in']  { --tone: var(--tone-in); }
+[data-tone='out'] { --tone: var(--tone-out); }
+
+.node-io-th-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--tone) 80%, white) 0%,
+    var(--tone) 100%
+  );
+  color: var(--bg);
+  font-size: 12px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--tone) 40%, transparent),
+    0 4px 8px -3px color-mix(in srgb, var(--tone) 50%, transparent);
+}
+
+.node-io-cell {
+  position: relative;
+  /* No flex:1 — the cell hugs its content so the focus background
+     only paints behind the textarea, not the empty space the section
+     stretches into to keep the column divider full-height. */
+  padding: 12px 14px;
+  background: transparent;
+  transition: background 160ms ease;
+}
+/* A thin accent strip rides up the inside edge on focus — no boxed
+   look, just a subtle indicator that this column is being edited. */
+.node-io-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--tone);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+.node-io-cell:focus-within {
+  background: color-mix(in srgb, var(--tone) 5%, var(--bg));
+}
+.node-io-cell:focus-within::before {
+  transform: scaleY(1);
+}
+
+.node-io-field {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  resize: vertical;
+  min-height: 88px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--fg);
+  font: 400 13px/1.6 var(--font-sans);
+}
+.node-io-field::placeholder {
+  color: var(--fg-subtle);
+}
+
+/* SVG overlay lives INSIDE the world-transformed canvas content, so
+   it picks up the same compositor transform as the nodes — no React
+   re-render lag, no edge-vs-node wobble during pan / zoom. The
+   visible bounding box is 1px so it doesn't trap pointer events; we
+   rely on `overflow: visible` to draw paths anywhere in world space.
+   `vector-effect: non-scaling-stroke` on the path keeps stroke width
+   constant regardless of zoom. */
+.llm-edge-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+/* Endpoint handles. Filled accent dot + a wider transparent hit circle
+   that catches pointers without making the visible dot huge. */
+.llm-edge-handle {
+  fill: var(--accent);
+  pointer-events: none;
+  stroke: var(--bg);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.llm-edge-handle-hit {
+  fill: transparent;
+  pointer-events: auto;
+  cursor: grab;
+}
+.llm-edge-handle-hit:hover + .llm-edge-handle,
+.llm-edge-handle-hit:active + .llm-edge-handle {
+  fill: color-mix(in srgb, var(--accent) 80%, white);
+}
+
+.llm-edge-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  /* Draw-on: pathLength=1 normalises the bezier length so a single
+     `stroke-dasharray: 1` reveals the line from start to end as the
+     dashoffset animates from 1 to 0. */
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: llm-edge-draw 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes llm-edge-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Live preview while the user is dragging from a port — flowing
+   dashed line travelling source → cursor so the direction reads
+   immediately. Overrides the draw-on animation above. */
+.llm-edge-path-preview {
+  stroke-dasharray: 6 6;
+  stroke-dashoffset: 0;
+  animation: llm-edge-flow 700ms linear infinite;
+  opacity: 0.85;
+}
+
+@keyframes llm-edge-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
 
 .world-image {
   position: absolute;
@@ -1741,6 +2139,19 @@ body[data-canvas-tool="box"] .media-label {
 
 .box-label-hint-sep {
   opacity: 0.4;
+}
+
+/* Floating variant — drops the hint below the StepNameInput, aligned
+   to the left edge of the input, no pill background. */
+.step-name-hint {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 14px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 

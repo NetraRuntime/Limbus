@@ -36,6 +36,17 @@ export type FocusOptions = {
   duration?: number;
   padding?: number; // fraction of viewport reserved as margin (0..1); default 0.12
   bottomInset?: number;
+  /** CSS pixels of the viewport's right edge that are obscured (e.g.
+   *  by a floating sidebar). The fit math treats that strip as
+   *  unavailable so the rect lands in the visible area. */
+  rightInset?: number;
+  /** Mirror of `rightInset` for the left side. */
+  leftInset?: number;
+  /** Cap on how far the camera will zoom in to fit the rect. Useful
+   *  when focusing on a single small node — without a cap, fitting a
+   *  ~150 px pill into a 1280 px viewport ends up at ~7×, which feels
+   *  uncomfortably close. */
+  maxScale?: number;
 };
 
 export type InfiniteCanvasHandle = {
@@ -367,18 +378,26 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
         const { width: vw, height: vh } = el.getBoundingClientRect();
         const padding = opts?.padding ?? 0.12;
         const bottomInset = Math.max(0, Math.min(opts?.bottomInset ?? 0, vh * 0.8));
-        const availW = Math.max(1, vw * (1 - padding));
+        const rightInset = Math.max(0, Math.min(opts?.rightInset ?? 0, vw * 0.8));
+        const leftInset = Math.max(0, Math.min(opts?.leftInset ?? 0, vw * 0.8));
+        const availW = Math.max(
+          1,
+          vw * (1 - padding) - rightInset - leftInset,
+        );
         const availH = Math.max(1, vh * (1 - padding) - bottomInset);
         const fit = Math.min(
           availW / Math.max(1, rect.width),
           availH / Math.max(1, rect.height),
         );
-        const scale = clampScale(fit);
+        const capped = opts?.maxScale != null ? Math.min(fit, opts.maxScale) : fit;
+        const scale = clampScale(capped);
         const cx = rect.x + rect.width / 2;
         const cy = rect.y + rect.height / 2;
+        // Center within the visible region, not the full viewport, so
+        // the rect lands in the unobscured area when insets are set.
         const target: View = {
           scale,
-          x: vw / 2 - cx * scale,
+          x: (vw + leftInset - rightInset) / 2 - cx * scale,
           y: (vh - bottomInset) / 2 - cy * scale,
         };
         if (opts?.animate === false) {
