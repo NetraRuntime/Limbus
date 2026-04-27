@@ -52,7 +52,11 @@ export function ProjectGrid({ projects, itemCounts, tagsByProject, disabledReaso
         <EditProjectModal project={editing} onClose={() => setEditing(null)} />
       )}
       {deleting && (
-        <DeleteProjectModal project={deleting} onClose={() => setDeleting(null)} />
+        <DeleteProjectModal
+          project={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => setDeleting(null)}
+        />
       )}
     </>
   );
