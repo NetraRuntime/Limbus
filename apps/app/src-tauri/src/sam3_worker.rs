@@ -512,11 +512,24 @@ fn build_segment_response(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    // Defensive caps: when NMS is skipped (iou_valid()==false) or when the
+    // backend reports many borderline candidates, the C library can hand back
+    // 100+ raw masks. Each mask becomes two PNGs base64-encoded into the
+    // Tauri IPC payload, so an unbounded list easily blows past the IPC size
+    // limit and crashes the host process. Filter again by score and cap to a
+    // sane top-K before encoding.
+    const MAX_MASKS: usize = 16;
+    let scores_full: Vec<f32> = reduced.iou_scores().to_vec();
+    let order: Vec<usize> = order
+        .into_iter()
+        .filter(|&i| scores_full.get(i).copied().unwrap_or(0.0) >= score_thresh)
+        .take(MAX_MASKS)
+        .collect();
+
     let mask_w = reduced.mask_width() as u32;
     let mask_h = reduced.mask_height() as u32;
     let mut masks = Vec::with_capacity(order.len());
     let boxes = reduced.boxes().map(<[[f32; 4]]>::to_vec);
-    let scores: Vec<f32> = reduced.iou_scores().to_vec();
 
     for &i in &order {
         let slice = match reduced.mask(i) {
@@ -529,7 +542,7 @@ fn build_segment_response(
             edge_png_base64,
             width: mask_w,
             height: mask_h,
-            score: scores.get(i).copied().unwrap_or(0.0),
+            score: scores_full.get(i).copied().unwrap_or(0.0),
             bbox: boxes.as_ref().and_then(|b| b.get(i).copied()),
         });
     }
