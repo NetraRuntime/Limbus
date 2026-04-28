@@ -809,7 +809,10 @@
   position: absolute;
   top: 6px;
   right: 6px;
-  z-index: 2;
+  /* No explicit z-index — keeps the button below the sticky column
+     header (z:1) so it tucks under the header instead of poking
+     through when the row scrolls behind it. Still paints above the
+     textarea via DOM order. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
