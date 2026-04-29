@@ -28,6 +28,7 @@ import { useSelectionDerived } from './features/canvas/hooks/useSelectionDerived
 import { useVisibleMedia } from './features/canvas/hooks/useVisibleMedia';
 import { useTrashSweep } from './features/canvas/hooks/useTrashSweep';
 import { useStackOrder } from './features/canvas/hooks/useStackOrder';
+import { useMediaHandlers } from './features/canvas/hooks/useMediaHandlers';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -409,89 +410,29 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setSegments,
   });
 
-  const handleMediaEnter = useCallback(
-    (id: string) => {
-      clearHideTimer();
-      setHoverId(id);
-    },
-    [clearHideTimer],
-  );
-
-  const handleMediaLeave = useCallback(() => {
-    scheduleHide();
-  }, [scheduleHide]);
-
-  const handleMediaClick = useCallback(
-    (e: React.MouseEvent, id: string) => {
-      e.stopPropagation();
-      // Shift already toggled in pointerdown — don't re-apply here.
-      if (shiftToggledRef.current) {
-        shiftToggledRef.current = false;
-        return;
-      }
-      if (dragRef.current?.anchorId === id && dragRef.current.moved) return;
-      clearHideTimer();
-      setHoverId(id);
-      setSelectedIds(new Set([id]));
-      setLastSelectedId(id);
-    },
-    [clearHideTimer],
-  );
-
-  const handleMediaDoubleClick = useCallback(
-    (e: React.MouseEvent, m: CanvasMedia) => {
-      e.stopPropagation();
-      if (dragRef.current?.moved) return;
-      canvasRef.current?.focusOn(
-        { x: m.x, y: m.y, width: m.width, height: m.height },
-        { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-      );
-    },
-    [],
-  );
-
-  const handleMediaContextMenu = useCallback((e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    clearHideTimer();
-    setHoverId(id);
-    setSelectedIds((prev) => {
-      if (prev.has(id)) return prev;
-      return new Set([id]);
-    });
-    setLastSelectedId(id);
-    setContextMenu({ id, x: e.clientX, y: e.clientY });
-  }, [clearHideTimer]);
-
-
-  const handleSidebarSelect = useCallback(
-    (id: string) => {
-      const target = mediaRef.current.find((m) => m.id === id);
-      if (!target) return;
-      clearHideTimer();
-      setSelectedIds(new Set([id]));
-      setLastSelectedId(id);
-      setHoverId(id);
-      canvasRef.current?.focusOn(
-        { x: target.x, y: target.y, width: target.width, height: target.height },
-        { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-      );
-    },
-    [clearHideTimer],
-  );
-
-  const handleMediaPointerDown = useCallback(
-    (e: MediaPointerEvent, m: CanvasMedia) => {
-      if (e.button !== 0) return;
-      e.stopPropagation();
-      if (e.shiftKey || toolRef.current !== 'box') {
-        beginDrag(e, m, setSelectedIds, setLastSelectedId);
-        return;
-      }
-      beginDraw(e, m);
-    },
-    [beginDraw, beginDrag, toolRef],
-  );
+  const {
+    handleMediaEnter,
+    handleMediaLeave,
+    handleMediaClick,
+    handleMediaDoubleClick,
+    handleMediaContextMenu,
+    handleSidebarSelect,
+    handleMediaPointerDown,
+  } = useMediaHandlers({
+    canvasRef,
+    mediaRef,
+    dragRef,
+    shiftToggledRef,
+    toolRef,
+    setSelectedIds,
+    setLastSelectedId,
+    setHoverId,
+    setContextMenu,
+    clearHideTimer,
+    scheduleHide,
+    beginDrag,
+    beginDraw,
+  });
 
   // Bbox drag-resize on the selected mask. Live edits run through setSegments
   // for instant visual feedback; history is pushed once on pointerup so an
