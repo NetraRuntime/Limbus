@@ -1,4 +1,4 @@
-import type { TagListEntry } from '../../components/MediaTagList';
+import type { TagListEntry } from '../vision-canvas/components/MediaTagList';
 
 export function nextSoloTag(
   current: string,

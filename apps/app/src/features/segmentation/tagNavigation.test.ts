@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nextSoloTag } from './tagNavigation';
-import type { TagListEntry } from '../../components/MediaTagList';
+import type { TagListEntry } from '../vision-canvas/components/MediaTagList';
 
 const ready = (tag: string): TagListEntry => ({ tag, status: 'ready' });
 const loading = (tag: string): TagListEntry => ({ tag, status: 'loading' });

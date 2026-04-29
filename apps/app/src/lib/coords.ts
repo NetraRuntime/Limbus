@@ -1,4 +1,4 @@
-import type { View, WorldPoint } from '../InfiniteCanvas';
+import type { View, WorldPoint } from '../features/canvas-core';
 
 export type ScreenAndWorld = WorldPoint & { screenX: number; screenY: number };
 

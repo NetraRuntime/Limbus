@@ -1,10 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  CanvasTitlebar,
   InfiniteCanvas,
+  getInitialView,
+  readStoredView,
+  useCanvasGlass,
+  useCanvasTitle,
+  useViewport,
+  useViewPersist,
   type InfiniteCanvasHandle,
   type View,
   type WorldPoint,
-} from './InfiniteCanvas';
+} from './features/canvas-core';
 import {
   ActiveTagListLayer,
   BakeForImage,
@@ -20,6 +27,9 @@ import {
   EncodingOverlays,
   MarqueeRect,
   MediaItem,
+  MediaToolbar,
+  type SearchItem,
+  useSavedTags,
   PendingBoxLabelLayer,
   PendingOverlays,
   SegmentChipsLayer,
@@ -28,10 +38,8 @@ import {
   TagInputLayer,
   UserBoxesLayer,
   useBboxResizeGesture,
-  useCanvasGlass,
   useCanvasHydration,
   useCanvasKeyboardShortcuts,
-  useCanvasTitle,
   useDrawBoxGesture,
   useDropHandler,
   useHoverState,
@@ -46,26 +54,20 @@ import {
   useToolMode,
   useTrashSweep,
   useUploadPipeline,
-  useViewPersist,
-  useViewport,
   useVisibleMedia,
   type CanvasMedia,
   type ConnState,
   type DragState,
   type PendingBoxLabel,
   type UserBox,
-} from './features/canvas';
+} from './features/vision-canvas';
 import { FloatingSidebar } from './components/FloatingSidebar';
-import { MediaToolbar } from './components/MediaToolbar';
-import { type SearchItem } from './components/MediaSearchPalette';
-import { useSavedTags } from './components/savedTags';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import { type CanvasActionMeta } from './lib/canvasHistory';
 import { DeletedBanner, useProject, useProjectThumbnail } from './features/projects';
-import { getInitialView, readStoredView } from './lib/canvasView';
-import { HIGHLIGHT_BOTTOM_INSET_PX } from './features/canvas/lib';
+import { HIGHLIGHT_BOTTOM_INSET_PX, VISION_VIEW_STORAGE_KEY } from './features/vision-canvas/lib';
 import './App.css';
 
 type CanvasProps = {
@@ -78,7 +80,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const sam3Available = !sam3Error;
 
   // ─── Plain state ────────────────────────────────────────────────────────
-  const [view, setView] = useState<View>(getInitialView);
+  const [view, setView] = useState<View>(() => getInitialView(VISION_VIEW_STORAGE_KEY));
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
   const [conn, setConn] = useState<ConnState>('connecting');
@@ -97,7 +99,9 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
 
   // ─── Refs (live mirrors + gesture state) ────────────────────────────────
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
-  const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
+  const initialHadStoredView = useRef<boolean>(
+    readStoredView(VISION_VIEW_STORAGE_KEY) !== null,
+  );
   // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
   const initialMediaLoadedRef = useRef<boolean>(false);
   const dragRef = useRef<DragState | null>(null);
@@ -126,7 +130,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     onError: (err, phase) => console.warn(`[history] ${phase} failed`, err),
   });
   useHistoryShortcuts(history);
-  useViewPersist(view);
+  useViewPersist(VISION_VIEW_STORAGE_KEY, view);
   useTrashSweep({ projectId, conn });
 
   // ─── Marquee gesture (must run before useVisibleMedia consumes marqueeRect)
@@ -363,7 +367,10 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   }, []);
 
   // ─── Derived values used by JSX ────────────────────────────────────────
-  const initial = useMemo<Partial<View>>(() => getInitialView(), []);
+  const initial = useMemo<Partial<View>>(
+    () => getInitialView(VISION_VIEW_STORAGE_KEY),
+    [],
+  );
   const isEmpty = media.length === 0 && conn !== 'connecting';
   const activeRect = activeMedia
     ? {
@@ -393,7 +400,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
 
   return (
     <>
-      <div className="canvas-titlebar" data-tauri-drag-region aria-hidden />
+      <CanvasTitlebar />
       <InfiniteCanvas
         ref={canvasRef}
         initial={initial}
