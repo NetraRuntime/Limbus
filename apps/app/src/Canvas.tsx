@@ -13,8 +13,6 @@ import {
   hardDeleteImage,
   hardDeleteVideo,
   listTrashed,
-  updateImagePosition,
-  updateVideoPosition,
   type ImageRecord,
   type VideoRecord,
 } from './lib/pb';
@@ -29,6 +27,8 @@ import { useCanvasHydration } from './features/canvas/hooks/useCanvasHydration';
 import { useBboxResizeGesture } from './features/canvas/hooks/useBboxResizeGesture';
 import { useSegmentationState } from './features/canvas/hooks/useSegmentationState';
 import { useMarqueeGesture } from './features/canvas/hooks/useMarqueeGesture';
+import { useDrawBoxGesture } from './features/canvas/hooks/useDrawBoxGesture';
+import { useMediaDragGesture } from './features/canvas/hooks/useMediaDragGesture';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -69,7 +69,6 @@ import {
 import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
-  moveEntry,
   deleteEntry,
   createEntry,
   type CanvasActionMeta,
@@ -123,10 +122,6 @@ import {
   writeStoredStackOrder,
   type CanvasMedia,
   type ConnState,
-  type DragOrig,
-  type DragState,
-  type DrawBoxState,
-  type MarqueeState,
   type MediaPointerEvent,
   type PendingBoxLabel,
   type SegMask,
@@ -206,8 +201,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
   const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
 
-  const [drawBoxPreview, setDrawBoxPreview] = useState<DrawBoxState | null>(null);
-  const drawBoxRef = useRef<DrawBoxState | null>(null);
   const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
 
   const [pendingBoxLabel, setPendingBoxLabel] = useState<PendingBoxLabel | null>(null);
@@ -226,8 +219,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   });
   useHistoryShortcuts(history);
 
-  const dragRef = useRef<DragState | null>(null);
-  const shiftToggledRef = useRef(false);
   const viewRef = useRef<View>(view);
   viewRef.current = view;
 
@@ -621,6 +612,30 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       return [...below, ...raised];
     });
   }, []);
+
+  const { drawBoxPreview, drawBoxRef, beginDraw } = useDrawBoxGesture({
+    viewRef,
+    selectedIdsRef,
+    setSelectedIds,
+    setLastSelectedId,
+    setPendingBoxLabel,
+  });
+
+  const {
+    dragRef,
+    shiftToggledRef,
+    beginDrag,
+    handlePointerMove: handleMediaPointerMove,
+    handlePointerUp: handleMediaPointerUp,
+  } = useMediaDragGesture({
+    viewRef,
+    mediaRef,
+    selectedIdsRef,
+    setMedia,
+    setConn,
+    history,
+    bringToFront,
+  });
 
   useEffect(() => {
     if (selectedIds.size === 0) return;
@@ -1175,229 +1190,17 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     [clearHideTimer],
   );
 
-  const handleMediaPointerDown = useCallback((e: MediaPointerEvent, m: CanvasMedia) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    if (e.shiftKey) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(m.id)) next.delete(m.id);
-        else next.add(m.id);
-        return next;
-      });
-      setLastSelectedId(m.id);
-      shiftToggledRef.current = true;
-      // No pointer capture, no drag: treat shift as a selection gesture only.
-      return;
-    }
-    shiftToggledRef.current = false;
-    if (toolRef.current === 'box') {
-      // Box tool: click-drag on an image draws a new bounding box. Videos
-      // aren't supported yet — fall through to a no-op so they don't drag.
-      if (m.kind !== 'image') return;
-      // Starting a new draw discards any unlabeled box waiting on a label.
-      // Matches Photoshop/Figma "new selection replaces old" semantics.
-      setPendingBoxLabel(null);
-      const v = viewRef.current;
-      // InfiniteCanvas is position:fixed inset:0, so client coords map
-      // directly to its local space; no rect offset needed.
-      const worldX = (e.clientX - v.x) / v.scale;
-      const worldY = (e.clientY - v.y) / v.scale;
-      const cx = Math.max(m.x, Math.min(m.x + m.width, worldX));
-      const cy = Math.max(m.y, Math.min(m.y + m.height, worldY));
-      const state: DrawBoxState = {
-        imageId: m.id,
-        pointerId: e.pointerId,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        startWorldX: cx,
-        startWorldY: cy,
-        currentWorldX: cx,
-        currentWorldY: cy,
-        imageX: m.x,
-        imageY: m.y,
-        imageW: m.width,
-        imageH: m.height,
-        moved: false,
-      };
-      drawBoxRef.current = state;
-      setDrawBoxPreview(state);
-      // Keep this image active so the toolbar stays anchored to it while
-      // drawing. Matches handleMediaClick's single-select behavior.
-      if (!selectedIdsRef.current.has(m.id) || selectedIdsRef.current.size !== 1) {
-        setSelectedIds(new Set([m.id]));
-        setLastSelectedId(m.id);
+  const handleMediaPointerDown = useCallback(
+    (e: MediaPointerEvent, m: CanvasMedia) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      if (e.shiftKey || toolRef.current !== 'box') {
+        beginDrag(e, m, setSelectedIds, setLastSelectedId);
+        return;
       }
-
-      const onMove = (ev: PointerEvent) => {
-        const b = drawBoxRef.current;
-        if (!b || ev.pointerId !== b.pointerId) return;
-        const dx = ev.clientX - b.startClientX;
-        const dy = ev.clientY - b.startClientY;
-        if (!b.moved && Math.hypot(dx, dy) < DRAW_BOX_MIN_SIZE_PX) return;
-        const vNow = viewRef.current;
-        const wx = (ev.clientX - vNow.x) / vNow.scale;
-        const wy = (ev.clientY - vNow.y) / vNow.scale;
-        const ccx = Math.max(b.imageX, Math.min(b.imageX + b.imageW, wx));
-        const ccy = Math.max(b.imageY, Math.min(b.imageY + b.imageH, wy));
-        const next: DrawBoxState = {
-          ...b,
-          currentWorldX: ccx,
-          currentWorldY: ccy,
-          moved: true,
-        };
-        drawBoxRef.current = next;
-        setDrawBoxPreview(next);
-      };
-
-      const cleanup = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
-      };
-
-      const onUp = (ev: PointerEvent) => {
-        const b = drawBoxRef.current;
-        cleanup();
-        if (!b || ev.pointerId !== b.pointerId) return;
-        drawBoxRef.current = null;
-        setDrawBoxPreview(null);
-        if (!b.moved) return;
-        const x1 = Math.min(b.startWorldX, b.currentWorldX);
-        const y1 = Math.min(b.startWorldY, b.currentWorldY);
-        const x2 = Math.max(b.startWorldX, b.currentWorldX);
-        const y2 = Math.max(b.startWorldY, b.currentWorldY);
-        // Reject degenerate boxes (hairline drags). The pixel threshold is
-        // applied in screen space so a zoomed-out drag still needs real
-        // motion to commit.
-        const vNow = viewRef.current;
-        const pxW = (x2 - x1) * vNow.scale;
-        const pxH = (y2 - y1) * vNow.scale;
-        if (pxW < DRAW_BOX_MIN_SIZE_PX || pxH < DRAW_BOX_MIN_SIZE_PX) return;
-        const rel: [number, number, number, number] = [
-          x1 - b.imageX,
-          y1 - b.imageY,
-          x2 - b.imageX,
-          y2 - b.imageY,
-        ];
-        // Park the box in `pendingBoxLabel` and let the popover collect a
-        // user label. The box is not committed to `userBoxes` and SAM3 is
-        // not invoked until the user confirms — cancel just clears state.
-        setPendingBoxLabel({
-          imageId: b.imageId,
-          boxId: genBoxId(),
-          relBox: rel,
-          imageW: b.imageW,
-          imageH: b.imageH,
-          worldRect: { x1, y1, x2, y2 },
-        });
-      };
-
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onUp);
-      return;
-    }
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    const sel = selectedIdsRef.current;
-    const ids = sel.has(m.id) ? sel : new Set<string>([m.id]);
-    const orig = new Map<string, DragOrig>();
-    for (const item of mediaRef.current) {
-      if (ids.has(item.id)) {
-        orig.set(item.id, { x: item.x, y: item.y, kind: item.kind });
-      }
-    }
-    dragRef.current = {
-      anchorId: m.id,
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      orig,
-      moved: false,
-      lastDx: 0,
-      lastDy: 0,
-    };
-    // Covers the drag-without-selection case: clicking and dragging an
-    // unselected item won't fire click (moved=true suppresses it), so the
-    // selectedIds-driven raise effect wouldn't run. Raise here too.
-    bringToFront(ids);
-  }, [bringToFront]);
-
-  const handleMediaPointerMove = useCallback((e: MediaPointerEvent) => {
-    const d = dragRef.current;
-    if (!d || d.pointerId !== e.pointerId) return;
-    const dxScreen = e.clientX - d.startX;
-    const dyScreen = e.clientY - d.startY;
-    if (!d.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) return;
-    d.moved = true;
-    const scale = viewRef.current.scale;
-    const dx = dxScreen / scale;
-    const dy = dyScreen / scale;
-    d.lastDx = dx;
-    d.lastDy = dy;
-    setMedia((prev) =>
-      prev.map((m) => {
-        const o = d.orig.get(m.id);
-        if (!o) return m;
-        return { ...m, x: o.x + dx, y: o.y + dy };
-      }),
-    );
-  }, []);
-
-  const handleMediaPointerUp = useCallback(
-    (e: MediaPointerEvent) => {
-      const d = dragRef.current;
-      if (!d || d.pointerId !== e.pointerId) return;
-      try {
-        (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-      } catch {
-
-      }
-      const { moved, lastDx, lastDy, orig } = d;
-      window.setTimeout(() => {
-        if (dragRef.current && dragRef.current.pointerId === d.pointerId) {
-          dragRef.current = null;
-        }
-      }, 0);
-      if (!moved) return;
-      const currentMedia = mediaRef.current;
-      const moves: Array<{
-        id: string;
-        kind: 'image' | 'video';
-        from: { x: number; y: number };
-        to: { x: number; y: number };
-      }> = [];
-      for (const [id, o] of orig) {
-        const stillPending = currentMedia.find((m) => m.id === id)?.pending;
-        if (stillPending) continue;
-        const persist =
-          o.kind === 'video' ? updateVideoPosition : updateImagePosition;
-        const nextX = o.x + lastDx;
-        const nextY = o.y + lastDy;
-        moves.push({
-          id,
-          kind: o.kind,
-          from: { x: o.x, y: o.y },
-          to: { x: nextX, y: nextY },
-        });
-        persist(id, { x: nextX, y: nextY })
-          .then(() => setConn('ready'))
-          .catch((err) => {
-            console.warn('[pb] move failed for', id, err);
-            setConn('offline');
-            setMedia((prev) =>
-              prev.map((mm) => (mm.id === id ? { ...mm, x: o.x, y: o.y } : mm)),
-            );
-          });
-      }
-      if (moves.length > 0) {
-        history.push(
-          moveEntry({ moves, setMedia, onConn: setConn }),
-          { alreadyApplied: true },
-        );
-      }
+      beginDraw(e, m);
     },
-    [history],
+    [beginDraw, beginDrag, toolRef],
   );
 
   // Bbox drag-resize on the selected mask. Live edits run through setSegments
