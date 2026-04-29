@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CanvasTitlebar,
   CanvasAppControlsHud,
@@ -57,6 +57,11 @@ export function LlmCanvas({ projectId }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusedExample, setFocusedExample] = useState<{
+    nodeId: string;
+    idx: number;
+    token: number;
+  } | null>(null);
 
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
@@ -131,6 +136,7 @@ export function LlmCanvas({ projectId }: Props) {
 
   const handleNodeSelect = useCallback((id: string) => {
     setSelectedId((cur) => (cur === id ? cur : id));
+    setFocusedExample(null);
   }, []);
 
   const handleChange = useCallback((next: View) => setView(next), []);
@@ -147,6 +153,20 @@ export function LlmCanvas({ projectId }: Props) {
 
   // Avoid lint about an unused export until we wire an edge-remove affordance.
   void edgeMut.remove;
+
+  const selectedNode =
+    selectedId
+      ? nodes.find((n) => n.id === selectedId && n.kind !== 'start') ?? null
+      : null;
+
+  // Memoised so unrelated re-renders (e.g. cursor updates from canvas
+  // pointer-move) don't churn the prop reference, which would otherwise
+  // re-fire the inspector's "scroll focused row into view" effect.
+  const sidebarFocusedExample = useMemo(() => {
+    if (!focusedExample || !selectedNode) return null;
+    if (focusedExample.nodeId !== selectedNode.id) return null;
+    return { idx: focusedExample.idx, token: focusedExample.token };
+  }, [focusedExample, selectedNode]);
 
   if (projectState.status === 'deleted') return <DeletedBanner />;
 
@@ -176,11 +196,6 @@ export function LlmCanvas({ projectId }: Props) {
     if (!any) return null;
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   };
-
-  const selectedNode =
-    selectedId
-      ? nodes.find((n) => n.id === selectedId && n.kind !== 'start') ?? null
-      : null;
 
   return (
     <>
@@ -262,6 +277,7 @@ export function LlmCanvas({ projectId }: Props) {
           node={selectedNode}
           onClose={() => setSelectedId(null)}
           onPatch={nodeMut.patch}
+          focusedExample={sidebarFocusedExample}
         />
       )}
 
@@ -322,7 +338,17 @@ export function LlmCanvas({ projectId }: Props) {
       <StepSearchPalette
         open={searchOpen}
         steps={stepNodes}
-        onSelect={() => setSearchOpen(false)}
+        onSelect={(step, exampleIdx) => {
+          setSearchOpen(false);
+          setSelectedId(step.id);
+          if (exampleIdx !== undefined) {
+            setFocusedExample({
+              nodeId: step.id,
+              idx: exampleIdx,
+              token: Date.now(),
+            });
+          }
+        }}
         onClose={() => setSearchOpen(false)}
       />
     </>
