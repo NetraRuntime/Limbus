@@ -24,6 +24,7 @@ Guidance for writing React code that meets the standards of projects like Excali
 
 ## Core Philosophy
 
+- **Small and self-explanatory.** Good code is small enough that no single function or component is overwhelming, and reads clearly without comments. If you feel the need to explain it in prose, the code itself is wrong — rename, split, or simplify until the explanation is unnecessary.
 - **Colocation over centralization.** Keep code close to where it is used. Only lift things up when they are genuinely shared.
 - **Explicit over implicit.** Prefer clarity over cleverness. A junior dev should understand the code on first read.
 - **Boring over novel.** Use well-known patterns. Custom abstractions need to earn their place.
