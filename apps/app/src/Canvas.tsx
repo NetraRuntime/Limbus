@@ -9,8 +9,6 @@ import {
   type WorldRect,
 } from './InfiniteCanvas';
 import {
-  createImage,
-  createVideo,
   deleteAllSegmentationsForImage,
   deleteSegmentationByImageTag,
   deleteSegmentationsForImage,
@@ -36,6 +34,8 @@ import { MediaItem } from './features/canvas/components/MediaItem';
 import { BakeForImage } from './features/canvas/components/BakeForImage';
 import { BoxLabelPopover } from './features/canvas/components/BoxLabelPopover';
 import { useWindowKeydown } from './features/canvas/hooks/useWindowKeydown';
+import { useHoverState } from './features/canvas/hooks/useHoverState';
+import { useUploadPipeline } from './features/canvas/hooks/useUploadPipeline';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
@@ -117,7 +117,6 @@ import {
   DRAW_BOX_MIN_SIZE_PX,
   EMPTY_TAGS,
   HIGHLIGHT_BOTTOM_INSET_PX,
-  HOVER_HIDE_MS,
   STACK_ORDER_PERSIST_DEBOUNCE_MS,
   describeDrop,
   deleteImageEncoding,
@@ -129,7 +128,6 @@ import {
   mediaBounds,
   medianLongestSide,
   normalizeUploadSize,
-  precacheImageEncoding,
   readStoredStackOrder,
   uid,
   writeStoredStackOrder,
@@ -145,9 +143,7 @@ import {
   type SegmentResponse,
   type SegmentState,
   type TagSegment,
-  type UploadPhase,
   type UploadPlan,
-  type UploadStatus,
   type UserBox,
 } from './features/canvas/lib';
 import './App.css';
@@ -216,21 +212,17 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
-  const [uploadStatus, setUploadStatus] = useState<Record<string, UploadStatus>>({});
-  const [encodingIds, setEncodingIds] = useState<Set<string>>(() => new Set());
   const [segments, setSegments] = useState<Record<string, SegmentState>>({});
   const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
   const [hoveredMask, setHoveredMask] = useState<MaskIdentity | null>(null);
   const [soloTag, setSoloTag] = useState<string | null>(null);
   const segmentSeqRef = useRef<Record<string, number>>({});
-  const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
-  const [hoverId, setHoverId] = useState<string | null>(null);
+  const { hoverId, setHoverId, clearHideTimer, scheduleHide } = useHoverState();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
   const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
-  const hideTimer = useRef<number | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<{
     minX: number; minY: number; maxX: number; maxY: number;
   } | null>(null);
@@ -412,6 +404,16 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   });
   const [priorityIds, setPriorityIds] = useState<Set<string>>(() => new Set());
 
+  const { uploadStatus, encodingIds, runUploadPlan, abortUpload } =
+    useUploadPipeline({
+      projectId,
+      sam3Available,
+      setMedia,
+      setPriorityIds,
+      setConn,
+      history,
+    });
+
   const hydrationItems = useMemo(
     () =>
       media
@@ -473,23 +475,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       labelWidth: labelOuterWidth,
     });
   }, [paintMedia, media, stackOrder, view.scale]);
-
-  const clearHideTimer = useCallback(() => {
-    if (hideTimer.current !== null) {
-      window.clearTimeout(hideTimer.current);
-      hideTimer.current = null;
-    }
-  }, []);
-
-  const scheduleHide = useCallback(() => {
-    clearHideTimer();
-    hideTimer.current = window.setTimeout(() => {
-      setHoverId(null);
-      hideTimer.current = null;
-    }, HOVER_HIDE_MS);
-  }, [clearHideTimer]);
-
-  useEffect(() => () => clearHideTimer(), [clearHideTimer]);
 
   useEffect(() => {
     const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
@@ -716,110 +701,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     if (selectedIds.size === 0) return;
     bringToFront(selectedIds);
   }, [selectedIds, bringToFront]);
-
-  const runUploadPlan = useCallback(
-    (
-      plan: UploadPlan[],
-      onUploaded?: (draftId: string, record: ImageRecord | VideoRecord) => void,
-    ): Promise<void> => {
-      if (plan.length === 0) return Promise.resolve();
-      setMedia((prev) => [...prev, ...plan.map((p) => p.draft)]);
-      setUploadStatus((prev) => {
-        const next = { ...prev };
-        for (const p of plan) next[p.draft.id] = { phase: 'sending', pct: 0 };
-        return next;
-      });
-      return Promise.all(
-        plan.map(async (p) => {
-          const onProgress = (pct: number) => {
-            setUploadStatus((prev) => {
-              if (!(p.draft.id in prev)) return prev;
-              return {
-                ...prev,
-                [p.draft.id]: {
-                  phase: pct >= 1 ? 'finalizing' : 'sending',
-                  pct: Math.min(1, Math.max(0, pct)),
-                },
-              };
-            });
-          };
-          const ctrl = new AbortController();
-          uploadCtrlsRef.current[p.draft.id] = ctrl;
-          try {
-            const record =
-              p.draft.kind === 'video'
-                ? await createVideo(projectId, p.file, p.meta, onProgress, ctrl.signal)
-                : await createImage(projectId, p.file, p.meta, onProgress, ctrl.signal);
-            onUploaded?.(p.draft.id, record);
-            const next =
-              p.draft.kind === 'video' ? fromVideoRecord(record) : fromImageRecord(record);
-            setMedia((prev) => prev.map((m) => (m.id === p.draft.id ? next : m)));
-            setPriorityIds((prev) => {
-              const out = new Set(prev);
-              out.add(next.id);
-              return out;
-            });
-            URL.revokeObjectURL(p.draft.src);
-            setConn('ready');
-            if (p.draft.kind === 'image' && sam3Available) {
-              const imageRecord = record as ImageRecord;
-              setEncodingIds((prev) => {
-                const next = new Set(prev);
-                next.add(imageRecord.id);
-                return next;
-              });
-              void precacheImageEncoding(imageRecord).finally(() => {
-                setEncodingIds((prev) => {
-                  if (!prev.has(imageRecord.id)) return prev;
-                  const next = new Set(prev);
-                  next.delete(imageRecord.id);
-                  return next;
-                });
-              });
-            }
-            history.push(
-              createEntry({
-                created: [next as HistoryMedia],
-                setMedia,
-                onConn: setConn,
-              }),
-              { alreadyApplied: true },
-            );
-          } catch (err) {
-            if ((err as Error | null)?.name !== 'AbortError') {
-              const message = (err as Error | null)?.message ?? 'upload failed';
-              const responseBody = (err as Error & { responseBody?: string } | null)
-                ?.responseBody;
-              console.error('[pb] upload failed', {
-                file: p.file.name,
-                kind: p.draft.kind,
-                size: p.file.size,
-                type: p.file.type,
-                message,
-                responseBody,
-                error: err,
-              });
-              setConn('offline');
-              setUploadStatus((prev) => ({
-                ...prev,
-                [p.draft.id]: { phase: 'error', pct: 0, message },
-              }));
-              return;
-            }
-          } finally {
-            delete uploadCtrlsRef.current[p.draft.id];
-          }
-          setUploadStatus((prev) => {
-            if (!(p.draft.id in prev)) return prev;
-            const next = { ...prev };
-            delete next[p.draft.id];
-            return next;
-          });
-        }),
-      ).then(() => {});
-    },
-    [sam3Available, history],
-  );
 
   const clearSelection = useCallback(() => {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
@@ -1324,7 +1205,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setLastSelectedId((cur) => (cur === id ? null : cur));
     setHoverId((cur) => (cur === id ? null : cur));
     if (target.pending) {
-      uploadCtrlsRef.current[id]?.abort();
+      abortUpload(id);
       URL.revokeObjectURL(target.src);
       return;
     }
@@ -1386,7 +1267,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setHoverId((cur) => (cur && idSet.has(cur) ? null : cur));
 
     for (const t of pending) {
-      uploadCtrlsRef.current[t.id]?.abort();
+      abortUpload(t.id);
       URL.revokeObjectURL(t.src);
     }
     for (const t of live) clearSegment(t.id);
