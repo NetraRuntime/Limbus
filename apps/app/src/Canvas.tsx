@@ -86,9 +86,7 @@ import {
   type MediaDescriptor,
 } from './lib/mediaIngest';
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
-import { runAnnotationPlan } from './lib/annotations';
-import type { AnnotationFormat, AnnotationPlan, SegGroup } from './lib/annotations';
-import { placeGrid } from './lib/gridPlacement';
+import type { AnnotationFormat, AnnotationPlan } from './lib/annotations';
 import { useImportPreview } from './hooks/useImportPreview';
 import { ImportPreviewModal } from './components/ImportPreviewModal';
 import {
@@ -125,12 +123,12 @@ import {
   STACK_ORDER_PERSIST_DEBOUNCE_MS,
   describeDrop,
   deleteImageEncoding,
+  applyAnnotationPlanToCanvas,
   exportMedia,
   genBoxId,
-  loadImage,
-  loadVideo,
+  makeImageIdCollector,
   medianLongestSide,
-  normalizeUploadSize,
+  prepareImportPlan,
   readStoredStackOrder,
   uid,
   writeStoredStackOrder,
@@ -1395,139 +1393,37 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       annotationPlan: AnnotationPlan | null = null,
       chosenFormat: AnnotationFormat | 'none' = 'none',
     ) => {
-      const mediaDescriptors = descriptors.filter(
-        (d): d is MediaDescriptor & { kind: 'image' | 'video' } =>
-          d.kind === 'image' || d.kind === 'video',
-      );
-      const files: { file: File; kind: 'image' | 'video' }[] = [];
-      const descriptorsForFiles: (MediaDescriptor & { kind: 'image' | 'video' })[] = [];
-      for (const d of mediaDescriptors) {
-        try {
-          const f = await d.load();
-          files.push({ file: f, kind: d.kind });
-          descriptorsForFiles.push(d);
-        } catch (err) {
-          console.error('[ingest] load failed', d.relativePath, err);
-        }
-      }
-      if (!files.length) return;
-
-      const rawLoaded = await Promise.all(
-        files.map(async ({ file, kind }) => {
-          const dims = await (kind === 'video' ? loadVideo(file) : loadImage(file));
-          return { file, kind, ...dims };
-        }),
-      );
-
-      // Normalize each new item's longest side to match the existing canvas
-      // median (or a default when empty) so a tiny icon and a 4k photo don't
-      // land next to each other at wildly different scales. Aspect ratio is
-      // preserved; the original file is still uploaded unchanged — only the
-      // placed world dimensions are scaled.
-      const reference = mediaRef.current.filter((m) => !m.pending);
-      const loaded = rawLoaded.map((l) => ({
-        ...l,
-        ...normalizeUploadSize({ width: l.width, height: l.height }, reference),
-      }));
-
-      const gap = 32;
-      const placements = placeGrid(
-        loaded.map((l) => ({ width: l.width, height: l.height })),
+      const prepared = await prepareImportPlan(
+        descriptors,
         point,
-        gap,
+        mediaRef.current,
       );
-
-      const plan: UploadPlan[] = loaded.map((l, i) => {
-        const r = placements[i]!;
-        const meta = {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-          name: l.file.name,
-        };
-        return {
-          draft: { id: uid(), kind: l.kind, src: l.src, pending: true, ...meta },
-          file: l.file,
-          meta,
-        };
-      });
-
-      const descriptorByDraftId = new Map<string, MediaDescriptor & { kind: 'image' | 'video' }>();
-      for (let i = 0; i < plan.length; i++) {
-        descriptorByDraftId.set(plan[i]!.draft.id, descriptorsForFiles[i]!);
-      }
-
-      const minX = Math.min(...plan.map((p) => p.draft.x));
-      const minY = Math.min(...plan.map((p) => p.draft.y));
-      const maxX = Math.max(...plan.map((p) => p.draft.x + p.draft.width));
-      const maxY = Math.max(...plan.map((p) => p.draft.y + p.draft.height));
+      if (!prepared) return;
+      const { plan, descriptorByDraftId, focusRect } = prepared;
 
       const imageIdByDescriptorPath = new Map<string, string>();
-      const onUploaded = (draftId: string, record: ImageRecord | VideoRecord) => {
-        const desc = descriptorByDraftId.get(draftId);
-        if (desc && desc.kind === 'image') {
-          imageIdByDescriptorPath.set(desc.relativePath, record.id);
-        }
-      };
+      const onUploaded = makeImageIdCollector(
+        descriptorByDraftId,
+        imageIdByDescriptorPath,
+      );
 
       const uploading = runUploadPlan(plan, onUploaded);
-      canvasRef.current?.focusOn(
-        { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-        { bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-      );
+      canvasRef.current?.focusOn(focusRect, {
+        bottomInset: HIGHLIGHT_BOTTOM_INSET_PX,
+      });
       await uploading;
 
-      if (annotationPlan && chosenFormat !== 'none' && imageIdByDescriptorPath.size > 0) {
-        try {
-          const importedGroups: SegGroup[] = [];
-          const { errors } = await runAnnotationPlan({
-            plan: annotationPlan,
-            chosenFormat,
-            descriptors,
-            imageIdByDescriptorPath,
-            upsert: async (group) => {
-              await upsertSegmentation(projectId, {
-                image: group.imageId,
-                tag: group.tag,
-                masks: group.masks,
-                source_width: group.sourceWidth,
-                source_height: group.sourceHeight,
-              });
-              importedGroups.push(group);
-            },
-          });
-          if (errors.length > 0) console.warn('[annotations] errors:', errors);
-          if (importedGroups.length > 0) {
-            // Push the newly-upserted groups into local canvas state so masks
-            // light up immediately — without this, the user would have to
-            // reload the project to see imported segmentations.
-            setSegments((prev) => {
-              const next = { ...prev };
-              for (const group of importedGroups) {
-                const existing = next[group.imageId]?.entries ?? [];
-                const byTag = new Map<string, TagSegment>();
-                for (const entry of existing) byTag.set(entry.tag.toLowerCase(), entry);
-                byTag.set(group.tag.toLowerCase(), {
-                  tag: group.tag,
-                  status: 'ready',
-                  response: {
-                    masks: group.masks,
-                    source_width: group.sourceWidth,
-                    source_height: group.sourceHeight,
-                  },
-                });
-                next[group.imageId] = { entries: Array.from(byTag.values()) };
-              }
-              return next;
-            });
-          }
-        } catch (err) {
-          console.error('[annotations] plan failed', err);
-        }
-      }
+      if (!annotationPlan || chosenFormat === 'none') return;
+      await applyAnnotationPlanToCanvas({
+        projectId,
+        plan: annotationPlan,
+        chosenFormat,
+        descriptors,
+        imageIdByDescriptorPath,
+        setSegments,
+      });
     },
-    [runUploadPlan],
+    [projectId, runUploadPlan],
   );
 
   const preview = useImportPreview();
