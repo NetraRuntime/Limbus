@@ -11,6 +11,8 @@ export type {
   NewNodeInput,
   UpdateNodeInput,
   NodeExample,
+  ConversationMessage,
+  MessageRole,
   EdgeRecord,
   NewEdgeInput,
   NodeKind,

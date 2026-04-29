@@ -3,10 +3,33 @@ import { z } from 'zod';
 export const NodeKinds = ['start', 'step'] as const;
 export type NodeKind = (typeof NodeKinds)[number];
 
-export const NodeExampleSchema = z.object({
-  input: z.string().default(''),
-  output: z.string().default(''),
+export const MessageRoles = ['system', 'user', 'assistant'] as const;
+export type MessageRole = (typeof MessageRoles)[number];
+
+export const ConversationMessageSchema = z.object({
+  role: z.enum([...MessageRoles]),
+  content: z.string().default(''),
 });
+export type ConversationMessage = z.infer<typeof ConversationMessageSchema>;
+
+// A single training example is now a multi-turn conversation.
+// Legacy `{ input, output }` rows are migrated transparently so older
+// records continue to load.
+export const NodeExampleSchema = z.preprocess((raw) => {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.messages)) return obj;
+    if ('input' in obj || 'output' in obj) {
+      const input = typeof obj.input === 'string' ? obj.input : '';
+      const output = typeof obj.output === 'string' ? obj.output : '';
+      const messages: ConversationMessage[] = [];
+      if (input !== '') messages.push({ role: 'user', content: input });
+      if (output !== '') messages.push({ role: 'assistant', content: output });
+      return { messages };
+    }
+  }
+  return raw;
+}, z.object({ messages: z.array(ConversationMessageSchema).default([]) }));
 export type NodeExample = z.infer<typeof NodeExampleSchema>;
 
 export const NodeRecordSchema = z.object({
