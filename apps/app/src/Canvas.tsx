@@ -28,6 +28,7 @@ import { useToolMode } from './features/canvas/hooks/useToolMode';
 import { useCanvasHydration } from './features/canvas/hooks/useCanvasHydration';
 import { useBboxResizeGesture } from './features/canvas/hooks/useBboxResizeGesture';
 import { useSegmentationState } from './features/canvas/hooks/useSegmentationState';
+import { useMarqueeGesture } from './features/canvas/hooks/useMarqueeGesture';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -204,10 +205,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
   const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
-  const [marqueeRect, setMarqueeRect] = useState<{
-    minX: number; minY: number; maxX: number; maxY: number;
-  } | null>(null);
-  const marqueeRef = useRef<MarqueeState | null>(null);
 
   const [drawBoxPreview, setDrawBoxPreview] = useState<DrawBoxState | null>(null);
   const drawBoxRef = useRef<DrawBoxState | null>(null);
@@ -233,6 +230,20 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const shiftToggledRef = useRef(false);
   const viewRef = useRef<View>(view);
   viewRef.current = view;
+
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+  const clearSelectionRef = useRef<() => void>(() => {});
+
+  const { marqueeRect, marqueeRef, handleBackgroundPointerDown } =
+    useMarqueeGesture({
+      viewRef,
+      mediaRef,
+      selectedIdsRef,
+      setSelectedIds,
+      setLastSelectedId,
+      clearSelectionRef,
+    });
 
   const marqueeInside = useMemo(() => {
     if (!marqueeRect) return null;
@@ -560,8 +571,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     };
   }, [conn]);
 
-  const selectedIdsRef = useRef(selectedIds);
-  selectedIdsRef.current = selectedIds;
   const lastSelectedIdRef = useRef(lastSelectedId);
   lastSelectedIdRef.current = lastSelectedId;
 
@@ -623,7 +632,8 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setLastSelectedId(null);
     setSelectedMask(null);
     setSoloTag(null);
-  }, []);
+  }, [setSelectedMask, setSoloTag]);
+  clearSelectionRef.current = clearSelection;
 
   useEffect(() => {
     if (selectedIds.size > 0) setSelectedMask(null);
@@ -1093,92 +1103,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       });
     });
   }, [preview, importDescriptors]);
-
-  const handleBackgroundPointerDown = useCallback((p: BackgroundPointerDown) => {
-    marqueeRef.current = {
-      pointerId: p.pointerId,
-      startClientX: p.clientX,
-      startClientY: p.clientY,
-      startWorldX: p.worldX,
-      startWorldY: p.worldY,
-      baseSet: new Set(selectedIdsRef.current),
-      additive: p.shiftKey,
-      moved: false,
-    };
-
-    const onMove = (e: PointerEvent) => {
-      const m = marqueeRef.current;
-      if (!m || e.pointerId !== m.pointerId) return;
-      const dxScreen = e.clientX - m.startClientX;
-      const dyScreen = e.clientY - m.startClientY;
-      if (!m.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD_PX) return;
-      m.moved = true;
-      // Container is position:fixed;inset:0 so client coords map directly.
-      const v = viewRef.current;
-      const curWorldX = (e.clientX - v.x) / v.scale;
-      const curWorldY = (e.clientY - v.y) / v.scale;
-      setMarqueeRect({
-        minX: Math.min(m.startWorldX, curWorldX),
-        minY: Math.min(m.startWorldY, curWorldY),
-        maxX: Math.max(m.startWorldX, curWorldX),
-        maxY: Math.max(m.startWorldY, curWorldY),
-      });
-    };
-
-    const onUp = (e: PointerEvent) => {
-      const m = marqueeRef.current;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      if (!m || e.pointerId !== m.pointerId) return;
-      marqueeRef.current = null;
-      if (!m.moved) {
-        // Suppress clearSelection when the pointer ends on a floating
-        // overlay (media-toolbar, highlight-input, popover). The toolbar
-        // animates in over the cursor after pointerdown, so a stationary
-        // click that started on the canvas and ended on the toolbar
-        // should let the toolbar's own click handler run — not deselect
-        // the image. Overlays live outside .ic-root.
-        const target = e.target instanceof Element ? e.target : null;
-        const endedOnOverlay = !!target && !target.closest('.ic-root');
-        if (!m.additive && !endedOnOverlay) clearSelection();
-        setMarqueeRect(null);
-        return;
-      }
-      // Commit the marquee-intersected set to selectedIds.
-      const current = mediaRef.current;
-      const dxScreen = e.clientX - m.startClientX;
-      const dyScreen = e.clientY - m.startClientY;
-      const v = viewRef.current;
-      const endWorldX = m.startWorldX + dxScreen / v.scale;
-      const endWorldY = m.startWorldY + dyScreen / v.scale;
-      const minX = Math.min(m.startWorldX, endWorldX);
-      const minY = Math.min(m.startWorldY, endWorldY);
-      const maxX = Math.max(m.startWorldX, endWorldX);
-      const maxY = Math.max(m.startWorldY, endWorldY);
-      const hit = new Set<string>();
-      for (const item of current) {
-        if (
-          item.x + item.width >= minX &&
-          item.x <= maxX &&
-          item.y + item.height >= minY &&
-          item.y <= maxY
-        ) {
-          hit.add(item.id);
-        }
-      }
-      const next = m.additive ? new Set(m.baseSet) : new Set<string>();
-      for (const id of hit) next.add(id);
-      setSelectedIds(next);
-      const newlyAdded = Array.from(hit).find((id) => !m.baseSet.has(id));
-      setLastSelectedId(newlyAdded ?? Array.from(next)[next.size - 1] ?? null);
-      setMarqueeRect(null);
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-  }, [clearSelection]);
 
   const handleMediaEnter = useCallback(
     (id: string) => {
