@@ -33,7 +33,7 @@ migrate(
   (app) => {
     const collection = app.findCollectionByNameOrId('projects');
     const field = collection.fields.getByName('kind');
-    if (field) collection.fields.remove(field.id);
+    if (field) collection.fields.removeById(field.id);
     app.save(collection);
   },
 );

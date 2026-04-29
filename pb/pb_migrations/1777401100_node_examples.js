@@ -30,7 +30,7 @@ migrate(
     const refreshed = app.findCollectionByNameOrId('canvas_nodes');
     for (const fieldName of ['input', 'output']) {
       const field = refreshed.fields.getByName(fieldName);
-      if (field) refreshed.fields.remove(field.id);
+      if (field) refreshed.fields.removeById(field.id);
     }
     app.save(refreshed);
   },
@@ -55,7 +55,7 @@ migrate(
 
     const refreshed = app.findCollectionByNameOrId('canvas_nodes');
     const ex = refreshed.fields.getByName('examples');
-    if (ex) refreshed.fields.remove(ex.id);
+    if (ex) refreshed.fields.removeById(ex.id);
     app.save(refreshed);
   },
 );

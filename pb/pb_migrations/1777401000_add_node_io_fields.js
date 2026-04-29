@@ -20,7 +20,7 @@ migrate(
     const collection = app.findCollectionByNameOrId('canvas_nodes');
     for (const fieldName of ['input', 'output']) {
       const field = collection.fields.getByName(fieldName);
-      if (field) collection.fields.remove(field.id);
+      if (field) collection.fields.removeById(field.id);
     }
     app.save(collection);
   },
