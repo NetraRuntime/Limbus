@@ -35,6 +35,7 @@ import { colorForTag, useSavedTags } from './components/savedTags';
 import { MediaItem } from './features/canvas/components/MediaItem';
 import { BakeForImage } from './features/canvas/components/BakeForImage';
 import { BoxLabelPopover } from './features/canvas/components/BoxLabelPopover';
+import { useWindowKeydown } from './features/canvas/hooks/useWindowKeydown';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
@@ -1422,8 +1423,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       });
   }, [clearSegment, history]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeydown((e) => {
       if (e.key === 'Escape') {
         clearSelection();
         return;
@@ -1497,17 +1497,12 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       if (selectedIdsRef.current.size === 0) return;
       e.preventDefault();
       deleteSelection();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [clearSelection, deleteSelection, selectAll, duplicateSelection, clearHideTimer]);
+    }, { capture: true });
 
   // Tool shortcuts — only meaningful while the floating media toolbar is
   // visible, which is exactly when there's an active media. Keep them off
   // when the user is typing (label input, popovers, etc).
-  useEffect(() => {
-    if (!activeMedia) return;
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeydown((e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingContext(e)) return;
       const k = e.key.toLowerCase();
@@ -1518,16 +1513,11 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         e.preventDefault();
         setTool('box');
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [activeMedia]);
+    }, { enabled: !!activeMedia });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeydown((e) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (!selectedMask) return;
-      // Don't hijack text inputs.
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -1539,13 +1529,9 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       }
       e.preventDefault();
       deleteMask(selectedMask);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selectedMask, deleteMask]);
+    });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeydown((e) => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (isTypingContext(e)) return;
@@ -1562,13 +1548,9 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       if (!next) return;
       e.preventDefault();
       setSoloTag(next);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [activeMedia, soloTag]);
+    });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeydown((e) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingContext(e)) return;
@@ -1584,22 +1566,15 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       if (target?.closest('.media-tag-list')) return;
       e.preventDefault();
       deleteAllMasksForTag(activeMedia.id, soloTag);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [activeMedia, soloTag, selectedMask, deleteAllMasksForTag]);
+    });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  useWindowKeydown((e) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.altKey || e.shiftKey) return;
       if (e.key.toLowerCase() !== 'k') return;
       e.preventDefault();
       setSearchOpen((o) => !o);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, []);
+    }, { capture: true });
 
   const searchItems = useMemo<SearchItem[]>(
     () =>
