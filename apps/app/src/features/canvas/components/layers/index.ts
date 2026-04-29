@@ -5,3 +5,6 @@ export { UserBoxesLayer } from './UserBoxesLayer';
 export { DrawBoxPreview } from './DrawBoxPreview';
 export { PendingBoxLabelLayer } from './PendingBoxLabelLayer';
 export { SegmentChipsLayer } from './SegmentChipsLayer';
+export { CanvasModals } from './CanvasModals';
+export { ContextMenuLayer } from './ContextMenuLayer';
+export { BboxOverlayContainer } from './BboxOverlayContainer';

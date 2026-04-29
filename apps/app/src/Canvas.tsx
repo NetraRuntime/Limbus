@@ -42,13 +42,14 @@ import {
   DrawBoxPreview,
   PendingBoxLabelLayer,
   SegmentChipsLayer,
+  CanvasModals,
+  ContextMenuLayer,
+  BboxOverlayContainer,
 } from './features/canvas/components/layers';
 import { FloatingSidebar } from './components/FloatingSidebar';
-import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
-import { SettingsModal } from './components/SettingsModal';
 import { Sam3VersionBadge } from './components/Sam3VersionBadge';
 import { SavedTagsPopover } from './components/SavedTagsPopover';
-import { MediaSearchPalette, type SearchItem } from './components/MediaSearchPalette';
+import type { SearchItem } from './components/MediaSearchPalette';
 import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
 import { MediaTagList } from './components/MediaTagList';
 import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
@@ -60,12 +61,9 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import {
-  SegmentBakeLayer,
-  BboxOverlayLayer,
   evictBake,
   deleteMaskEntry,
   nextSoloTag,
-  type BboxOverlayRect,
   type MaskIdentity,
   type ReadyMaskEntry,
 } from './features/segmentation';
@@ -88,7 +86,6 @@ import {
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
 import type { AnnotationFormat, AnnotationPlan } from './lib/annotations';
 import { useImportPreview } from './hooks/useImportPreview';
-import { ImportPreviewModal } from './components/ImportPreviewModal';
 import {
   createLodCache,
   createMipWorkerClient,
@@ -100,12 +97,10 @@ import {
 import {
   ProjectChip,
   DeletedBanner,
-  DeleteProjectModal,
   useProject,
   useProjectThumbnail,
-  updateProject,
 } from './features/projects';
-import { setCanvasTitle, closeCurrentCanvas, focusHome } from './lib/windows';
+import { setCanvasTitle, focusHome } from './lib/windows';
 import {
   VIEW_PERSIST_DEBOUNCE_MS,
   formatZoom,
@@ -124,7 +119,6 @@ import {
   describeDrop,
   deleteImageEncoding,
   applyAnnotationPlanToCanvas,
-  exportMedia,
   genBoxId,
   makeImageIdCollector,
   medianLongestSide,
@@ -2129,66 +2123,16 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onCancel={cancelPendingBoxLabel}
       />
 
-      {(() => {
-        const sel = selectedMask;
-        const hov = hoveredMask;
-        const activeId = activeMedia?.id ?? null;
-        const soloLower = soloTag ? soloTag.toLowerCase() : null;
-        const rects: BboxOverlayRect[] = [];
-        for (const m of paintMedia) {
-          if (m.kind !== 'image') continue;
-          const state = segments[m.id];
-          if (!state) continue;
-          for (const entry of state.entries) {
-            if (entry.status !== 'ready') continue;
-            const tagLower = entry.tag.toLowerCase();
-            // Solo only applies to the active image; other images render all
-            // their bboxes as usual.
-            if (soloLower && m.id === activeId && tagLower !== soloLower) continue;
-            const { accent } = colorForTag(entry.tag);
-            const entryId = entry.kind === 'box' ? entry.boxId : undefined;
-            for (let i = 0; i < entry.response.masks.length; i += 1) {
-              const mask = entry.response.masks[i];
-              if (!mask || !mask.bbox) continue;
-              // Two box entries can share a display tag; match by entryId
-              // too so selected/hovered chrome lands on the intended entry.
-              const isSel =
-                sel &&
-                sel.imageId === m.id &&
-                sel.tag.toLowerCase() === tagLower &&
-                sel.maskIndex === i &&
-                sel.entryId === entryId;
-              const isHov =
-                hov &&
-                hov.imageId === m.id &&
-                hov.tag.toLowerCase() === tagLower &&
-                hov.maskIndex === i &&
-                hov.entryId === entryId;
-              if (isSel || isHov) continue;
-              const [x1, y1, x2, y2] = mask.bbox;
-              const fx = m.width / mask.width;
-              const fy = m.height / mask.height;
-              // Include boxId (when present) in the key so two box entries
-              // sharing a tag don't collide on React's key check.
-              rects.push({
-                key: `${m.id}-${entry.tag}-${entry.kind === 'box' ? entry.boxId ?? '' : ''}-${i}`,
-                left: (m.x + x1 * fx) * view.scale + view.x,
-                top: (m.y + y1 * fy) * view.scale + view.y,
-                width: Math.max(1, (x2 - x1) * fx) * view.scale,
-                height: Math.max(1, (y2 - y1) * fy) * view.scale,
-                accent,
-              });
-            }
-          }
-        }
-        return (
-          <BboxOverlayLayer
-            viewportWidth={viewport.w}
-            viewportHeight={viewport.h}
-            rects={rects}
-          />
-        );
-      })()}
+      <BboxOverlayContainer
+        paintMedia={paintMedia}
+        view={view}
+        segments={segments}
+        selectedMask={selectedMask}
+        hoveredMask={hoveredMask}
+        activeId={activeMedia?.id ?? null}
+        soloTag={soloTag}
+        viewport={viewport}
+      />
 
       {(() => {
         // Viewport-space chrome for the currently-selected and currently-hovered
@@ -2428,41 +2372,14 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onSelect={handleSidebarSelect}
       />
 
-      {contextMenu && (() => {
-        const target = media.find((m) => m.id === contextMenu.id);
-        if (!target) return null;
-        const items: ContextMenuItem[] = [
-          {
-            id: 'export',
-            label: 'Export',
-            icon: 'ri-download-2-line',
-            onSelect: () => { void exportMedia(target); },
-          },
-          {
-            id: 'delete',
-            label: selectedIds.size > 1 && selectedIds.has(target.id)
-              ? `Delete ${selectedIds.size} items`
-              : 'Delete',
-            icon: 'ri-delete-bin-line',
-            danger: true,
-            onSelect: () => {
-              if (selectedIds.has(target.id) && selectedIds.size > 1) {
-                deleteSelection();
-              } else {
-                deleteMediaById(target.id);
-              }
-            },
-          },
-        ];
-        return (
-          <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            items={items}
-            onClose={() => setContextMenu(null)}
-          />
-        );
-      })()}
+      <ContextMenuLayer
+        contextMenu={contextMenu}
+        media={media}
+        selectedIds={selectedIds}
+        onDeleteSelection={deleteSelection}
+        onDeleteMedia={deleteMediaById}
+        onClose={() => setContextMenu(null)}
+      />
 
       <div className="hud hud-top-left">
         {wordmarkGlass.filterSvg}
@@ -2613,50 +2530,21 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         </div>
       </div>
 
-      <SettingsModal
-        open={settingsOpen}
+      <CanvasModals
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
         settings={settings}
-        onChange={updateSetting}
-        onReset={resetSettings}
-        onClose={() => setSettingsOpen(false)}
+        updateSetting={updateSetting}
+        resetSettings={resetSettings}
         project={projectState.status === 'ready' ? projectState.project : undefined}
-        onRenameProject={
-          projectState.status === 'ready'
-            ? async (name) => {
-                await updateProject(projectState.project.id, { name });
-              }
-            : undefined
-        }
-        onDeleteProject={() => {
-          setSettingsOpen(false);
-          setDeleteProjectOpen(true);
-        }}
-      />
-
-      {deleteProjectOpen && projectState.status === 'ready' && (
-        <DeleteProjectModal
-          project={projectState.project}
-          onClose={() => {
-            setDeleteProjectOpen(false);
-            // Cancel returns the user to where they came from — settings.
-            setSettingsOpen(true);
-          }}
-          onDeleted={() => void closeCurrentCanvas()}
-        />
-      )}
-
-      <ImportPreviewModal
-        state={preview.state}
-        onCancel={preview.cancel}
-        onImport={onConfirmImport}
-        onChangeFormat={preview.setChosenFormat}
-      />
-
-      <MediaSearchPalette
-        open={searchOpen}
-        items={searchItems}
-        onSelect={handleSearchSelect}
-        onClose={() => setSearchOpen(false)}
+        deleteProjectOpen={deleteProjectOpen}
+        setDeleteProjectOpen={setDeleteProjectOpen}
+        preview={preview}
+        onConfirmImport={onConfirmImport}
+        searchOpen={searchOpen}
+        setSearchOpen={setSearchOpen}
+        searchItems={searchItems}
+        onSearchSelect={handleSearchSelect}
       />
     </>
   );
