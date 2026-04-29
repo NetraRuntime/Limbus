@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { z } from 'zod';
 import { invoke } from '@tauri-apps/api/core';
 import {
   InfiniteCanvas,
@@ -19,7 +18,6 @@ import {
   deleteVideo,
   hardDeleteImage,
   hardDeleteVideo,
-  imageFileUrl,
   listImages,
   listSegmentations,
   listTrashed,
@@ -27,17 +25,12 @@ import {
   updateImagePosition,
   updateVideoPosition,
   upsertSegmentation,
-  videoFileUrl,
   type ImageRecord,
   type MediaKind,
   type SegmentationRecord,
   type VideoRecord,
 } from './lib/pb';
-import {
-  HighlightInput,
-  HIGHLIGHT_INPUT_GAP,
-  HIGHLIGHT_INPUT_HEIGHT,
-} from './components/HighlightInput';
+import { HighlightInput } from './components/HighlightInput';
 import { colorForTag, useSavedTags } from './components/savedTags';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
@@ -82,7 +75,6 @@ import {
   dropContainsFolderOrZip,
   scanTauriPaths,
   type MediaDescriptor,
-  type ScanInput,
 } from './lib/mediaIngest';
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
 import { runAnnotationPlan } from './lib/annotations';
@@ -109,314 +101,52 @@ import {
 import { setCanvasTitle, closeCurrentCanvas, focusHome } from './lib/windows';
 import {
   VIEW_PERSIST_DEBOUNCE_MS,
-  formatZoom as formatZoomShared,
-  formatCoord as formatCoordShared,
-  getInitialView as getInitialViewShared,
-  readStoredView as readStoredViewShared,
-  writeStoredView as writeStoredViewShared,
+  formatZoom,
+  formatCoord,
+  getInitialView,
+  readStoredView,
+  writeStoredView,
 } from './lib/canvasView';
+import {
+  CULL_BUFFER_FACTOR,
+  DRAG_THRESHOLD_PX,
+  DRAW_BOX_MIN_SIZE_PX,
+  EMPTY_TAGS,
+  HIGHLIGHT_BOTTOM_INSET_PX,
+  HOVER_HIDE_MS,
+  STACK_ORDER_PERSIST_DEBOUNCE_MS,
+  describeDrop,
+  deleteImageEncoding,
+  fromImageRecord,
+  fromVideoRecord,
+  genBoxId,
+  loadImage,
+  loadVideo,
+  mediaBounds,
+  medianLongestSide,
+  normalizeUploadSize,
+  precacheImageEncoding,
+  readStoredStackOrder,
+  uid,
+  writeStoredStackOrder,
+  type CanvasMedia,
+  type ConnState,
+  type DragOrig,
+  type DragState,
+  type DrawBoxState,
+  type MarqueeState,
+  type MediaPointerEvent,
+  type PendingBoxLabel,
+  type SegMask,
+  type SegmentResponse,
+  type SegmentState,
+  type TagSegment,
+  type UploadPhase,
+  type UploadPlan,
+  type UploadStatus,
+  type UserBox,
+} from './features/canvas/lib';
 import './App.css';
-
-type CanvasMedia = {
-  id: string;
-  kind: MediaKind;
-  src: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  pending?: boolean;
-  /** Present for uploaded (non-pending) items; pairs with `file` to resolve SAM3 file path. */
-  collectionId?: string;
-  file?: string;
-};
-
-const formatZoom = formatZoomShared;
-const formatCoord = formatCoordShared;
-
-const loadImage = (file: File): Promise<{ src: string; width: number; height: number }> =>
-  new Promise((resolve, reject) => {
-    const src = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => resolve({ src, width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = () => {
-      URL.revokeObjectURL(src);
-      reject(new Error(`Failed to load ${file.name}`));
-    };
-    img.src = src;
-  });
-
-const loadVideo = (file: File): Promise<{ src: string; width: number; height: number }> =>
-  new Promise((resolve, reject) => {
-    const src = URL.createObjectURL(file);
-    const vid = document.createElement('video');
-    vid.preload = 'metadata';
-    vid.muted = true;
-    vid.playsInline = true;
-    vid.onloadedmetadata = () => {
-      const w = vid.videoWidth || 640;
-      const h = vid.videoHeight || 360;
-      resolve({ src, width: w, height: h });
-    };
-    vid.onerror = () => {
-      URL.revokeObjectURL(src);
-      reject(new Error(`Failed to load ${file.name}`));
-    };
-    vid.src = src;
-  });
-
-const fromImageRecord = (r: ImageRecord): CanvasMedia => ({
-  id: r.id,
-  kind: 'image',
-  src: imageFileUrl(r),
-  name: r.name,
-  x: r.x,
-  y: r.y,
-  width: r.width,
-  height: r.height,
-  collectionId: r.collectionId,
-  file: r.file,
-});
-
-const fromVideoRecord = (r: VideoRecord): CanvasMedia => ({
-  id: r.id,
-  kind: 'video',
-  src: videoFileUrl(r),
-  name: r.name,
-  x: r.x,
-  y: r.y,
-  width: r.width,
-  height: r.height,
-  collectionId: r.collectionId,
-  file: r.file,
-});
-
-const uid = () =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-async function precacheImageEncoding(record: ImageRecord): Promise<void> {
-  try {
-    await invoke('sam3_encode_image', {
-      id: record.id,
-      collectionId: record.collectionId,
-      file: record.file,
-    });
-  } catch (err) {
-    console.warn('[sam3] precache failed for', record.id, err);
-  }
-}
-
-async function deleteImageEncoding(id: string): Promise<void> {
-  try {
-    await invoke('sam3_delete_image_cache', { id });
-  } catch (err) {
-    console.warn('[sam3] cache delete failed for', id, err);
-  }
-}
-
-type ConnState = 'connecting' | 'ready' | 'offline';
-
-const HOVER_HIDE_MS = 160;
-const DRAG_THRESHOLD_PX = 4;
-
-type DragOrig = { x: number; y: number; kind: MediaKind };
-
-type DragState = {
-  anchorId: string;
-  pointerId: number;
-  startX: number;
-  startY: number;
-  orig: Map<string, DragOrig>;
-  moved: boolean;
-  lastDx: number;
-  lastDy: number;
-};
-
-type MarqueeState = {
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startWorldX: number;
-  startWorldY: number;
-  baseSet: Set<string>;
-  additive: boolean;
-  moved: boolean;
-};
-
-type DrawBoxState = {
-  imageId: string;
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startWorldX: number;
-  startWorldY: number;
-  currentWorldX: number;
-  currentWorldY: number;
-  // Captured at drag-start so the clamp stays stable across re-renders.
-  imageX: number;
-  imageY: number;
-  imageW: number;
-  imageH: number;
-  moved: boolean;
-};
-
-/** Stored relative to the image's world top-left so it follows on drag. */
-type UserBox = {
-  id: string;
-  box: [number, number, number, number];
-  /** Becomes the SAM3 segment tag. */
-  label: string;
-};
-
-/** While set, a popover prompts for a label; `worldRect` is snapshotted so it survives image moves. */
-type PendingBoxLabel = {
-  imageId: string;
-  boxId: string;
-  relBox: [number, number, number, number];
-  imageW: number;
-  imageH: number;
-  worldRect: { x1: number; y1: number; x2: number; y2: number };
-};
-
-const DRAW_BOX_MIN_SIZE_PX = 4;
-const genBoxId = (): string =>
-  `ub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-type UploadPhase = 'sending' | 'finalizing' | 'error';
-type UploadStatus = { phase: UploadPhase; pct: number; message?: string };
-
-type SegMask = {
-  png_base64: string;
-  edge_png_base64?: string;
-  width: number;
-  height: number;
-  score: number;
-  bbox: [number, number, number, number] | null;
-};
-
-type SegmentResponse = {
-  masks: SegMask[];
-  source_width: number;
-  source_height: number;
-};
-
-type TagSegment =
-  | { tag: string; status: 'loading'; kind?: 'box'; boxId?: string }
-  | { tag: string; status: 'ready'; response: SegmentResponse; kind?: 'box'; boxId?: string }
-  | { tag: string; status: 'error'; message: string; kind?: 'box'; boxId?: string };
-
-type SegmentState = { entries: TagSegment[] };
-
-const HIGHLIGHT_BOTTOM_INSET_PX = HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
-
-type UploadPlan = {
-  draft: CanvasMedia;
-  file: File;
-  meta: { x: number; y: number; width: number; height: number; name: string };
-};
-
-const STACK_ORDER_STORAGE_KEY = 'netrart:canvas:stack-order:v1';
-const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
-
-const EMPTY_TAGS: readonly string[] = Object.freeze([]);
-
-// Disables viewport culling — mass remount on zoom-back blanks the WKWebView compositor.
-const CULL_BUFFER_FACTOR = 50;
-
-const readStoredView = readStoredViewShared;
-const writeStoredView = writeStoredViewShared;
-
-const StoredStackOrderSchema = z.array(z.string());
-
-const readStoredStackOrder = (): string[] => {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STACK_ORDER_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = StoredStackOrderSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeStoredStackOrder = (order: string[]) => {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(STACK_ORDER_STORAGE_KEY, JSON.stringify(order));
-  } catch {
-
-  }
-};
-
-/** World-unit target for a new upload when no existing media is present. */
-const DEFAULT_UPLOAD_LONGEST_SIDE = 640;
-
-const normalizeUploadSize = (
-  dims: { width: number; height: number },
-  reference: readonly { width: number; height: number }[],
-): { width: number; height: number } => {
-  if (dims.width <= 0 || dims.height <= 0) return dims;
-  const target =
-    reference.length === 0
-      ? DEFAULT_UPLOAD_LONGEST_SIDE
-      : medianLongestSide(reference);
-  if (!target || !Number.isFinite(target) || target <= 0) return dims;
-  const longest = Math.max(dims.width, dims.height);
-  if (longest <= 0) return dims;
-  const k = target / longest;
-  return {
-    width: Math.max(1, Math.round(dims.width * k)),
-    height: Math.max(1, Math.round(dims.height * k)),
-  };
-};
-
-const medianLongestSide = (
-  items: readonly { width: number; height: number }[],
-): number => {
-  const longs: number[] = [];
-  for (const m of items) {
-    const s = Math.max(m.width, m.height);
-    if (Number.isFinite(s) && s > 0) longs.push(s);
-  }
-  if (longs.length === 0) return 0;
-  longs.sort((a, b) => a - b);
-  const mid = longs.length >> 1;
-  return longs.length % 2 === 0 ? (longs[mid - 1]! + longs[mid]!) / 2 : longs[mid]!;
-};
-
-function describeDrop(captured: ScanInput): string {
-  const firstDir = captured.entries.find((e) => e && e.isDirectory)?.name;
-  if (firstDir) return firstDir;
-  const firstZip = captured.fallbackFiles.find((f) => /\.zip$/i.test(f.name))?.name;
-  if (firstZip) return firstZip;
-  const first = captured.entries[0]?.name ?? captured.fallbackFiles[0]?.name;
-  const count = captured.entries.length + captured.fallbackFiles.length;
-  if (count <= 1 && first) return first;
-  return `${count} sources`;
-}
-
-const mediaBounds = (items: CanvasMedia[]): WorldRect | null => {
-  if (items.length === 0) return null;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const m of items) {
-    if (m.x < minX) minX = m.x;
-    if (m.y < minY) minY = m.y;
-    const rx = m.x + m.width;
-    const ry = m.y + m.height;
-    if (rx > maxX) maxX = rx;
-    if (ry > maxY) maxY = ry;
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-};
-
-type MediaPointerEvent = React.PointerEvent<HTMLElement>;
 
 type MediaItemProps = {
   m: CanvasMedia;
@@ -599,8 +329,6 @@ const MediaItem = memo(function MediaItem({
     </>
   );
 });
-
-const getInitialView = getInitialViewShared;
 
 type CanvasProps = {
   projectId: string;
