@@ -1,12 +1,3 @@
-/* Home (project picker) and project surfaces. The visual language is
-   the canvas HUD: floating pills (.wordmark / .btn-cluster /
-   .status-pill / .btn-ghost), .modal-* shells, --shadow-card-sm,
-   --border-muted. This file owns only what's home-specific —
-   layout, project palette, project card, label chip pill, modal
-   form scaffolding, deleted banner. */
-
-/* ---------- Project accent palette ---------- */
-
 .project-color-slate   { --project-accent: #64748B; --project-accent-soft: #E2E8F0; }
 .project-color-blue    { --project-accent: var(--color-information-500); --project-accent-soft: var(--color-information-100); }
 .project-color-amber   { --project-accent: var(--color-warning-500); --project-accent-soft: var(--color-warning-100); }
@@ -21,8 +12,6 @@
 [data-theme="dark"] .project-color-rose    { --project-accent-soft: var(--color-danger-900); }
 [data-theme="dark"] .project-color-violet  { --project-accent-soft: #2A1A4D; }
 
-/* ---------- Home shell — fills the viewport like .ic-root ---------- */
-
 .home-root {
   position: fixed;
   inset: 0;
@@ -32,8 +21,6 @@
   font-family: var(--font-sans);
   isolation: isolate;
 }
-
-/* ---------- Scrollbars (WebKit + Firefox) ---------- */
 
 .home-content,
 .home-content *,
@@ -94,10 +81,6 @@
 }
 
 .home-content {
-  /* The content layer is the actual scroll container — keeps the
-     toolbar/titlebar above visually pinned (they're not in the
-     scroller). Top clears titlebar (32px) + toolbar (52px); bottom
-     padding is bumped only on Projects to clear the search HUD. */
   position: absolute;
   top: 84px;
   left: 0;
@@ -116,8 +99,6 @@
   padding-bottom: 96px;
 }
 
-/* ---------- Slim drag-only titlebar (covers traffic lights) ---------- */
-
 .home-titlebar {
   position: fixed;
   top: 0;
@@ -129,8 +110,6 @@
   user-select: none;
   -webkit-user-select: none;
 }
-
-/* ---------- Toolbar (under titlebar) ---------- */
 
 .home-toolbar {
   position: fixed;
@@ -247,9 +226,7 @@
   border: 1px solid var(--border-muted);
   border-radius: var(--radius-md);
   background: var(--bg);
-  /* Don't clip with overflow:hidden — the per-row .project-menu
-     dropdown needs to escape the list bounds. Corners are handled
-     by giving the header and last row their own border-radius. */
+  /* No overflow:hidden — the per-row .project-menu dropdown must escape list bounds. */
 }
 
 .home-list-header {
@@ -267,11 +244,8 @@
   text-transform: uppercase;
   color: var(--fg-subtle);
 }
-.home-list-header > span:nth-child(1) { /* icon col */ }
-.home-list-header > span:nth-child(2) { /* name */ }
-.home-list-header > span:nth-child(3) { /* items */ text-align: left; }
-.home-list-header > span:nth-child(4) { /* opened */ text-align: left; }
-.home-list-header > span:nth-child(5) { /* menu */ }
+.home-list-header > span:nth-child(3) { text-align: left; }
+.home-list-header > span:nth-child(4) { text-align: left; }
 
 .home-grid {
   display: flex;
@@ -296,16 +270,12 @@
   font: 400 14px/1.5 var(--font-sans);
 }
 
-/* Wordmark count tag — slots into the same wordmark pill the canvas uses. */
 .home-count {
   font: 400 12px/16px var(--font-mono);
   letter-spacing: -0.4px;
   color: var(--fg-muted);
   white-space: nowrap;
 }
-
-/* ---------- Search input pill — sits inside a .btn-cluster so the
-   shell matches the canvas search/zoom clusters. ---------- */
 
 .home-search-icon {
   display: inline-flex;
@@ -343,16 +313,10 @@
   cursor: pointer;
 }
 
-/* ---------- Sort menu — a btn-cluster of ghost buttons ----------
-   The .btn-cluster + .btn-ghost classes from App.css already cover
-   everything except the active state, which we add here. */
-
 .btn-ghost.is-active {
   background: var(--bg-subtle);
   color: var(--fg);
 }
-
-/* ---------- Label filter pill ---------- */
 
 .home-labels {
   display: inline-flex;
@@ -367,10 +331,6 @@
   flex-wrap: wrap;
   max-width: min(60vw, 520px);
 }
-/* Mirrors the .btn-cluster.is-liquid-glass rule in App.css so the
-   labels pill picks up the same translucent tint as the wordmark and
-   sort/search clusters on Chromium. WKWebView falls back to the
-   useAutoLiquidGlassFilter blur+saturate fallback. */
 .home-labels.is-liquid-glass {
   background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
   border-color: color-mix(in srgb, var(--color-neutral) 60%, transparent);
@@ -413,8 +373,6 @@
   background: var(--color-danger-100);
   color: var(--color-danger-600);
 }
-
-/* ---------- Project row — mirrors .settings-row from App.css ---------- */
 
 .project-card {
   position: relative;
@@ -499,8 +457,6 @@
   color: var(--fg-muted);
   white-space: nowrap;
 }
-/* Coloured dot tinted with the tag's canvas accent (set inline via
-   --tag-color on the element). Falls back to fg-subtle when missing. */
 .project-card-label::before {
   content: "";
   display: inline-block;
@@ -510,8 +466,6 @@
   background: var(--tag-color, var(--fg-subtle));
   flex: none;
 }
-/* "+N" overflow indicator — same mono rhythm, no dot. Communicates
-   "more labels live in this project" without leaking columns. */
 .project-card-label-more {
   font: 400 11px/16px var(--font-mono);
   letter-spacing: -0.2px;
@@ -570,8 +524,6 @@
   color: var(--fg);
 }
 
-/* ---------- Card menu (matches .context-menu) ---------- */
-
 .project-menu {
   position: absolute;
   top: 24px;
@@ -622,8 +574,6 @@
   background: var(--color-danger-100);
 }
 
-/* ---------- ProjectChip inline segment (lives inside the wordmark) ---------- */
-
 .project-chip-name {
   max-width: 220px;
   overflow: hidden;
@@ -632,8 +582,6 @@
   font: 500 13px/16px var(--font-display, system-ui);
   color: var(--fg);
 }
-
-/* ---------- Modal form scaffolding (extends .modal-card from App.css) ---------- */
 
 .project-modal-body {
   padding: var(--space-5);
@@ -664,11 +612,6 @@
   background: var(--bg-subtle);
 }
 
-/* Re-apply the canvas .settings-footer button styling so the
-   "btn-ghost btn-primary" combo (where btn-ghost wins specificity by
-   source order in kit.css) still renders the canvas's accent
-   primary-action treatment. Mirrors the App.css .settings-footer
-   block so light/dark text colour follow theme via --bg. */
 .project-modal-footer .btn-ghost {
   height: 32px;
   padding: 0 var(--space-4);
@@ -689,9 +632,6 @@
   border-color: var(--border-muted);
   cursor: not-allowed;
 }
-/* Match the canvas SettingsModal danger pill (.settings-project-btn
-   .is-danger). Disabled state isn't defined upstream — scoped here so
-   the typed-name confirm gate reads as inactive. */
 .project-modal-footer .settings-project-btn.is-danger:disabled {
   color: var(--fg-subtle);
   border-color: var(--border-muted);
@@ -740,8 +680,6 @@
   cursor: not-allowed;
 }
 
-/* ---------- Color picker ---------- */
-
 .project-color-picker {
   display: flex;
   gap: var(--space-2);
@@ -764,8 +702,6 @@
 .project-color-swatch.is-active {
   outline-color: var(--fg);
 }
-
-/* ---------- Icon picker ---------- */
 
 .project-icon-picker {
   display: grid;
@@ -796,8 +732,6 @@
   border-color: var(--fg);
   color: var(--fg);
 }
-
-/* ---------- Kind picker (Computer Vision / LLM) ---------- */
 
 .project-kind-picker {
   display: flex;
@@ -832,8 +766,6 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
-
-/* ---------- Editable label chips (in modal) ---------- */
 
 .project-label-edit-chip {
   display: inline-flex;
@@ -871,8 +803,6 @@
   gap: var(--space-2);
 }
 
-/* ---------- Deleted banner ---------- */
-
 .project-deleted-banner {
   position: fixed;
   top: 0;
@@ -908,8 +838,6 @@
     animation: none;
   }
 }
-
-/* ---------- Home view switcher (Projects ↔ Models) ---------- */
 
 .home-view-switch {
   display: inline-flex;
@@ -978,8 +906,6 @@
   display: inline-block;
 }
 
-/* ---------- Download progress chip in wordmark ---------- */
-
 .download-chip {
   appearance: none;
   position: fixed;
@@ -1042,8 +968,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Models view (Home main area) ---------- */
-
 .models-view {
   display: flex;
   flex-direction: column;
@@ -1089,8 +1013,6 @@
   background: color-mix(in srgb, var(--fg) 10%, transparent);
   color: var(--fg);
 }
-
-/* ----- Hero (first-run empty state) ----- */
 
 .models-hero {
   position: relative;
@@ -1215,8 +1137,6 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
 }
-
-/* ---------- Project grid disabled state ---------- */
 
 .home-list.is-disabled .home-grid {
   pointer-events: none;

@@ -39,9 +39,7 @@ export const deleteNode = async (id: string): Promise<void> => {
   await pb.collection('canvas_nodes').delete(id);
 };
 
-/** Look up the start node for a project, creating one at (0, 0) when
- *  it doesn't yet exist. Race-safe at the DB level via the partial
- *  unique index on (project) where kind='start'. */
+/** Race-safe via partial unique index on (project) where kind='start'. */
 export const ensureStartNode = async (
   projectId: string,
 ): Promise<NodeRecord> => {

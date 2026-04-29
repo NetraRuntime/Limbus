@@ -114,11 +114,7 @@ async fn sam3_encode_image(
     result
 }
 
-/// Resolve the local PocketBase storage path for an uploaded file.
-///
-/// Rejects identifiers containing path separators or `..` so a crafted
-/// record can't escape the pb_data sandbox. PocketBase only produces
-/// `[a-z0-9]{15}` ids in practice, so real records are always accepted.
+/// Rejects path separators / `..` so a crafted record can't escape pb_data.
 fn resolve_pb_file_path(
     app: &AppHandle,
     id: &str,
@@ -175,10 +171,7 @@ async fn sam3_warmup(worker: State<'_, WorkerHandle>) -> Result<(), String> {
         .map_err(|e| format!("join worker: {e}"))?
 }
 
-/// Pin (or clear) the active SAM3 model. `name` is a basename inside
-/// `{app_data_dir}/models/`; `None` clears the override and lets the
-/// candidate fallback take over. Triggers a worker hot-swap when the
-/// resolved path differs from what's already loaded.
+/// `name` is a basename in `{app_data_dir}/models/`; `None` clears the override.
 #[tauri::command]
 async fn sam3_set_active_model(
     app: AppHandle,
@@ -187,8 +180,6 @@ async fn sam3_set_active_model(
 ) -> Result<(), String> {
     let path = match name {
         Some(n) => {
-            // Reuse the same validation rules as the model manager so a
-            // crafted setting can't escape the models dir.
             for ch in ['/', '\\'] {
                 if n.contains(ch) {
                     return Err(format!("invalid model name: {n:?}"));
@@ -241,10 +232,7 @@ async fn sam3_segment_text(
     result
 }
 
-/// Segment using a bounding-box prompt. `bbox` is `[x1, y1, x2, y2]` in
-/// **normalized `[0, 1]` coordinates** relative to the source image — the
-/// worker scales them to libsam3's prompt coordinate space. Normalized input
-/// keeps the frontend decoupled from libsam3's internal resize dimensions.
+/// `bbox` is `[x1, y1, x2, y2]` in normalized `[0, 1]` coords relative to the source image.
 #[tauri::command]
 async fn sam3_segment_box(
     app: AppHandle,
@@ -278,14 +266,7 @@ async fn sam3_segment_box(
     result
 }
 
-/// Ordered list of model-file candidates tried on first use.
-///
-/// 1. `SAM3_MODEL_PATH` env override.
-/// 2. Any `*.sam3` file inside `{app_data_dir}/models/`, sorted so the
-///    legacy `sam3_mobileclip_s0.sam3` still wins when present and any
-///    HF-downloaded `sam3.sam3` is picked up automatically.
-/// 3. Debug-build fallback to the vendored file under the workspace so
-///    `pnpm tauri:dev` works without extra setup.
+/// Order: `SAM3_MODEL_PATH` env, then `*.sam3` in `{app_data_dir}/models/` sorted, then vendored fallback in debug.
 fn resolve_model_candidates(app: &AppHandle) -> Vec<Option<PathBuf>> {
     let mut out: Vec<Option<PathBuf>> = Vec::new();
     out.push(std::env::var_os("SAM3_MODEL_PATH").map(PathBuf::from));
@@ -310,7 +291,6 @@ fn resolve_model_candidates(app: &AppHandle) -> Vec<Option<PathBuf>> {
         }
     }
     if cfg!(debug_assertions) {
-        // CARGO_MANIFEST_DIR is apps/app/src-tauri; walk up to repo root.
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         out.push(
             manifest
@@ -332,10 +312,7 @@ struct EntryInfo {
 }
 
 fn is_supported_ext(ext: &str) -> bool {
-    // Mirror the JS classifier in apps/app/src/lib/mediaIngest.ts (IMAGE_EXTS,
-    // VIDEO_EXTS, ANNOTATION_EXTS). Annotation files have to ride along so
-    // detectAnnotations() can pair them with images on Tauri-native drops —
-    // browser drops use the JS classifier directly and don't hit this path.
+    // Mirror of mediaIngest.ts (IMAGE_EXTS / VIDEO_EXTS / ANNOTATION_EXTS).
     matches!(
         ext,
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "bmp" | "heic" | "heif" | "svg" |
@@ -427,8 +404,7 @@ fn scan_paths(paths: Vec<String>) -> Result<Vec<EntryInfo>, String> {
     Ok(out)
 }
 
-/// Forward a webview log line to the process stderr. Used to capture JS
-/// errors/diagnostics that would otherwise only appear in devtools.
+/// Forwards a webview log line to process stderr (captures JS errors that would only show in devtools).
 #[tauri::command]
 fn debug_log(level: String, message: String) {
     eprintln!("[webview:{level}] {message}");

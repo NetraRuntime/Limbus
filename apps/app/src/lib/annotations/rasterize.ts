@@ -3,8 +3,6 @@ import type { Geometry } from './types';
 export type Size = { width: number; height: number };
 export type BBox = [number, number, number, number];
 
-/** Returns an RGBA Uint8ClampedArray (width*height*4) with the geometry's
- *  covered pixels set to (255,255,255,255). Pure. */
 export function geometryToMaskBytes(
   geometry: Geometry,
   size: Size,
@@ -99,8 +97,6 @@ function fillRle(
     flat += run;
   }
 }
-
-// ---- Browser-only glue below. ----
 
 /** Encodes RGBA bytes to a base64 PNG string (no `data:` prefix). */
 export async function maskBytesToPngBase64(

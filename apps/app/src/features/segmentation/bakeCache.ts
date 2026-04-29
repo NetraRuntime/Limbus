@@ -8,8 +8,6 @@ import { createComposeWorker } from './worker/composeWorkerClient';
 const DECODE_CAP = 128;
 const BAKE_CAP = 32;
 
-// Main-thread decode cache. Only used by the fallback path when the
-// worker is unavailable (the worker owns its own cache).
 const decodeCache = createDecodeCache<ImageBitmap>({
   capacity: DECODE_CAP,
   decode: async (b64) => {
@@ -22,8 +20,6 @@ const decodeCache = createDecodeCache<ImageBitmap>({
   },
 });
 
-// Insertion-order eviction: oldest entry is evicted first. Good enough
-// for v1; swap for a full LRU if it becomes a hot path.
 const bakeStore = new Map<string, BakeEntry>();
 
 function evictBakeStore() {
@@ -47,10 +43,6 @@ export function evictDecode(png_base64: string): void {
   decodeCache.drop(png_base64);
 }
 
-// Lazily create the worker on first use so tests that don't exercise
-// the worker path don't pay for it. If the worker can't be constructed
-// (policy-blocked, tests without a Worker, etc.), fall back to the
-// direct main-thread compose.
 let workerClient: ReturnType<typeof createComposeWorker> = null;
 let workerAttempted = false;
 
@@ -63,10 +55,6 @@ function resolveCompose(): (input: ComposeInput) => Promise<ComposedBake> {
   return defaultComposeBake;
 }
 
-// Test seam: swap composeBake. When `null`, useSegmentBake picks
-// between the worker-backed and main-thread composers via
-// `resolveCompose`. Tests typically inject a synchronous fake to keep
-// the hook deterministic.
 let composeFn: ((input: ComposeInput) => Promise<ComposedBake>) | null = null;
 
 export function __setComposeForTests(
@@ -90,11 +78,6 @@ export type BakeHookInput = {
   masks: ComposeInput['masks'];
 };
 
-/**
- * Returns the current `BakeEntry` for an image, re-running `composeBake`
- * whenever the input signature changes. The entry is cached at module
- * scope, so scroll-out/scroll-back does not re-bake.
- */
 export function useSegmentBake(input: BakeHookInput): {
   bake: BakeEntry | null;
 } {
@@ -104,10 +87,6 @@ export function useSegmentBake(input: BakeHookInput): {
 
   const runIdRef = useRef(0);
   const signature = computeSignature(input.masks);
-  // Stash the latest input so the effect can read masks without needing
-  // them in its dep array (their array ref changes every parent render).
-  // `signature` in deps is the content-equivalent stand-in, so the
-  // effect only re-runs when the bake actually needs to be invalidated.
   const inputRef = useRef(input);
   inputRef.current = input;
 

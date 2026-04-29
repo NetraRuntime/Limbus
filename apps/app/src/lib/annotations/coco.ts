@@ -61,9 +61,7 @@ export function parseCoco(json: CocoJson): CocoParsed[] {
   return out;
 }
 
-/** COCO compressed RLE string decode.
- *  Port of pycocotools' rleFrString: 6-bit LEB128-like, with every other
- *  run subtracting the previous run's value. */
+/** Port of pycocotools' rleFrString: 6-bit LEB128-like, every other run subtracts previous. */
 export function decodeCompressedRle(s: string): number[] {
   const counts: number[] = [];
   let p = 0;

@@ -5,10 +5,6 @@ import {
   type SegMask,
 } from '../../lib/pb';
 
-/**
- * Minimal structural mirror of the 'ready' variant of Canvas.tsx's TagSegment.
- * Kept decoupled so this helper does not depend on Canvas-local types.
- */
 export type ReadyMaskEntry = {
   tag: string;
   status: 'ready';

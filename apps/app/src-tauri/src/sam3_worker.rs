@@ -18,21 +18,10 @@ use image::{ExtendedColorType, ImageEncoder, ImageReader};
 use sam3::{Box as Sam3Box, Ctx, Prompt, SegmentResult};
 use serde::Serialize;
 
-/// Image side length libsam3 falls back to when the config reports 0.
-/// Mirrors `src/sam3.c:sam3_set_image_file` so we produce identical pixels.
+/// Mirrors `src/sam3.c:sam3_set_image_file` fallback when config reports 0.
 const DEFAULT_MODEL_IMAGE_SIZE: u32 = 1008;
 
-/// One segmentation mask returned from a text-prompt segment call.
-///
-/// Two PNGs per mask, mirroring the C CLI's `write_overlay` fill-and-
-/// outline pass:
-/// - `png_base64`: alpha = 255 inside the thresholded mask, 0 outside.
-///   The frontend paints this as a tinted translucent layer.
-/// - `edge_png_base64`: alpha = 255 on pixels that are foreground *and*
-///   have at least one 4-neighbor in the background, 0 elsewhere. The
-///   frontend paints this as a solid-white 1-pixel outline stacked over
-///   the fill. Both consume the default alpha channel for CSS mask-image
-///   so no `mask-mode: luminance` gymnastics are needed.
+/// `png_base64` is the filled mask; `edge_png_base64` is the 1-pixel outline. Both use alpha.
 #[derive(Debug, Serialize)]
 pub struct SegMask {
     pub png_base64: String,
@@ -44,18 +33,15 @@ pub struct SegMask {
     pub bbox: Option<[f32; 4]>,
 }
 
-/// Bundle returned from `SegmentText`. Empty `masks` means the text prompt
-/// matched nothing after NMS.
+/// Empty `masks` means the prompt matched nothing after NMS.
 #[derive(Debug, Serialize)]
 pub struct SegmentResponse {
     pub masks: Vec<SegMask>,
-    /// Width of the decoded/resized image that was fed to libsam3. Frontend
-    /// uses this to scale masks to the displayed image size.
+    /// Decoded/resized image width fed to libsam3; frontend scales masks against this.
     pub source_width: u32,
     pub source_height: u32,
 }
 
-/// Jobs submitted to the worker.
 pub enum Job {
     /// Encode an image from a local file path, persist the cache to disk.
     ///
@@ -110,20 +96,14 @@ pub enum Job {
     },
 }
 
-/// Handle that Tauri commands use to dispatch jobs.
-///
-/// Cloneable so it can be held in managed state; the `Drop` on the last
-/// remaining copy closes the channel and stops the worker.
+/// Drop on the last clone closes the channel and stops the worker.
 #[derive(Clone)]
 pub struct WorkerHandle {
     tx: Sender<Job>,
 }
 
 impl WorkerHandle {
-    /// Submit an `EncodeImage` job and wait synchronously for the reply.
-    ///
-    /// Call from inside a `spawn_blocking` task, never from an async handler
-    /// directly — this blocks the thread until the worker responds.
+    /// Blocking — call from `spawn_blocking`, never directly from async.
     pub fn encode_image_blocking(&self, id: String, src_path: PathBuf) -> Result<(), String> {
         let (reply, rx) = mpsc::channel();
         self.tx
@@ -216,23 +196,15 @@ impl WorkerHandle {
     }
 }
 
-/// Model discovery strategy. Filled in at startup, consumed lazily on the
-/// worker thread when the first job needs the model.
 struct ModelConfig {
-    /// First path that resolves wins; `None` entries are skipped.
+    /// First resolving path wins.
     candidates: Vec<Option<PathBuf>>,
-    /// BPE vocab (bundled as a Tauri resource). Optional — if missing we
-    /// still serve image jobs, but text prompts will fail later.
+    /// Optional; if missing, image jobs still work but text prompts fail later.
     bpe_path: Option<PathBuf>,
-    /// Where to write `.sam3cache` files, one per image id.
     cache_dir: PathBuf,
 }
 
-/// Spawn the worker thread. Returns a handle you can store in managed state.
-///
-/// `model_candidates` is tried in order on first use. The first existing
-/// file is loaded. If none exist, jobs that require the model return a
-/// readable error.
+/// `model_candidates` tried in order; first existing file wins.
 pub fn spawn(
     model_candidates: Vec<Option<PathBuf>>,
     bpe_path: Option<PathBuf>,
@@ -244,9 +216,7 @@ pub fn spawn(
         bpe_path,
         cache_dir,
     };
-    // libsam3's image encoder allocates large on-stack scratch buffers;
-    // macOS pthread's ~512 KB default blows out. Give the worker a
-    // generous 64 MB stack so new layers don't reintroduce overflows.
+    // libsam3 image encoder uses large on-stack buffers; macOS 512KB default overflows.
     thread::Builder::new()
         .name("sam3-worker".into())
         .stack_size(64 * 1024 * 1024)
@@ -255,8 +225,7 @@ pub fn spawn(
     WorkerHandle { tx }
 }
 
-/// Worker event loop. Owns the `Ctx` once the first model-bearing job
-/// arrives; stays idle (holding nothing) until then.
+/// Lazily owns the `Ctx` from the first model-bearing job onward.
 fn run(rx: Receiver<Job>, cfg: ModelConfig) {
     if let Err(err) = fs::create_dir_all(&cfg.cache_dir) {
         eprintln!(
@@ -266,15 +235,9 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
     }
 
     let mut ctx: Option<Ctx> = None;
-    // Path of the model currently materialized in `ctx`. We compare against
-    // the `cfg.active` override before each ensure_ctx so a Unity-Hub style
-    // model swap drops the old Ctx automatically.
     let mut loaded_path: Option<PathBuf> = None;
     let mut active_override: Option<PathBuf> = None;
-    // Image ids whose features are already populated in the live Ctx's image
-    // cache. Used to skip redundant cache_load_image / claim_slot calls that
-    // would otherwise duplicate or evict slots on every visit. Reset whenever
-    // the Ctx is dropped (model swap) so a fresh Ctx starts from empty.
+    // Reset on Ctx drop (model swap) so a fresh Ctx starts empty.
     let mut in_memory_loaded: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     while let Ok(job) = rx.recv() {
@@ -367,9 +330,7 @@ fn pick_default(cfg: &ModelConfig) -> Option<PathBuf> {
     cfg.candidates.iter().flatten().find(|p| p.exists()).cloned()
 }
 
-/// Prepare the context for segmentation against `src_path`. Loads the
-/// on-disk cache if present, otherwise encodes + saves. Returns the
-/// resized (width, height) that was fed to libsam3.
+/// Returns the resized (width, height) fed to libsam3.
 fn ensure_image_loaded(
     ctx: &mut Ctx,
     cache_dir: &Path,
@@ -384,16 +345,7 @@ fn ensure_image_loaded(
     let dst = cache_path(cache_dir, id);
     let (pixels, width, height) = decode_and_resize(src_path, target)?;
 
-    // Best-effort: pull persisted encoder cache into memory. A stale cache
-    // (model mismatch, schema change) returns an error we ignore — the
-    // subsequent precache will just re-encode.
-    //
-    // Skip the disk-load when we've already loaded this id into the Ctx during
-    // this session. Re-running cache_load_image claims a fresh image-cache slot
-    // every call, which (a) duplicates a slot already in cache and (b) can
-    // evict an unrelated image's slot via LRU. Once an id is in-memory the
-    // subsequent precache_image hits the existing slot and no disk reload is
-    // needed.
+    // Re-running cache_load_image claims a fresh slot, which can LRU-evict another image.
     if dst.exists() && !in_memory_loaded.contains(id) {
         match ctx.cache_load_image(&dst) {
             Ok(()) => {
@@ -445,10 +397,7 @@ fn segment_text(
     build_segment_response(result, src_w, src_h, 0.8)
 }
 
-/// Run a single box prompt. `bbox` is normalized `[x1, y1, x2, y2]` in `[0, 1]`
-/// relative to the source image; the caller validates that range. Here we scale
-/// to the image coordinate space libsam3 actually sees (the `src_w × src_h`
-/// dimensions returned by `ensure_image_loaded`).
+/// `bbox` is normalized `[x1,y1,x2,y2]` in `[0,1]`; scaled here to libsam3's `src_w × src_h`.
 fn segment_box(
     ctx: &mut Ctx,
     cache_dir: &Path,
@@ -470,20 +419,10 @@ fn segment_box(
     let result = ctx
         .segment(&[Prompt::Box(box_prompt)])
         .map_err(|e| format!("segment: {e}"))?;
-    // After the upstream prompt-encoder fix (vendor/sam3.c 894dc93) libsam3
-    // scores box-prompt candidates correctly, so NMS + score filtering work
-    // the same way as text prompts. 0.8 score cutoff — same as text.
     build_segment_response(result, src_w, src_h, 0.8)
 }
 
-/// Reduce (NMS), sort best-first, PNG-encode masks, and bundle with the
-/// source dimensions the frontend uses for placement. Shared between text
-/// prompts and any future N-mask variant.
-///
-/// `score_thresh` is the IoU-score cutoff applied BEFORE NMS — masks
-/// whose per-mask score is below this are dropped. Not to be confused
-/// with `min_quality` (the post-NMS stability filter), which we leave
-/// disabled (0.0, matching libsam3's CLI default).
+/// `score_thresh` is the per-mask IoU cutoff applied BEFORE NMS (not min_quality, which is post-NMS).
 fn build_segment_response(
     result: SegmentResult,
     src_w: u32,
@@ -496,10 +435,6 @@ fn build_segment_response(
         result
     };
 
-    // Sort masks best-first by IoU score so the frontend renders the
-    // highest-confidence detections on top. NMS has already filtered
-    // overlapping duplicates upstream; anything that makes it here is a
-    // distinct detection worth returning.
     let mut order: Vec<usize> = (0..reduced.n_masks()).collect();
     order.sort_by(|a, b| {
         reduced
@@ -541,19 +476,7 @@ fn build_segment_response(
 }
 
 
-/// PNG-encode mask logits as two separate alpha-mask PNGs, matching
-/// the CLI `write_overlay` fill-and-outline pass exactly.
-///
-/// Returns `(fill_base64, edge_base64)`:
-/// - **Fill PNG:** alpha = 255 where logit > 0 (foreground), 0 else.
-///   Frontend paints through a tinted translucent div.
-/// - **Edge PNG:** alpha = 255 on foreground pixels with any 4-neighbor
-///   in the background (the CLI's edge rule verbatim), 0 elsewhere.
-///   Frontend paints through a solid-white div stacked over the fill.
-///
-/// Both PNGs drive the default alpha channel for CSS `mask-image` — no
-/// `mask-mode: luminance` gymnastics. Base64 transport keeps the payload
-/// compact vs. Vec<u8> (which serializes as a JSON number array).
+/// Returns `(fill_base64, edge_base64)`; matches CLI `write_overlay` exactly.
 fn encode_mask_pngs(
     logits: &[f32],
     width: u32,
@@ -694,18 +617,13 @@ fn encode_and_persist(
     let tmp = dst.with_extension("sam3cache.tmp");
     ctx.cache_save_image(&pixels, width, height, &tmp)
         .map_err(|e| format!("cache_save_image: {e}"))?;
-    // Atomic rename within the same directory so a crash mid-write can't
-    // leave a half-written .sam3cache that later fails the model-signature
-    // check on load.
+    // Atomic rename — partial writes would fail signature check on load.
     fs::rename(&tmp, &dst)
         .map_err(|e| format!("rename {} -> {}: {e}", tmp.display(), dst.display()))?;
     Ok(())
 }
 
-/// Decode a source image file and bilinear-squash to `target × target`, the
-/// same transform libsam3's `sam3_set_image_file` applies before encoding.
-/// Cache keys are derived from the pixel buffer, so the resize parameters
-/// must stay lockstep with libsam3.
+/// Must stay lockstep with libsam3's `sam3_set_image_file` — cache keys derive from pixels.
 fn decode_and_resize(path: &Path, target: u32) -> Result<(Vec<u8>, u32, u32), String> {
     let reader = ImageReader::open(path)
         .map_err(|e| format!("open {}: {e}", path.display()))?

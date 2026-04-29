@@ -9,9 +9,6 @@ const isEditable = (el: Element | null): boolean => {
   );
 };
 
-/** True when a keydown event originates in (or targets) an editable context —
- *  an input, textarea, select, or contenteditable element. Callers short-circuit
- *  global keyboard shortcuts so typing doesn't accidentally trigger them. */
 export function isTypingContext(e: KeyboardEvent): boolean {
   if (isEditable(document.activeElement)) return true;
   const target = e.target instanceof Element ? e.target : null;

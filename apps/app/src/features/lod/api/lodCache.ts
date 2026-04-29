@@ -34,7 +34,6 @@ export type LodCacheOptions = {
   budgetBytes?: number;
 };
 
-/** Opens the IDB cache. Creates the database on first run. */
 export async function createLodCache(opts: LodCacheOptions = {}): Promise<LodCache> {
   const budget = opts.budgetBytes ?? DEFAULT_CACHE_BUDGET_BYTES;
   const db = await openDB<LodSchema>(DB_NAME, DB_VERSION, {
@@ -79,7 +78,6 @@ export async function createLodCache(opts: LodCacheOptions = {}): Promise<LodCac
       const k = entryKey(assetId, levelPx);
       const entry = await db.get('lod', k);
       if (!entry) return null;
-      // Touch lastAccessed asynchronously; do not block the caller.
       void (async () => {
         const tx = db.transaction('lod', 'readwrite');
         const fresh = await tx.objectStore('lod').get(k);

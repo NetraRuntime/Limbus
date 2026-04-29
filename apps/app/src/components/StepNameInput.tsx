@@ -6,17 +6,13 @@ const HEIGHT = 44;
 const VIEWPORT_MARGIN = 12;
 
 type Props = {
-  /** Anchor screen point — input centers horizontally on it and sits
-   *  just below it, matching the bbox-prompt placement. */
+  /** Input centers horizontally on this anchor and sits below it. */
   anchorScreenX: number;
   anchorScreenY: number;
   onSubmit: (name: string) => void;
   onCancel: () => void;
 };
 
-// Single-line cousin of HighlightInput. Reused styling (.highlight-input,
-// .highlight-input-icon, .highlight-input-field) so the prompt looks
-// identical to the bbox tagging input on the vision canvas.
 export function StepNameInput({
   anchorScreenX,
   anchorScreenY,

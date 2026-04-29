@@ -34,7 +34,6 @@ type Queue = {
 };
 
 const schedule = (cb: () => void): void => {
-  // Use requestIdleCallback when available; fall back to setTimeout(0).
   const ric = (globalThis as { requestIdleCallback?: (cb: IdleRequestCallback) => number })
     .requestIdleCallback;
   if (ric) ric(() => cb());
@@ -124,7 +123,6 @@ export function useLodHydration({
         disabled.current.has(item.id)
       )
         return;
-      // Baseline cached already? Mark hydrated and skip.
       const has = await cache.has(item.id, 64);
       if (cancelled) return;
       if (has) {

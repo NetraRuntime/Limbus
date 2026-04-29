@@ -53,18 +53,6 @@ type Args = {
   onDownloadFinished?: (name: string) => void;
 };
 
-/**
- * Central manager for the SAM3 model catalog. Owns:
- *
- * - the remote/local listings (refetched on mount, after every download
- *   completion, and on focus so a sidecar download surface stays fresh),
- * - the in-flight progress map keyed by filename,
- * - the action callbacks (download / cancel / delete / use).
- *
- * Multiple components can each call this hook — they keep state
- * independently but converge through the shared `model-download-progress`
- * Tauri event broadcast and the persisted `activeModel` setting.
- */
 export function useModelsManager({
   activeModel,
   onSetActiveModel,
@@ -75,7 +63,6 @@ export function useModelsManager({
   const [progress, setProgress] = useState<Record<string, RowStatus>>({});
   const [loadState, setLoadState] = useState<LoadState>({ phase: 'loading' });
 
-  // Latest activeModel without retriggering effects — handlers read it.
   const activeRef = useRef(activeModel);
   activeRef.current = activeModel;
   const finishedRef = useRef(onDownloadFinished);
@@ -274,8 +261,6 @@ export function useModelsManager({
     [onSetActiveModel],
   );
 
-  // Auto-promote first installed model when nothing is pinned. Mirrors
-  // Unity Hub's "single installed version is automatically the default".
   useEffect(() => {
     if (activeModel != null) return;
     const first = local[0]?.name;

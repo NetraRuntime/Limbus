@@ -14,16 +14,7 @@ export const sanitizeTag = (tag: string) => tag.trim().replace(/\s+/g, ' ');
 
 const normalize = (tag: string) => tag.trim().toLowerCase();
 
-/**
- * Stable HSL color for a tag string. Uses FNV-1a 32-bit so equal text
- * always maps to the same swatch. We jitter hue, saturation, and
- * lightness from different bits of the hash — hue alone collides too
- * often for a long tag list; adding s/l variance expands the visual
- * space so even close-hue neighbours read differently.
- *
- * `bg` / `fg` / `border` tune the pill look; `accent` is the opaque base
- * hue so mask fills and bounding boxes read the same identity as the pill.
- */
+/** FNV-1a 32-bit hash → HSL; varies h/s/l from different bits to avoid hue-only collisions. */
 export function colorForTag(
   tag: string,
 ): { bg: string; fg: string; border: string; accent: string } {
@@ -34,11 +25,9 @@ export function colorForTag(
     hash = Math.imul(hash, 0x01000193);
   }
   const u = hash >>> 0;
-  // Golden-angle hue step improves perceptual separation between tags
-  // whose hashes fall close together numerically.
   const hue = Math.floor(((u % 1000) * 137.508) % 360);
-  const sat = 58 + ((u >>> 10) & 0x1f); // 58-89
-  const lit = 48 + ((u >>> 17) & 0x0f); // 48-63
+  const sat = 58 + ((u >>> 10) & 0x1f);
+  const lit = 48 + ((u >>> 17) & 0x0f);
   const accentLit = Math.max(42, lit - 4);
   return {
     bg: `hsl(${hue} ${sat}% ${lit}% / 0.22)`,
@@ -61,7 +50,6 @@ type SavedTagsApi = {
 export function useSavedTags(projectId: string): SavedTagsApi {
   const [records, setRecords] = useState<TagRecord[]>([]);
 
-  // Initial load + legacy localStorage migration.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -85,7 +73,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
     };
   }, [projectId]);
 
-  // Real-time subscription — keeps state consistent across windows/tabs.
   useEffect(() => {
     let cancelled = false;
     let unsub: (() => void) | null = null;
@@ -133,7 +120,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
     [projectId, records],
   );
 
-  // `remove` matches the original API name used by SavedTagsPopover.
   const remove = useCallback(
     async (rawTag: string) => {
       const lower = normalize(rawTag);
@@ -146,8 +132,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
     [records],
   );
 
-  // `rename` keeps the original entry's position. Returns true when a rename
-  // occurred, false when the inputs were empty or unchanged.
   const rename = useCallback(
     async (oldTag: string, rawNext: string): Promise<boolean> => {
       const oldKey = normalize(oldTag);
@@ -158,7 +142,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
       if (!target) return false;
 
       if (oldKey === nextKey) {
-        // Same tag, possibly different casing — just update the display name.
         if (target.name === nextClean) return false;
         const updated = await updateTag(target.id, { name: nextClean });
         setRecords((prev) => {
@@ -171,7 +154,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
         return true;
       }
 
-      // Different target name: collapse any existing duplicate into this one.
       const updated = await updateTag(target.id, {
         name: nextClean,
         color: colorForTag(nextClean).accent,
@@ -179,7 +161,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
       setRecords((prev) => {
         const idx = prev.findIndex((r) => r.id === target.id);
         if (idx === -1) return prev;
-        // Remove any existing record with the same (new) key — dedup.
         const collapse = prev.findIndex(
           (r) => r.id !== target.id && r.name.toLowerCase() === nextKey,
         );
@@ -193,7 +174,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
     [records],
   );
 
-  // `search` is derived from local state; stays synchronous.
   const search = useCallback(
     (query: string, exclude: string[] = [], limit = 6): string[] => {
       const q = normalize(query);
@@ -201,7 +181,6 @@ export function useSavedTags(projectId: string): SavedTagsApi {
       const skip = new Set(exclude.map(normalize));
       const names = records.map((r) => r.name);
       const out: string[] = [];
-      // Prefix matches first (preserve recency order), then substring matches.
       for (const t of names) {
         if (skip.has(normalize(t))) continue;
         if (normalize(t).startsWith(q)) {

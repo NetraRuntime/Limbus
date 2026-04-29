@@ -6,9 +6,6 @@
   pointer-events: none;
 }
 
-/* Slim transparent drag region covering the macOS traffic lights.
-   Matches .home-titlebar so the canvas window can be dragged from the
-   top edge while keeping the infinite canvas visible underneath. */
 .canvas-titlebar {
   position: fixed;
   top: 0;
@@ -39,10 +36,7 @@
   gap: var(--space-2);
 }
 
-/* Liquid-glass variant for the HUD pills. The `backdrop-filter:
-   url(#...)` reference is applied inline per-instance by
-   Canvas.tsx via the `useAutoLiquidGlassFilter` hook. This rule owns
-   the tint + border override needed for the refraction to show. */
+/* `backdrop-filter: url(#...)` is applied inline by useAutoLiquidGlassFilter; this rule owns tint+border. */
 .btn-cluster.is-liquid-glass,
 .status-pill.is-liquid-glass,
 .wordmark.is-liquid-glass,
@@ -223,9 +217,6 @@
   flex-direction: column;
   padding: 6px;
   pointer-events: auto;
-  /* Background + border come from the .is-liquid-glass rule so the
-     refraction reads cleanly; backdrop-filter is applied inline by the
-     useAutoLiquidGlassFilter hook. */
   background: var(--bg);
   border: 1px solid var(--border-muted);
   border-radius: var(--radius-lg);
@@ -448,8 +439,6 @@
   margin: 0 auto;
 }
 
-/* ---------- Generic canvas node (modular, reusable) ---------- */
-
 .canvas-node {
   position: absolute;
   display: inline-flex;
@@ -535,8 +524,6 @@
   transform: translateY(-50%) scale(1.2);
 }
 
-/* ---------- Floating node inspector sidebar ---------- */
-
 .node-inspector {
   position: fixed;
   top: 72px;
@@ -559,8 +546,6 @@
 .node-inspector.is-expanded {
   width: calc(100vw - 24px) !important;
 }
-/* While the user is dragging the resizer, kill the transition so the
-   width tracks the cursor directly instead of easing every frame. */
 .node-inspector.is-resizing {
   transition: none;
 }
@@ -638,14 +623,8 @@
   min-height: 0;
   overflow: auto;
   padding: 0;
-  /* Establish a size container so .node-io-grid (and its children)
-     can switch layouts based on the inspector width via @container. */
   container-type: inline-size;
 }
-/* Decorative full-height column divider painted on the body itself
-   so the line runs from the top of the table all the way to the
-   bottom of the sidebar — independent of the card's content height.
-   Hidden in the stacked single-column layout. */
 .node-inspector-body::before {
   content: '';
   position: absolute;
@@ -661,24 +640,15 @@
     display: none;
   }
 }
-/* ---------- I/O grid that lives flush inside the inspector body ----------
-   No card frame, no drop shadow — the grid extends edge-to-edge of
-   the sidebar so it reads as part of the inspector itself. */
-
 .node-io-card {
   --tone-in: var(--accent);
   --tone-out: color-mix(in srgb, var(--accent) 70%, #8b5cf6 30%);
   position: relative;
-  /* Hugs content — the full-height column divider is painted on
-     `.node-inspector-body::before`, not by stretching the card. */
 }
 .node-io-card-glow {
   display: none;
 }
 
-/* Two columns when there's room for them, single stacked column when
-   the sidebar is narrow. `auto-fit` + minmax handles the breakpoint
-   without media or container queries. */
 .node-io-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -690,11 +660,9 @@
   flex-direction: column;
   min-width: 0;
 }
-/* Side-by-side (wide): hairline vertical divider between sections */
 .node-io-section + .node-io-section {
   border-left: 1px solid var(--border-muted);
 }
-/* Stacked (narrow): swap the vertical divider for a horizontal one */
 @container (max-width: 459px) {
   .node-io-section + .node-io-section {
     border-left: 0;
@@ -751,15 +719,10 @@
 
 .node-io-cell {
   position: relative;
-  /* No flex:1 — the cell hugs its content so the focus background
-     only paints behind the textarea, not the empty space the section
-     stretches into to keep the column divider full-height. */
   padding: 12px 14px;
   background: transparent;
   transition: background 160ms ease;
 }
-/* A thin accent strip rides up the inside edge on focus — no boxed
-   look, just a subtle indicator that this column is being edited. */
 .node-io-cell::before {
   content: '';
   position: absolute;
@@ -782,12 +745,6 @@
 
 .node-io-field {
   position: relative;
-  /* No explicit z-index — keeps the textarea below the sticky column
-     header (which sits at z:1) so the placeholder doesn't bleed
-     through when scrolled behind. The cell's ::before accent strip
-     uses absolute positioning and DOM-order stacking, so the
-     textarea still paints above it without needing to fight the
-     header. */
   width: 100%;
   resize: vertical;
   min-height: 88px;
@@ -802,17 +759,11 @@
   color: var(--fg-subtle);
 }
 
-/* Per-row delete button on the input column. Hidden until the cell
-   is hovered or focused so it doesn't compete with the textarea. */
 .node-io-row-remove {
   appearance: none;
   position: absolute;
   top: 6px;
   right: 6px;
-  /* No explicit z-index — keeps the button below the sticky column
-     header (z:1) so it tucks under the header instead of poking
-     through when the row scrolls behind it. Still paints above the
-     textarea via DOM order. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -839,10 +790,6 @@
   border-color: color-mix(in srgb, var(--color-danger-500) 30%, transparent);
 }
 
-/* "Add row" affordance sitting directly under the last row when the
-   table fits, sticking to the bottom of the scrollable inspector
-   body when the rows overflow — so it stays visible no matter how
-   far down the user has scrolled. */
 .node-io-actions {
   position: sticky;
   bottom: 0;
@@ -882,13 +829,6 @@
   font-size: 14px;
 }
 
-/* SVG overlay lives INSIDE the world-transformed canvas content, so
-   it picks up the same compositor transform as the nodes — no React
-   re-render lag, no edge-vs-node wobble during pan / zoom. The
-   visible bounding box is 1px so it doesn't trap pointer events; we
-   rely on `overflow: visible` to draw paths anywhere in world space.
-   `vector-effect: non-scaling-stroke` on the path keeps stroke width
-   constant regardless of zoom. */
 .llm-edge-overlay {
   position: absolute;
   left: 0;
@@ -898,8 +838,6 @@
   overflow: visible;
   pointer-events: none;
 }
-/* Endpoint handles. Filled accent dot + a wider transparent hit circle
-   that catches pointers without making the visible dot huge. */
 .llm-edge-handle {
   fill: var(--accent);
   pointer-events: none;
@@ -923,9 +861,6 @@
   stroke-width: 2;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
-  /* Draw-on: pathLength=1 normalises the bezier length so a single
-     `stroke-dasharray: 1` reveals the line from start to end as the
-     dashoffset animates from 1 to 0. */
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: llm-edge-draw 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -937,9 +872,6 @@
   }
 }
 
-/* Live preview while the user is dragging from a port — flowing
-   dashed line travelling source → cursor so the direction reads
-   immediately. Overrides the draw-on animation above. */
 .llm-edge-path-preview {
   stroke-dasharray: 6 6;
   stroke-dashoffset: 0;
@@ -965,19 +897,9 @@
   background: var(--bg-subtle);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card-md);
-  /* `image-rendering` is intentionally omitted. The non-standard
-     `-webkit-optimize-contrast` value interacts badly with transformed
-     ancestors on WKWebView (Tauri macOS): at certain intermediate
-     `translate3d + scale` values the compositor fails to rasterize the
-     tile and the image renders as transparent until another zoom forces
-     a re-raster. Default `auto` (browser bilinear) scales cleanly at
-     every view.scale. */
+  /* `image-rendering: -webkit-optimize-contrast` blanks WKWebView raster on transformed ancestors. */
   object-fit: cover;
-  /* Pop-in: invisible until the bytes are decoded (`.is-loaded`). The
-     previous version also scaled 0.9 → 1 with an overshoot, but a nested
-     transform inside the .ic-content transform trips WKWebView's
-     compositor (the parent scale + child scale combination blanks the
-     whole view layer on zoom). Opacity-only fade avoids that. */
+  /* Opacity-only fade — nested transforms inside .ic-content's transform blank WKWebView. */
   opacity: 0;
   transition:
     opacity 220ms ease-out,
@@ -1003,8 +925,6 @@
     0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-/* Pending uploads hold a dimmed/desaturated look once visible, but still
-   wait for `is-loaded` before fading in — avoids a flash of empty chrome. */
 .world-image.is-loaded.is-pending {
   opacity: 0.75;
   filter: saturate(0.85);
@@ -1152,9 +1072,6 @@
   color: #d93a3a;
 }
 
-/* Encoding overlay: subtle top-right chip while SAM3 precaches the image.
-   No dimming — the image itself is already usable; this just surfaces
-   that the encoder is running in the background. */
 .encoding-overlay {
   position: fixed;
   z-index: 14;
@@ -1195,24 +1112,12 @@
   white-space: nowrap;
 }
 
-/* Baked per-image segmentation overlay. Lives inside .ic-content and
-   rides pan/zoom via the container transform; intrinsic pixel buffer
-   is the bake resolution, CSS stretches it to the image's world rect. */
 .segment-bake {
   position: absolute;
   z-index: 12;
   pointer-events: auto;
-  /* Let the browser bilinear-smooth the canvas as .ic-content scales
-     up. Binarized mask fills stay visually crisp (only sub-pixel
-     softening), and the white edge ring's anti-aliased alpha traces
-     mask contours as smooth curves instead of axis-aligned blocks. */
 }
 
-/* At-rest bbox drawn around every ready mask. Quiet by design: a thin
-   tag-accent stroke at reduced opacity plus small L-shaped corner ticks.
-   When a mask becomes the hovered or selected one, the brighter chrome
-   below takes over. Tick shapes are made from two borders on a small
-   span so no extra pseudo-elements are needed. */
 .segment-mask-bbox {
   position: fixed;
   z-index: 12;
@@ -1254,10 +1159,6 @@
   border-top: 0;
 }
 
-/* Selection ring around a single selected mask's bbox. Rendered in
-   viewport space (sibling of .selection-bbox) so the border, corner
-   handles, and optional pill stay pixel-crisp at any zoom. The tag's
-   accent is passed in via the `--seg-accent` custom property. */
 .segment-mask-selected,
 .segment-mask-hover {
   position: fixed;
@@ -1273,8 +1174,6 @@
 }
 
 .segment-mask-hover {
-  /* Hover should not visually compete with the selected ring when both
-     are on-screen for nearby masks. */
   z-index: 13;
   animation-duration: 100ms;
 }
@@ -1305,17 +1204,11 @@
 .segment-mask-handle.tr { top: -5px; right: -5px; }
 .segment-mask-handle.bl { bottom: -5px; left: -5px; }
 .segment-mask-handle.br { bottom: -5px; right: -5px; }
-/* Edge midpoint handles — each moves one axis only. Centered via 50% + a
-   halved translate so they stay on the ring even as the bbox resizes. */
 .segment-mask-handle.t { top: -5px; left: 50%; transform: translateX(-50%); }
 .segment-mask-handle.b { bottom: -5px; left: 50%; transform: translateX(-50%); }
 .segment-mask-handle.l { left: -5px; top: 50%; transform: translateY(-50%); }
 .segment-mask-handle.r { right: -5px; top: 50%; transform: translateY(-50%); }
 
-/* Handles on the *selected* mask are interactive: they accept pointer events
-   (overriding their parent's pointer-events: none) and show a resize cursor
-   that matches the corner or edge. The 4px negative inset expands the
-   clickable hit area without changing the visual footprint. */
 .segment-mask-handle.interactive {
   pointer-events: auto;
   touch-action: none;
@@ -1336,9 +1229,6 @@
 .segment-mask-handle.interactive.l { cursor: ew-resize; }
 .segment-mask-handle.interactive.r { cursor: ew-resize; }
 
-/* Precision guides rendered while a resize drag is active. Each guide is a
-   1px white line spanning the full viewport at the current edge position,
-   giving the user a reference for aligning the bbox against other content. */
 .bbox-resize-guide {
   position: fixed;
   z-index: 15;
@@ -1519,10 +1409,6 @@
   gap: 10px;
   padding: 0 12px 0 14px;
 
-  /* Liquid-glass tint + border. The `backdrop-filter: url(#...)`
-     reference is applied inline by HighlightInput.tsx since the
-     `useLiquidGlassFilter` hook generates a unique filter id per
-     instance / width bucket. */
   background: color-mix(in srgb, var(--color-neutral) 20%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-neutral) 60%, transparent);
   border-radius: var(--radius-lg);
@@ -1747,10 +1633,6 @@
   background: var(--accent);
 }
 
-/* Shortcut hint — tiny letter tucked into the bottom-right corner of the
-   button, overlapping the edge so it reads as a badge rather than part of
-   the icon. Uses the toolbar background so it visually "punches through"
-   the bezel even when the button is in its active accent state. */
 .media-toolbar-btn-shortcut {
   position: absolute;
   right: -3px;
@@ -1784,9 +1666,6 @@
 }
 
 
-/* Right-side list of tags contained in the active image. Mirror of
-   .media-toolbar positioning — same glass bezel, just stacked pills
-   instead of tool buttons. */
 .media-tag-list {
   position: fixed;
   z-index: 19;
@@ -1810,9 +1689,6 @@
 }
 
 .media-tag-row {
-  /* Rendered as <button> for keyboard focus / select-to-delete; reset
-     the user-agent defaults that would otherwise fight the palette
-     colors applied inline. */
   appearance: none;
   position: relative;
   display: flex;
@@ -1834,9 +1710,7 @@
     transform 120ms ease;
 }
 
-/* :hover and :active use filter + transform because palette colors are
-   applied inline via `style={{ background, color, borderColor }}`, which
-   would override any external `background`/`border-color` rule here. */
+/* Inline palette colors override external rules; use filter/transform instead. */
 .media-tag-row:hover {
   filter: brightness(1.12);
   transform: translateY(-1px);
@@ -1848,10 +1722,6 @@
 }
 
 .media-tag-row:focus {
-  /* Selected state — fires on both mouse click and keyboard focus so
-     the user can see which tag Delete will remove. Two-stop shadow
-     forms a crisp white gap + currentColor halo, like a finder-style
-     selection. z-index lifts it above neighbor rows' borders. */
   outline: none;
   z-index: 1;
   box-shadow:
@@ -1868,9 +1738,6 @@
   border-style: dashed;
 }
 
-/* Solo state: this tag is the only one visible on the canvas. Ring in the
-   tag accent so the row reads as "active" even though the palette
-   background is applied inline. */
 .media-tag-row.is-solo {
   z-index: 1;
   box-shadow:
@@ -1878,8 +1745,6 @@
     0 0 0 4px var(--tag-accent, currentColor);
 }
 
-/* Dimmed state: another tag is solo'd, so this row's overlays are hidden.
-   Slight opacity drop signals "not shown" without fully hiding the row. */
 .media-tag-row.is-dimmed {
   opacity: 0.45;
 }
@@ -1929,8 +1794,6 @@
 }
 
 
-/* Box tool: swap the world-media cursor to crosshair globally and draw
-   precision guides clipped to the active media's screen rect. */
 body[data-canvas-tool="box"] .world-image,
 body[data-canvas-tool="box"] .media-label {
   cursor: crosshair;
@@ -1946,8 +1809,6 @@ body[data-canvas-tool="box"] .media-label {
 
 .box-crosshair-line {
   position: absolute;
-  /* Bone white — warm off-white for precision on photo content. The dark
-     halo keeps the 1-px line readable on bright backgrounds. */
   background: #e3dac9;
   opacity: 0.85;
   box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.35);
@@ -1967,17 +1828,6 @@ body[data-canvas-tool="box"] .media-label {
   transform: translateY(-0.5px);
 }
 
-/* User-drawn bounding box — SAM3 prompt visualization.
- *
- * Viewport-space (like .segment-mask-bbox) so stroke weight stays crisp at
- * any zoom. Three-layer treatment for clarity over arbitrary image content:
- *   1. Inner border (1.5px accent) — the rectangle itself.
- *   2. Outer halo (1px dark) — separation from light image content.
- *   3. Drop shadow (soft) — separation from dark image content.
- * Corner brackets sit outside the rectangle so the user always sees a
- * complete frame even when the box hugs an object's edge. While drawing,
- * the border becomes marching ants for a tactile "active selection" feel
- * (Photoshop/Figma idiom); reduced-motion users get a static dashed border. */
 .user-box {
   position: fixed;
   z-index: 13;
@@ -1990,10 +1840,6 @@ body[data-canvas-tool="box"] .media-label {
     0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-/* Marching ants on the in-flight box. The conic-gradient driven via
- * `background` on a thicker pseudo-element would be more correct, but the
- * cheaper trick is animating four edge gradients. Border itself goes
- * transparent so only the animated stripes show. */
 .user-box.is-drawing {
   border-color: transparent;
   background:
@@ -2018,11 +1864,6 @@ body[data-canvas-tool="box"] .media-label {
   }
 }
 
-/* Corner brackets — longer L-shapes set just outside the rectangle, so the
- * frame reads as "selection target" rather than "thumbnail tick". 10px legs,
- * 2px thick, offset -4px so the bracket corner sits flush with the box
- * corner. A subtle dark halo (filter: drop-shadow) keeps them visible over
- * any underlying image. */
 .user-box-tick {
   position: absolute;
   width: 10px;
@@ -2065,17 +1906,10 @@ body[data-canvas-tool="box"] .media-label {
 .user-box-tick.br::before { bottom: 0; right: 0; }
 .user-box-tick.br::after  { bottom: 0; right: 0; }
 
-/* Brackets fade slightly while the box is being dragged out — the marching
- * ants are the visual focus during draw; the brackets become the focus on
- * commit. */
 .user-box.is-drawing .user-box-tick {
   opacity: 0.55;
 }
 
-/* "Awaiting label" state — gentle pulse on the corner brackets to draw the
- * eye to the popover that just appeared below the box. The same pulse runs
- * during the "loading" state so the box keeps signaling activity until SAM3
- * returns. */
 .user-box.user-box--pending .user-box-tick,
 .user-box.user-box--loading .user-box-tick {
   animation: user-box-pending-pulse 1.4s ease-in-out infinite;
@@ -2093,11 +1927,6 @@ body[data-canvas-tool="box"] .media-label {
   }
 }
 
-/* "SAM3 is processing" state — a soft horizontal band sweeps top-to-bottom
- * inside the box, evoking a scan/inference pass. The .user-box-scan child
- * wrapper clips the band with overflow:hidden so the corner brackets (which
- * sit OUTSIDE the box via -4px offsets) aren't clipped. The static border
- * stays so the frame keeps reading as a stable selection underneath. */
 .user-box-scan {
   position: absolute;
   inset: 0;
@@ -2135,9 +1964,6 @@ body[data-canvas-tool="box"] .media-label {
   }
 }
 
-/* "SAM3 returned an error" state — swap the accent border for a muted red
- * so a failed box is recognizable at a glance even before the chip is read.
- * Brackets and shadow stay so the frame still reads as a box. */
 .user-box.user-box--error {
   border-color: var(--color-error, #e5484d);
   background: color-mix(in srgb, var(--color-error, #e5484d) 6%, transparent);
@@ -2151,13 +1977,6 @@ body[data-canvas-tool="box"] .media-label {
   background: var(--color-error, #e5484d);
 }
 
-/* Label popover — captures a name for the freshly drawn box.
- *
- * Anchored just below the box (placement done in JSX); fixed positioning so
- * pan/zoom can keep the world-space anchor stable. Minimalist design: just
- * a bare input and a faint keyboard-shortcut hint — no buttons. The popover
- * is transparent around the input; only the input's pill has a background,
- * so the whole thing reads as "type here" rather than "fill out this form". */
 .box-label-popover {
   position: fixed;
   z-index: 25;
@@ -2208,9 +2027,6 @@ body[data-canvas-tool="box"] .media-label {
     0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-/* Keyboard hint — very muted by default, slightly brightens when the input
- * has a committable value ("↵ is now live"). Inline `kbd` tags get a tiny
- * bubble so they read as keys, but the whole row stays compact. */
 .box-label-hint {
   display: inline-flex;
   align-items: center;
@@ -2246,8 +2062,6 @@ body[data-canvas-tool="box"] .media-label {
   opacity: 0.4;
 }
 
-/* Floating variant — drops the hint below the StepNameInput, aligned
-   to the left edge of the input, no pill background. */
 .step-name-hint {
   position: absolute;
   top: calc(100% + 6px);
@@ -2762,8 +2576,6 @@ body[data-canvas-tool="box"] .media-label {
   background: color-mix(in srgb, var(--accent) 88%, black);
 }
 
-/* ---------- Settings: Project section ---------- */
-
 .settings-project-input {
   width: 100%;
   height: 36px;
@@ -2835,8 +2647,6 @@ body[data-canvas-tool="box"] .media-label {
   background: var(--color-danger-100);
 }
 
-/* ---------- Settings: Danger zone ---------- */
-
 .settings-label.is-danger {
   color: var(--color-danger-500);
   text-transform: uppercase;
@@ -2858,8 +2668,6 @@ body[data-canvas-tool="box"] .media-label {
 .settings-danger-btn {
   align-self: flex-start;
 }
-
-/* ---------- Tabs (settings) ---------- */
 
 .settings-tabs-row {
   padding: var(--space-3) var(--space-5) 0;
@@ -2925,8 +2733,6 @@ body[data-canvas-tool="box"] .media-label {
     transition: none;
   }
 }
-
-/* ---------- Settings: Models tab ---------- */
 
 .models-panel {
   display: flex;
@@ -3210,11 +3016,6 @@ body[data-canvas-tool="box"] .media-label {
 
 
 
-/* ---------- Generic search palette (matches modal-backdrop blur) ----------
-   Used by both project kinds via thin wrappers (MediaSearchPalette,
-   StepSearchPalette). The backdrop / card animations mirror the
-   shared Modal so the experience feels consistent across surfaces. */
-
 .search-backdrop {
   position: fixed;
   inset: 0;
@@ -3223,8 +3024,6 @@ body[data-canvas-tool="box"] .media-label {
   justify-content: center;
   align-items: flex-start;
   padding-top: clamp(72px, 18vh, 180px);
-  /* Match the modal/settings backdrop: transparent with a soft blur,
-     no fg-tint. */
   background: transparent;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);

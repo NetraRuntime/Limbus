@@ -1,8 +1,3 @@
-/**
- * LRU cache for decoded mask bitmaps keyed by base64 payload. Insertion
- * order in a `Map` reflects access order because every touch re-sets
- * the key, which moves it to the end.
- */
 export type DecodeCache<B = ImageBitmap> = {
   get: (key: string) => Promise<B>;
   drop: (key: string) => void;

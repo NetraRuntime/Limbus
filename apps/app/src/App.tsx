@@ -28,8 +28,6 @@ type LocalModel = { name: string };
 export function App({ projectId }: AppProps) {
   const [kindState, setKindState] = useState<ProjectKindState>({ status: 'loading' });
   const { settings } = useSettings();
-  // Apply the persisted theme at the top level so the boot screen matches
-  // the user's preference before any canvas mounts.
   useAppliedTheme(settings.theme);
 
   useEffect(() => {
@@ -37,9 +35,6 @@ export function App({ projectId }: AppProps) {
     return () => document.body.classList.remove('is-canvas');
   }, []);
 
-  // Resolve the project's kind first — vision projects need SAM3 warmup,
-  // LLM projects skip it entirely. The fetch is cheap and avoids loading
-  // a vision pipeline for an LLM canvas.
   useEffect(() => {
     let cancelled = false;
     getProject(projectId)

@@ -12,13 +12,7 @@ import {
   type SurfaceType,
 } from '../lib/liquid-glass';
 
-// WebKit advertises `backdrop-filter: url(#id)` via `CSS.supports` but
-// doesn't actually execute the SVG filter at render time — panels end
-// up transparent instead of refracted. Verified against macOS WKWebView
-// (Tauri desktop build) where the probe returns true but nothing
-// renders. `window.chrome` is the reliable sniff: present on Chromium /
-// Edge / Tauri-on-Windows, absent on Safari / WKWebView / WebKitGTK /
-// Firefox. We still gate on `CSS.supports` as a belt-and-braces check.
+// WebKit reports `CSS.supports('backdrop-filter', 'url(#)')` true but doesn't render — gate on `window.chrome` too.
 export const SUPPORTS_BACKDROP_FILTER_URL = (() => {
   if (typeof window === 'undefined') return false;
   const isChromium = !!(window as Window & { chrome?: unknown }).chrome;
@@ -31,52 +25,30 @@ export const SUPPORTS_BACKDROP_FILTER_URL = (() => {
   );
 })();
 
-/** Plain frosted-glass fallback applied when the engine can't execute
- *  SVG URL filters inside `backdrop-filter`. */
 export const FALLBACK_BACKDROP_FILTER = 'blur(16px) saturate(1.4)';
 
-// ─── Hook ───────────────────────────────────────────────────────────────────
-// Returns a stable filter id + the SVG <defs> node to render. Callers are
-// responsible for (a) rendering `filterSvg` somewhere in their tree and
-// (b) applying `backdrop-filter: url(#${filterId})` to the element they
-// want to refract.
-
 export type LiquidGlassFilterOptions = {
-  /** Element width in px. Keep it rounded to an integer bucket to avoid
-   *  regenerating the displacement map every pixel of resize. */
+  /** Element width in px (round to integer buckets to avoid filter churn on resize). */
   width: number;
-  /** Element height in px. */
   height: number;
-  /** Element border-radius in px. */
   radius: number;
-  /** Width of the refracting bezel, in px. Defaults to 70% of radius
-   *  (capped at 40 and at min(w,h)/4). */
+  /** Refracting bezel width in px. Defaults to min(radius * 0.7, 40, min(w,h)/4). */
   bezelWidth?: number;
-  /** Logical thickness of the glass — drives how far light bends
-   *  through the bezel. Higher = more dramatic refraction. Defaults
-   *  to bezelWidth * 6. */
+  /** Glass thickness — higher = more refraction. Defaults to bezelWidth * 6. */
   glassThickness?: number;
-  /** Glass index of refraction. 1.5 ≈ window glass. */
+  /** 1.5 ≈ window glass. */
   refractiveIndex?: number;
-  /** Bezel profile — flat interior with a rounded edge by default. */
   surfaceType?: SurfaceType;
-  /** Multiplier on feDisplacementMap scale (post-precompute). */
   refractionScale?: number;
-  /** Alpha multiplier on the specular highlight (0..1). */
   specularOpacity?: number;
-  /** Slight defocus before refraction — 0.5 is a subtle anti-alias. */
   preBlur?: number;
-  /** Extra color-saturation boost on the refracted backdrop. */
   saturate?: number;
 };
 
 export type LiquidGlassFilterResult = {
   filterId: string;
   filterSvg: ReactNode;
-  /** False when the current engine can't render SVG URL filters inside
-   *  backdrop-filter. Callers building their own backdrop-filter string
-   *  should branch on this and fall back to
-   *  `FALLBACK_BACKDROP_FILTER`. */
+  /** False when the engine can't render SVG URL filters in backdrop-filter; use FALLBACK_BACKDROP_FILTER. */
   supported: boolean;
 };
 
@@ -116,9 +88,6 @@ export function useLiquidGlassFilter({
     [w, h, radius, bezel, thickness, refractiveIndex, surfaceType],
   );
 
-  // Always render the SVG filter defs. WebKit can't apply them via
-  // `backdrop-filter: url(#)`, but it *can* apply them via regular
-  // `filter: url(#)` on a clone layer (the clone-fallback path).
   const filterSvg = (
     <svg
       width="0"
@@ -192,19 +161,6 @@ export function useLiquidGlassFilter({
   return { filterId, filterSvg, supported: SUPPORTS_BACKDROP_FILTER_URL };
 }
 
-// ─── Auto-sizing variant ────────────────────────────────────────────────────
-// Measures the attached element via ResizeObserver and regenerates the
-// filter only when the (bucketed) dimensions change. Use for elements
-// whose size is driven by content — pills, dynamic cards, toolbars —
-// instead of hard-coding `width`/`height`.
-//
-// Usage:
-//   const { ref, filterSvg, style } = useAutoLiquidGlassFilter({ radius: 999 });
-//   return (<><div ref={ref} style={style}>...</div>{filterSvg}</>);
-//
-// `radius: 999` (or any value ≥ height/2) is clamped internally to
-// `height/2`, so you get a pill shape automatically.
-
 export type AutoLiquidGlassOptions = Omit<
   LiquidGlassFilterOptions,
   'width' | 'height' | 'radius'
@@ -218,12 +174,8 @@ export type AutoLiquidGlassOptions = Omit<
 };
 
 export type AutoLiquidGlassResult = {
-  /** Attach to the element the filter should refract behind. Callback
-   *  ref so the measurement effect fires when the element actually
-   *  mounts — including after a parent's early-return → JSX transition. */
+  /** Callback ref so the effect re-runs after lazy mount (post early-return). */
   ref: (el: HTMLDivElement | null) => void;
-  /** The currently attached element, or null when unmounted. Useful for
-   *  imperative access (querySelector, scrollIntoView on children). */
   element: HTMLDivElement | null;
   filterId: string;
   filterSvg: ReactNode;
@@ -237,14 +189,8 @@ export function useAutoLiquidGlassFilter({
   heightStep = 2,
   ...filterOpts
 }: AutoLiquidGlassOptions): AutoLiquidGlassResult {
-  // Tracking the element in state (not a ref) makes the measurement
-  // effect re-run when the element lazily attaches. A plain useRef
-  // variant runs the effect exactly once on mount — if the parent
-  // returned null on that render, ref.current was null, the effect
-  // bailed, and the ResizeObserver never got set up. The size state
-  // then stuck at the dummy initial value forever.
+  // useState (not useRef) so the measurement effect re-runs on lazy mount.
   const [element, setElement] = useState<HTMLDivElement | null>(null);
-  // Start at non-zero so the first filter is valid even before measure.
   const [size, setSize] = useState({ width: 200, height: 32 });
 
   const ref = useCallback((el: HTMLDivElement | null) => {
@@ -287,12 +233,6 @@ export function useAutoLiquidGlassFilter({
   return { ref, element, filterId, filterSvg, style };
 }
 
-// ─── Wrapper component ──────────────────────────────────────────────────────
-// The quick path — a `<div>` sized to `width/height` with a liquid-glass
-// backdrop filter, a standard tint + hairline border + shadow. For forms,
-// sections, buttons or any custom element, use `useLiquidGlassFilter`
-// directly and apply `backdrop-filter` inline yourself.
-
 export type LiquidGlassProps = {
   width: number;
   height: number;
@@ -300,17 +240,10 @@ export type LiquidGlassProps = {
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
-  /** 0..1 — opacity of the neutral tint painted over the refracted
-   *  backdrop. 0 disables the tint entirely. */
   tintOpacity?: number;
-  /** Post-refraction Gaussian blur (px). 0 keeps the refraction crisp;
-   *  raise for a frosted finish on top of the bend. */
   postBlur?: number;
-  /** Post-refraction saturation boost. */
   saturation?: number;
-  /** Hide the default border. */
   borderless?: boolean;
-  /** Hide the default drop shadow. */
   shadowless?: boolean;
 } & Partial<Omit<LiquidGlassFilterOptions, 'width' | 'height' | 'radius'>>;
 

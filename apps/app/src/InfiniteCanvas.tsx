@@ -20,9 +20,7 @@ export type WorldPoint = { worldX: number; worldY: number };
 
 export type WorldRect = { x: number; y: number; width: number; height: number };
 
-// WKWebView's compositor gets unhappy at extreme matrix values, so cap
-// zoom at 64× in either direction. The real blanking bug came from nested
-// transforms on `.world-image`, not the outer scale (fixed in App.css).
+// 64× cap — WKWebView compositor blanks at extreme matrix values.
 const MIN_SCALE = 1 / 64;
 const MAX_SCALE = 64;
 const ZOOM_INTENSITY = 0.0015;
@@ -36,16 +34,10 @@ export type FocusOptions = {
   duration?: number;
   padding?: number; // fraction of viewport reserved as margin (0..1); default 0.12
   bottomInset?: number;
-  /** CSS pixels of the viewport's right edge that are obscured (e.g.
-   *  by a floating sidebar). The fit math treats that strip as
-   *  unavailable so the rect lands in the visible area. */
+  /** CSS px obscured at the viewport's right edge (e.g. floating sidebar). */
   rightInset?: number;
-  /** Mirror of `rightInset` for the left side. */
   leftInset?: number;
-  /** Cap on how far the camera will zoom in to fit the rect. Useful
-   *  when focusing on a single small node — without a cap, fitting a
-   *  ~150 px pill into a 1280 px viewport ends up at ~7×, which feels
-   *  uncomfortably close. */
+  /** Cap zoom-in factor when fitting; small targets otherwise pin uncomfortably close. */
   maxScale?: number;
 };
 
@@ -128,11 +120,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
     viewRef.current = next;
     const content = contentRef.current;
     if (content) {
-      // 2D matrix instead of translate3d + scale: the combined 3D-transform
-      // form trips WKWebView's compositor on zoom-out from a prior zoom-in
-      // (whole-window blank until another input forces a re-raster). A
-      // single 2D matrix still hits the GPU path but avoids the bad code
-      // path in WebKit's layer composition.
+      // 2D matrix avoids WKWebView's translate3d+scale blanking bug on zoom-out.
       content.style.transform = `matrix(${next.scale}, 0, 0, ${next.scale}, ${next.x}, ${next.y})`;
       content.style.setProperty('--inv-view-scale', String(1 / next.scale));
     }
@@ -393,8 +381,6 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, Props>(function I
         const scale = clampScale(capped);
         const cx = rect.x + rect.width / 2;
         const cy = rect.y + rect.height / 2;
-        // Center within the visible region, not the full viewport, so
-        // the rect lands in the unobscured area when insets are set.
         const target: View = {
           scale,
           x: (vw + leftInset - rightInset) / 2 - cx * scale,

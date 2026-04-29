@@ -1,8 +1,3 @@
-/**
- * Scale `(w, h)` so that the longest side equals at most `maxSide`,
- * preserving aspect ratio. Dimensions are rounded to integers; neither
- * side is ever less than 1.
- */
 export function capDims(
   w: number,
   h: number,

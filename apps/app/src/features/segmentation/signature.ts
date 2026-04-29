@@ -5,17 +5,7 @@ export type SignatureInput = ReadonlyArray<{
   entryId?: string;
 }>;
 
-/**
- * Build a deterministic fingerprint of a per-image "ready masks" list.
- * Signature equality implies identical bake output. Render order is
- * significant — later masks paint over earlier ones, so reordering
- * changes the signature.
- *
- * Tag matching is case-insensitive (matches the app's existing tag
- * identity rules — see `submitSegment` in Canvas.tsx). The base64 is
- * sampled by length + head + tail to avoid hashing multi-MB payloads
- * while still catching content changes.
- */
+/** Order-sensitive fingerprint; samples base64 head+tail+length to avoid hashing multi-MB payloads. */
 export function computeSignature(masks: SignatureInput): string {
   const parts: string[] = [];
   for (const m of masks) {

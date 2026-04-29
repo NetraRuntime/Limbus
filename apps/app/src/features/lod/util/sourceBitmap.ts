@@ -1,11 +1,6 @@
 import type { AssetKind } from '../types';
 import { posterFrame } from './posterFrame';
 
-/** Load an asset's pixel source as an ImageBitmap (plus its natural
- *  dimensions). For images this is a plain fetch → decode; for videos
- *  this is the t=0 poster frame. The caller transfers the bitmap to a
- *  Worker; do not read it after transfer.
- */
 export async function sourceBitmap(
   kind: AssetKind,
   src: string,

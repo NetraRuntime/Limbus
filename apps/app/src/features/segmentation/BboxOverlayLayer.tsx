@@ -15,17 +15,10 @@ export type BboxOverlayLayerProps = {
   viewportWidth: number;
   /** Viewport height in CSS pixels. */
   viewportHeight: number;
-  /** At-rest bbox rects in viewport coords. Excludes selected / hovered
-   *  masks — those remain DOM for interactivity. */
+  /** At-rest bboxes only; selected/hovered remain DOM for interactivity. */
   rects: ReadonlyArray<BboxOverlayRect>;
 };
 
-/**
- * Viewport-space canvas that paints every at-rest segmentation bbox in
- * one pass. Replaces N × 5 DOM nodes (one <div> + four <span> ticks per
- * bbox) with a single fixed-position <canvas>. Pointer-events none so
- * clicks fall through to the underlying image + bake layers.
- */
 function BboxOverlayLayerImpl({
   viewportWidth,
   viewportHeight,
@@ -66,8 +59,7 @@ function BboxOverlayLayerImpl({
         width: viewportWidth,
         height: viewportHeight,
         pointerEvents: 'none',
-        // Matches .segment-mask-bbox z-index so DOM chrome for selected/
-        // hovered masks still stacks above when present.
+        // Matches .segment-mask-bbox z-index so selected/hovered DOM chrome stacks above.
         zIndex: 12,
       }}
     />

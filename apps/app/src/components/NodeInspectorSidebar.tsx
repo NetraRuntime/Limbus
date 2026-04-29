@@ -8,15 +8,10 @@ import {
 import type { NodeExample, NodeRecord } from '../features/llm-canvas';
 
 type Props = {
-  /** Currently selected node. Parent mounts/unmounts the component to
-   *  drive open/close; selecting a different node simply re-renders
-   *  with a new `node` prop. */
   node: NodeRecord;
   onClose: () => void;
-  /** Patch the node's persisted fields (examples). Parent owns the
-   *  debounce + API write. */
+  /** Parent owns debounce + persistence. */
   onPatch?: (id: string, patch: { examples?: NodeExample[] }) => void;
-  /** Optional override slot for the body — defaults to the I/O table. */
   children?: ReactNode;
 };
 
@@ -27,7 +22,6 @@ const MIN_LEFT_GAP = 64;
 
 const defaultWidth = (): number => {
   if (typeof window === 'undefined') return 480;
-  // Half of the viewport on first open.
   return Math.round(window.innerWidth / 2);
 };
 
@@ -43,9 +37,7 @@ const writeWidth = (w: number) => {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY, String(w));
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 };
 
 const clampWidth = (w: number): number => {
@@ -56,8 +48,6 @@ const clampWidth = (w: number): number => {
   return Math.max(MIN_WIDTH, Math.min(w, max));
 };
 
-// Floating right-side inspector for canvas nodes. Resizable via the
-// left-edge drag handle; "expanded" toggle goes full-width and back.
 export function NodeInspectorSidebar({ node, onClose, onPatch, children }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState<number>(() => clampWidth(readWidth()));
@@ -65,13 +55,11 @@ export function NodeInspectorSidebar({ node, onClose, onPatch, children }: Props
   const widthRef = useRef(width);
   widthRef.current = width;
 
-  // Persist width changes (debounced via a microtask).
   useEffect(() => {
     if (resizing) return;
     writeWidth(width);
   }, [width, resizing]);
 
-  // Keep width clamped if the viewport shrinks below the saved value.
   useEffect(() => {
     const onResize = () => setWidth((w) => clampWidth(w));
     window.addEventListener('resize', onResize);
@@ -107,8 +95,6 @@ export function NodeInspectorSidebar({ node, onClose, onPatch, children }: Props
       }`}
       role="complementary"
       aria-label={`${node.name} details`}
-      // Inline `width` only when not expanded — expanded mode uses the
-      // full-viewport CSS rule.
       style={expanded ? undefined : { width }}
     >
       <div
@@ -157,9 +143,6 @@ type IOTableProps = {
 };
 
 function NodeIOTable({ node, onPatch }: IOTableProps) {
-  // Render at least one row even when the node has no saved examples
-  // so users always have somewhere to type. The empty row isn't
-  // persisted until they actually type into it (handled in patchRow).
   const rows: NodeExample[] =
     node.examples.length > 0 ? node.examples : [{ input: '', output: '' }];
 
@@ -264,8 +247,6 @@ type NodeIOCellProps = {
   onRemove: () => void;
 };
 
-// One I/O cell. Removal lives on the input column only so it doesn't
-// get rendered twice per row.
 function NodeIOCell({ column, row, rowIdx, rowCount, onChange, onRemove }: NodeIOCellProps) {
   const placeholder =
     column === 'input'

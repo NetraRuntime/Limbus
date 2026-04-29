@@ -1,13 +1,4 @@
-//! Hugging Face model manager.
-//!
-//! Lists model artifacts from the public `Rifky/SAM3` repo, lists what's
-//! already on disk under `{app_data_dir}/models/`, and streams downloads
-//! through `reqwest` while emitting `model-download-progress` events so
-//! the frontend can render a live progress bar without polling.
-//!
-//! All Rust-side; the frontend never touches huggingface.co directly,
-//! which keeps the desktop CSP clean and centralizes redirect handling
-//! through the LFS CDN.
+//! HF model manager — lists, downloads, emits `model-download-progress` events.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -19,25 +10,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::AsyncWriteExt;
 
-/// Hugging Face repo we expose. Hardcoded for now — if we add more we'll
-/// need a settings UI to switch.
 const HF_REPO: &str = "Rifky/SAM3";
-
-/// File suffix we treat as a model artifact. Hides `.gitattributes` etc.
 const MODEL_EXT: &str = "sam3";
-
-/// Subdirectory of `app_data_dir` where downloaded models live. Aligns
-/// with the existing model candidate path in `lib.rs`.
 const MODELS_DIRNAME: &str = "models";
-
-/// Event name emitted as a download progresses. Listened by the frontend
-/// `ModelsTab`. Keep in sync with `apps/app/src/components/ModelsTab.tsx`.
+/// Keep in sync with apps/app/src/components/ModelsTab.tsx.
 const PROGRESS_EVENT: &str = "model-download-progress";
 
-/// Shared state holding cancel flags for in-flight downloads. Keyed by
-/// filename — matches the unique key the frontend uses in its row map.
-/// Stored as `AtomicBool` so the streaming loop can poll without taking
-/// the outer mutex on every chunk.
+/// AtomicBool so the streaming loop can poll without taking the outer mutex per chunk.
 #[derive(Default)]
 pub struct ModelDownloads(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 
@@ -95,9 +74,7 @@ fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Reject filenames that could escape the models dir or hit the BPE
-/// vocab. Real HF paths are simple basenames (`sam3.sam3`); anything else
-/// is suspicious.
+/// Rejects anything that could escape the models dir or target the BPE vocab.
 fn validate_filename(name: &str) -> Result<(), String> {
     if name.is_empty()
         || name == "."

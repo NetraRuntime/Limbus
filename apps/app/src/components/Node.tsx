@@ -8,14 +8,6 @@ import {
 } from 'react';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 
-// Modular, reusable canvas node. Renders a pill with an optional
-// leading icon, supports dragging (always), inline rename (opt-in),
-// delete via context menu (opt-in), and an optional right-edge
-// connection port. The component is *controlled*: it emits intent
-// callbacks (`onMoveCommit`, `onRename`, `onDelete`) that the parent
-// is expected to wrap in an undo/redo history entry. That keeps the
-// Node framework-agnostic — anything reversible lives at the parent.
-
 type Point = { x: number; y: number };
 
 type Props = {
@@ -46,12 +38,9 @@ type Props = {
   onDelete?: (id: string) => void;
   /** Output port grabbed — argument is the port's world coords. */
   onConnectStart?: (worldPoint: Point) => void;
-  /** Called whenever the node's rendered size changes — parents that
-   *  draw edges to port positions need this to keep endpoints attached
-   *  as the label width changes. */
+  /** Fires on size change so parent can keep edge endpoints attached as label width shifts. */
   onMeasure?: (id: string, size: { width: number; height: number }) => void;
-  /** Pointer-up without a meaningful drag fires this. Parent treats it
-   *  as a "select this node" intent. */
+  /** Pointer-up without a drag → click; parent treats as select intent. */
   onSelect?: (id: string) => void;
   /** Visual selection state — paints a focus ring around the node. */
   selected?: boolean;
@@ -91,11 +80,8 @@ export function Node({
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Position of an open context menu in screen coords. `null` when closed.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // Keep draft in sync with prop when not editing — covers external
-  // updates (e.g., undo replays a rename).
   useEffect(() => {
     if (!editing) setDraft(name);
   }, [editing, name]);
@@ -107,8 +93,6 @@ export function Node({
     }
   }, [editing]);
 
-  // Emit measured size so the parent can place edge endpoints exactly
-  // on the node's left/right edge midpoints.
   useLayoutEffect(() => {
     if (!onMeasure) return;
     const el = nodeRef.current;
@@ -190,8 +174,6 @@ export function Node({
     if (d.moved) {
       onMoveCommit?.(id, { x: d.startX, y: d.startY }, { x, y });
     } else if (!editing) {
-      // Pointer down + up without crossing the move threshold = click =
-      // select. Editing eats clicks (they go to the input).
       onSelect?.(id);
     }
   };

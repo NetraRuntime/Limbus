@@ -69,9 +69,7 @@ const writeLlmStoredView = (v: View) => {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(LLM_VIEW_STORAGE_KEY, JSON.stringify(v));
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 };
 
 const getLlmInitialView = (): View => {
@@ -304,8 +302,6 @@ export function LlmCanvas({ projectId }: Props) {
     setNaming(null);
     setConnecting(null);
   }, []);
-
-  // ---- Persistent operations (each updates local state + PB) ----
 
   const commitStep = useCallback(
     async (name: string) => {
@@ -809,7 +805,6 @@ export function LlmCanvas({ projectId }: Props) {
                       className="llm-edge-path"
                       pathLength={1}
                     />
-                    {/* Larger transparent hit area around each handle */}
                     <circle
                       className="llm-edge-handle-hit"
                       cx={a.x}

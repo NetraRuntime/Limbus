@@ -27,9 +27,6 @@ export type MipWorkerClient = {
   terminate: () => void;
 };
 
-/** Creates the main-thread proxy for `mip.worker.ts`. Returns null if
- *  workers are unavailable (e.g. policy-blocked environments).
- */
 export function createMipWorkerClient(): MipWorkerClient | null {
   let worker: Worker;
   try {

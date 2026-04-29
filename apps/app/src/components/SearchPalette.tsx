@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-// Generic palette: any caller can plug in a list of items, a row
-// renderer, and a free-text matcher. Existing call sites use the
-// `MediaSearchPalette` wrapper; the LLM canvas uses this directly with
-// its own item shape ("steps").
-
 export type SearchPaletteItem = {
   id: string;
 };

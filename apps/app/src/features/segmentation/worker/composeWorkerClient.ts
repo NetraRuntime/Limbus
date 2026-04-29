@@ -3,20 +3,7 @@ import type { OutMessage } from './compose.worker';
 
 export type ComposeFn = (input: ComposeInput) => Promise<ComposedBake>;
 
-/**
- * Create a main-thread client wrapping `compose.worker.ts`. Returns a
- * function with the same signature as the direct `composeBake` so
- * `useSegmentBake` doesn't care whether the work runs on or off the
- * main thread.
- *
- * Returns `null` if workers are unavailable (policy-blocked environments,
- * unit tests without a Worker implementation, etc.). Callers should
- * fall back to the main-thread `composeBake`.
- *
- * Note: `input.decodeCache` is IGNORED by the worker path. The worker
- * owns its own decode cache. Callers that still pass a decode cache for
- * the main-thread fallback should keep doing so.
- */
+/** Worker path ignores `input.decodeCache` (worker owns its own); fallback path still needs it. */
 export function createComposeWorker(): {
   compose: ComposeFn;
   terminate: () => void;
@@ -59,9 +46,6 @@ export function createComposeWorker(): {
   });
 
   worker.addEventListener('error', (e) => {
-    // Unhandled error inside the worker — reject every pending job so
-    // callers don't hang forever. Individual job errors flow through
-    // the 'error' message path above.
     const err = new Error(e.message || 'compose worker error');
     for (const [id, reject] of rejecters) {
       reject(err);

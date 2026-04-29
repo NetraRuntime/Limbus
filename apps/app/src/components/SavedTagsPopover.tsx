@@ -28,11 +28,8 @@ export function SavedTagsPopover({ projectId, className }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const glass = useAutoLiquidGlassFilter({ radius: 12 });
-  // Separate filter for the popover dialog — it has a different size
-  // and radius than the trigger button.
   const popoverGlass = useAutoLiquidGlassFilter({ radius: 16 });
 
-  // Click-outside / Escape while the popover is open.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent) => {
@@ -45,7 +42,6 @@ export function SavedTagsPopover({ projectId, className }: Props) {
     };
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      // Let the rename input handle its own Escape first.
       if (editing) return;
       setOpen(false);
     };
@@ -57,7 +53,6 @@ export function SavedTagsPopover({ projectId, className }: Props) {
     };
   }, [open, editing]);
 
-  // Autofocus the rename input and select-all when entering edit mode.
   useLayoutEffect(() => {
     if (!editing) return;
     const el = editInputRef.current;
@@ -66,7 +61,6 @@ export function SavedTagsPopover({ projectId, className }: Props) {
     el.select();
   }, [editing]);
 
-  // Focus the search input on open and reset query on close.
   useLayoutEffect(() => {
     if (!open) {
       setQuery('');
@@ -75,8 +69,6 @@ export function SavedTagsPopover({ projectId, className }: Props) {
     searchInputRef.current?.focus({ preventScroll: true });
   }, [open]);
 
-  // Prefix matches first, then substring matches — same ordering as the
-  // highlight-input suggestion list so users see a consistent sort.
   const filteredTags = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return tags;
@@ -247,10 +239,6 @@ export function SavedTagsPopover({ projectId, className }: Props) {
                         autoComplete="off"
                       />
                     ) : (
-                      // Double-click to edit matches native file-manager /
-                      // spreadsheet rename affordance — avoids accidental
-                      // edits on a single click while still being reachable
-                      // via keyboard (Enter / F2 when the label is focused).
                       <button
                         type="button"
                         className="saved-tags-label"

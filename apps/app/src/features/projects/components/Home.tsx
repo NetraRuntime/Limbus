@@ -27,12 +27,6 @@ const isTauri =
 type View = 'projects' | 'models';
 type LocalModel = { name: string };
 
-// Fetch every project's `tags` collection and bucket by project id. Tags
-// are populated when the user creates labels through box / text prompts
-// on the canvas. We subscribe to '*' so chips appear on Home as soon as
-// the canvas writes them, and disappear when a project is cascade-
-// deleted. We also re-fetch when the Home window regains focus so a
-// long-running session catches anything missed while subscribed.
 function useProjectTags(): Record<string, TagRecord[]> {
   const [byProject, setByProject] = useState<Record<string, TagRecord[]>>({});
 
@@ -127,12 +121,6 @@ function useItemCounts(): Record<string, number> {
   return counts;
 }
 
-/**
- * Watch the on-disk model directory for changes. Drives both the view
- * switcher (forces 'models' on first run) and the project-tile gating.
- * Refreshed on download/cancel/error events so the gate flips off the
- * instant a model is available.
- */
 function useHasModelInstalled(): { ready: boolean; hasModel: boolean } {
   const [ready, setReady] = useState(false);
   const [hasModel, setHasModel] = useState(false);

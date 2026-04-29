@@ -33,10 +33,6 @@ type Store = {
   lastLevel: Map<string, PickedLevel>;
 };
 
-/** Picks the best available mip level per visible item and returns LodSource
- *  per id. Keeps Blob URLs alive while items remain visible; revokes them
- *  when items drop out for > REVOKE_GRACE_MS.
- */
 export function useLodSources({
   items,
   viewScale,
@@ -91,7 +87,6 @@ export function useLodSources({
     [bump],
   );
 
-  // Preload dims and baseline blob URLs for newly-visible items.
   useEffect(() => {
     if (!cache) return;
     let cancelled = false;
@@ -120,7 +115,6 @@ export function useLodSources({
     };
   }, [items, cache, bump]);
 
-  // Pick levels + fetch any missing mid-tier blobs lazily.
   const sources = useMemo(() => {
     const out = new Map<string, LodSource>();
     for (const item of items) {
@@ -138,8 +132,6 @@ export function useLodSources({
       if (picked !== 'full' && assetUrls) {
         lodSrc = assetUrls.get(picked);
         if (!lodSrc) {
-          // Lazy-load the mid-tier blob if cached. Don't await; next render
-          // will pick it up once reportLevelBlob fires.
           if (cache) void loadLevelInBackground(cache, item.id, picked, reportLevelBlob);
         }
       }

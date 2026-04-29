@@ -1,7 +1,3 @@
-/** Extract the first frame of a video as an ImageBitmap. Creates a
- *  detached <video> element, seeks to 0, and draws onto an
- *  OffscreenCanvas. Caller owns the returned bitmap.
- */
 export async function posterFrame(src: string): Promise<ImageBitmap> {
   const video = document.createElement('video');
   video.muted = true;

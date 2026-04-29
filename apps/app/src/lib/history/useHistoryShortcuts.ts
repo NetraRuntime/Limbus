@@ -2,10 +2,7 @@ import { useEffect } from 'react';
 import { isTypingContext } from '../dom/isTypingContext';
 import type { HistoryController } from './types';
 
-/** Binds Cmd/Ctrl-Z (undo), Cmd/Ctrl-Shift-Z (redo), Cmd/Ctrl-Y (redo) at the
- *  window level, capture phase. Typing contexts (inputs, textareas,
- *  contenteditable) are ignored so the browser's default undo for text edits
- *  keeps working. */
+/** Cmd/Ctrl-Z, -Shift-Z, -Y at window capture; skips typing contexts to preserve native text undo. */
 export function useHistoryShortcuts<M = unknown>(
   history: HistoryController<M>,
 ): void {

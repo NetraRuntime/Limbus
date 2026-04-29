@@ -1,14 +1,5 @@
 import type { TagListEntry } from '../../components/MediaTagList';
 
-/**
- * Compute the next solo tag when the user presses Arrow Up / Arrow Down in
- * the tag list. Skips non-ready entries (they can't be solo'd today).
- * Returns null when the move is clamped at an end, the current tag is not
- * present, or the list is empty.
- *
- * Matches `current` case-insensitively and returns the original casing from
- * `entries` so the caller can persist it as-is.
- */
 export function nextSoloTag(
   current: string,
   entries: readonly TagListEntry[],

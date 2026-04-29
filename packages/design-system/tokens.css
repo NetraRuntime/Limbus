@@ -46,10 +46,6 @@
 }
 
 :root {
-  /* Neutral grayscale primitives — derived from the canonical
-     palette (--color-text, --color-subtitle, --color-stroke,
-     --color-background, etc.) so every shade stays hue-free. */
-
   --color-text-900: #091413;
   --color-text-800: #3C3C3C;
   --color-text-700: #6A6A6A;
@@ -182,12 +178,7 @@
   color-scheme: light;
 }
 
-/* Dark theme: opt-in via [data-theme="dark"] on <html>.
-   Overrides primitives only; all semantic aliases (--fg, --bg, --border, etc.)
-   inherit through the mappings above. */
 [data-theme="dark"] {
-  /* Neutral inverse — same hue-free family as the light scale, just
-     flipped. No blue tinting. */
   --color-text-900: #F1F1F1;
   --color-text-800: #CECECE;
   --color-text-700: #9b9b9b;

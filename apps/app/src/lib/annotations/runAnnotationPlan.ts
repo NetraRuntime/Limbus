@@ -21,11 +21,8 @@ export type SegGroup = {
 
 export type Encoder = (annotation: ParsedAnnotation) => Promise<string>;
 
-// Yield every 16 encodes so the main thread can service layout / user input /
-// state ticks between PNG encoding bursts.
 const YIELD_EVERY = 16;
 
-/** Pure grouping: annotations → SegGroup[]. Encoder stubbed in tests. */
 export async function buildSegMaskGroups(
   annotations: Array<{ imageId: string; annotation: ParsedAnnotation }>,
   encode: Encoder,
@@ -58,7 +55,6 @@ export async function buildSegMaskGroups(
     doneEncoding++;
     onEncoded?.(doneEncoding, annotations.length);
     if (doneEncoding % YIELD_EVERY === 0) {
-      // Yield: lets the main thread service layout / user input / state ticks.
       await new Promise((r) => setTimeout(r, 0));
     }
   }
@@ -136,7 +132,6 @@ export async function runAnnotationPlan(
     try {
       await input.upsert(group);
       groupsImported++;
-      // Each mask corresponds to one ParsedAnnotation that reached an upserted group.
       annotationsImported += group.masks.length;
       input.onProgress?.(groupsImported, groups.length);
     } catch (err) {

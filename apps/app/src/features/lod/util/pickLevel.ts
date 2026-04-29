@@ -1,11 +1,6 @@
 import { UPGRADE_HYSTERESIS, type PickedLevel } from '../types';
 
-/** Choose the smallest cached mip level that still renders crisply at the
- *  requested on-screen size. `current` (optional) suppresses rapid A/B
- *  swaps: an upgrade (to a larger level or to 'full') only fires once
- *  the target crosses `current × UPGRADE_HYSTERESIS`. Downgrades apply
- *  immediately.
- */
+/** Pick smallest mip level that renders crisply; upgrades require crossing UPGRADE_HYSTERESIS to avoid A/B flicker. */
 export function pickLevel(
   levels: readonly number[],
   onScreenPx: number,

@@ -9,11 +9,7 @@ type Props = {
   projects: ProjectRecord[];
   itemCounts: Record<string, number>;
   tagsByProject: Record<string, TagRecord[]>;
-  /**
-   * When set, every project tile is visually disabled and clicking is a
-   * no-op. Used while no model is installed/active so the user can't
-   * stumble into a canvas window that has no model to load.
-   */
+  /** When set, tiles are visually disabled and clicks are no-ops; tooltip shows the reason. */
   disabledReason?: string;
 };
 

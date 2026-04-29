@@ -127,10 +127,8 @@ type CanvasMedia = {
   width: number;
   height: number;
   pending?: boolean;
-  /** PocketBase collection id — present for uploaded (non-pending) items.
-   *  Used to resolve the on-disk file path for SAM3 segmentation. */
+  /** Present for uploaded (non-pending) items; pairs with `file` to resolve SAM3 file path. */
   collectionId?: string;
-  /** PocketBase file field (the storage filename). Pairs with `collectionId`. */
   file?: string;
 };
 
@@ -253,13 +251,11 @@ type DrawBoxState = {
   pointerId: number;
   startClientX: number;
   startClientY: number;
-  // World-space corners, clamped to the target image's bounds.
   startWorldX: number;
   startWorldY: number;
   currentWorldX: number;
   currentWorldY: number;
-  // Image world-bounds captured at drag-start so the clamp stays stable even
-  // if the image is re-rendered during the drag.
+  // Captured at drag-start so the clamp stays stable across re-renders.
   imageX: number;
   imageY: number;
   imageW: number;
@@ -267,22 +263,15 @@ type DrawBoxState = {
   moved: boolean;
 };
 
-/** A user-drawn bounding box. Stored relative to the image's world top-left
- *  so it follows the image when dragged. [x1, y1, x2, y2] in the image's
- *  world units (i.e. offsets of `m.width`/`m.height`). */
+/** Stored relative to the image's world top-left so it follows on drag. */
 type UserBox = {
   id: string;
   box: [number, number, number, number];
-  /** User-supplied label captured at draw time. Used as the segment tag so
-   *  the SAM3 mask renders under a meaningful name. */
+  /** Becomes the SAM3 segment tag. */
   label: string;
 };
 
-/** A box that's been drawn but not yet labeled. While set, a popover prompts
- *  the user for a label; on confirm we commit the box + dispatch SAM3, on
- *  cancel we discard. `worldRect` is snapshotted so the popover follows
- *  pan/zoom without re-reading the image's live position (image moves are
- *  unlikely while the modal is open, but the snapshot makes it robust). */
+/** While set, a popover prompts for a label; `worldRect` is snapshotted so it survives image moves. */
 type PendingBoxLabel = {
   imageId: string;
   boxId: string;
@@ -334,13 +323,7 @@ const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
 
 const EMPTY_TAGS: readonly string[] = Object.freeze([]);
 
-// Effectively disables viewport culling. At 0.5 (the previous value),
-// zooming in on one image unmounted the others; zooming back out
-// remounted them in a burst, and the mass re-composition blanked the
-// entire WKWebView window until another input forced a re-raster.
-// Keeping everything mounted trades a bit of memory for a stable
-// compositor — the per-item DOM is cheap, and paintable content is
-// already bounded by the active canvas, not history.
+// Disables viewport culling — mass remount on zoom-back blanks the WKWebView compositor.
 const CULL_BUFFER_FACTOR = 50;
 
 const readStoredView = readStoredViewShared;
@@ -372,11 +355,6 @@ const writeStoredStackOrder = (order: string[]) => {
 /** World-unit target for a new upload when no existing media is present. */
 const DEFAULT_UPLOAD_LONGEST_SIDE = 640;
 
-/** Scale `dims` so its longest side matches the median longest-side of the
- *  given reference items. Keeps aspect ratio. Rounded to integer world units
- *  to keep the persisted meta and the on-disk source_width/source_height
- *  cleanly aligned. Pending items are filtered out by the caller so in-flight
- *  uploads don't skew the reference. */
 const normalizeUploadSize = (
   dims: { width: number; height: number },
   reference: readonly { width: number; height: number }[],
@@ -456,9 +434,7 @@ type MediaItemProps = {
   onPointerUp: (e: MediaPointerEvent) => void;
 };
 
-// Survives MediaItem unmount/remount. Viewport culling in Canvas unmounts
-// off-screen items; on zoom-back they remount fresh, and without this set
-// would flash through the pop-in animation every time.
+// Survives unmount/remount on viewport cull so the pop-in animation doesn't replay.
 const loadedMediaIds = new Set<string>();
 
 const MediaItem = memo(function MediaItem({
@@ -481,8 +457,7 @@ const MediaItem = memo(function MediaItem({
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    // Cached media can finish loading before React attaches onLoad, so the
-    // event never fires on remount. Reconcile against the DOM state once.
+    // Cached media can finish before onLoad attaches; reconcile from DOM once.
     const img = imgRef.current;
     if (img && img.complete && img.naturalWidth > 0) {
       loadedMediaIds.add(m.id);
@@ -521,9 +496,6 @@ const MediaItem = memo(function MediaItem({
 
   const labelCls = `media-label ${isActive ? 'is-active' : ''}`;
   const label = (
-    // Canvas items are pointer-driven; keyboard access to individual items
-    // happens through the SearchPalette (Cmd+K) which lists every media by
-    // name and focuses the picked one.
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <span
       className={labelCls}
@@ -632,21 +604,15 @@ const getInitialView = getInitialViewShared;
 
 type CanvasProps = {
   projectId: string;
-  /** When set, SAM3 failed to load. Encode/segment calls are skipped and a
-   *  compact error chip is shown in the top-left HUD. */
+  /** When set, SAM3 failed to load; encode/segment calls are skipped. */
   sam3Error?: string | null;
 };
 
-// Memoized per-image bake-layer wrapper. Stabilizes the `masksInput` array
-// ref and pointer-handler refs across parent re-renders so the inner
-// SegmentBakeLayer's React.memo actually bails out when nothing material
-// changed. This is the hot path on pan/zoom (Canvas re-renders once per
-// animation frame via the view rAF), so ref stability matters.
+// Stabilizes refs so SegmentBakeLayer's React.memo bails on pan/zoom (hot path: rAF re-renders).
 type BakeForImageProps = {
   m: CanvasMedia;
   state: SegmentState;
-  // View filter: when set, only masks for this tag are baked. Passed as
-  // `null` for non-active images so their memoized bake never re-runs.
+  /** When set, only masks for this tag are baked; null for non-active images. */
   soloTag: string | null;
   onMaskSelect: (id: { imageId: string; tag: string; maskIndex: number }) => void;
   onMaskHover: (id: MaskIdentity | null) => void;
@@ -681,15 +647,10 @@ const BakeForImage = memo(function BakeForImage({
       ? readyEntries.filter((e) => e.tag.toLowerCase() === soloLower)
       : readyEntries;
     if (visibleEntries.length === 0) {
-      // Solo'd tag has no matching ready entry (shouldn't happen in practice
-      // since the list is driven by ready entries, but guard anyway).
       return { masksInput: null, first: readyEntries[0]!.response };
     }
     const built = visibleEntries.flatMap((entry) => {
       const { accent } = colorForTag(entry.tag);
-      // `entryId` disambiguates two entries sharing a display tag — two
-      // box entries both labeled "cat" each get their own hit-test identity
-      // via their unique boxId. Text entries don't need it (tag is unique).
       const entryId = entry.kind === 'box' ? entry.boxId : undefined;
       return entry.response.masks.map((mask, idx) => ({
         tag: entry.tag,
@@ -740,21 +701,13 @@ type BoxLabelPopoverProps = {
   /** Anchor in viewport pixels — popover positions itself just below this. */
   screenX: number;
   screenY: number;
-  /** Maximum width the popover can use; the parent caps it to the box width
-   *  so the popover doesn't dwarf a small selection. Falls back to a minimum
-   *  via CSS (`min-width`) so an extreme zoom-out doesn't squash the input. */
   maxWidth: number;
   projectId: string;
   onConfirm: (label: string) => void;
   onCancel: () => void;
 };
 
-/** Popover that captures the user's label for a freshly drawn box.
- *
- *  Behavior: autofocuses on mount; Enter confirms (if non-empty); Esc
- *  cancels; click-outside is intentionally NOT cancel — the user must use a
- *  control or a key, matching Figma's rename pattern (it's too easy to lose
- *  a long label by misclicking). */
+/** Click-outside is intentionally NOT cancel; matches Figma rename pattern. */
 function BoxLabelPopover({
   screenX,
   screenY,
@@ -774,14 +727,11 @@ function BoxLabelPopover({
 
   const trimmed = value.trim();
   const canConfirm = trimmed.length > 0;
-  // No "existing tags" arg — box labels are independent; let the
-  // same-session saved-tags store be the suggestion source, unfiltered.
   const suggestions = useMemo(
     () => search(value, [] as string[], 6),
     [search, value],
   );
 
-  // Keep activeIdx in range when suggestion count shrinks.
   useEffect(() => {
     if (activeIdx >= suggestions.length) setActiveIdx(-1);
   }, [suggestions.length, activeIdx]);
@@ -802,8 +752,6 @@ function BoxLabelPopover({
         maxWidth: Math.max(180, maxWidth),
       }}
       onPointerDown={(e) => {
-        // Eat pointerdown so it doesn't reach the canvas (which would fire
-        // background-pointer-down or start a drag).
         e.stopPropagation();
       }}
     >
@@ -853,8 +801,6 @@ function BoxLabelPopover({
         autoComplete="off"
         spellCheck={false}
       />
-      {/* Autocomplete list of previously-used tags. Matches HighlightInput's
-          suggestion UI so the two prompt surfaces feel consistent. */}
       {suggestions.length > 0 && (
         <ul
           className="highlight-suggestions"
@@ -884,9 +830,6 @@ function BoxLabelPopover({
           })}
         </ul>
       )}
-      {/* Keyboard-only affordances — no explicit buttons. ↵ confirms when the
-          input is non-empty, esc always cancels. The hint brightens slightly
-          once a label is typed so the user gets a small "ready" signal. */}
       <div
         className={`box-label-hint${canConfirm ? ' is-ready' : ''}`}
         aria-hidden
@@ -911,13 +854,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     void setCanvasTitle(projectId, projectState.project.name);
   }, [projectId, projectState]);
 
-  // Saved-tags registry shared with HighlightInput so box-prompt labels
-  // land in the same autocomplete + recent-tags history.
   const { remember: rememberSavedTag } = useSavedTags(projectId);
-  // HUD liquid-glass filters. Each one measures its own element via
-  // ResizeObserver; pill surfaces use radius 999 (auto-clamped to
-  // height/2 in the hook), the wordmark uses the design-system md
-  // corner.
   const searchPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
   const statusPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
   const controlsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
@@ -952,18 +889,12 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
 
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
   const didInitialFitRef = useRef<boolean>(false);
-  // Flipped once the PocketBase list fetch has resolved. Guards the
-  // media→stackOrder sync effect from running against the empty initial
-  // `media` and wiping the hydrated order before data arrives.
+  // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
   const initialMediaLoadedRef = useRef<boolean>(false);
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
-  // Parallel to `media`, in canvas paint order (bottom → top). Kept separate
-  // so raising an item to the top doesn't reshuffle the sidebar, which
-  // renders `media` in its canonical (load/insertion) order. Hydrated from
-  // localStorage so prior raises persist across reloads; the media-sync
-  // effect below reconciles ids against what's actually on the canvas.
+  // Paint order (bottom → top); separate from `media` so raise-to-top doesn't reshuffle sidebar.
   const [stackOrder, setStackOrder] = useState<string[]>(readStoredStackOrder);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -976,15 +907,10 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const [segments, setSegments] = useState<Record<string, SegmentState>>({});
   const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
   const [hoveredMask, setHoveredMask] = useState<MaskIdentity | null>(null);
-  // View filter: when set, only this tag's masks/bboxes render on the active
-  // image. Cleared when the active image changes, on Esc, or on empty-canvas
-  // click (via clearSelection). Scoped implicitly to activeMedia — the tag
-  // list is only shown for that image.
   const [soloTag, setSoloTag] = useState<string | null>(null);
   const segmentSeqRef = useRef<Record<string, number>>({});
   const uploadCtrlsRef = useRef<Record<string, AbortController>>({});
 
-  // Highlight interaction state.
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
@@ -996,10 +922,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   } | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
 
-  // Box-tool drawing state. `drawBoxPreview` is the in-flight rect used for
-  // the live overlay; `drawBoxRef` mirrors it for access inside window-level
-  // pointer handlers without chasing stale state closures. `userBoxes` holds
-  // committed rects keyed by image id.
   const [drawBoxPreview, setDrawBoxPreview] = useState<DrawBoxState | null>(null);
   const drawBoxRef = useRef<DrawBoxState | null>(null);
   const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
@@ -1011,8 +933,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const toolRef = useRef(tool);
   toolRef.current = tool;
 
-  // Surface the tool to global CSS so we can swap the cursor on world media
-  // without re-rendering every MediaItem when the tool changes.
   useEffect(() => {
     document.body.dataset.canvasTool = tool;
     return () => {
@@ -1897,17 +1817,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     [clearSegment, sam3Available, segments],
   );
 
-  /** Send a user-drawn box to SAM3 under the user's chosen label and feed
-   *  the response into the segment pipeline. `relBox` is `[x1, y1, x2, y2]`
-   *  in image-relative world units; we normalize to `[0, 1]` for the worker.
-   *  The `label` becomes the segment tag, so the chip displays the user's
-   *  name and the mask renders under that color. `kind: 'box'` is preserved
-   *  so consumers can tell box-derived entries apart from text-derived ones.
-   *
-   *  Collisions on label are handled the same way as the text path: tags are
-   *  unique by `tag.toLowerCase()`, so re-using a label replaces the prior
-   *  entry. The corresponding userBox is left in place — fine for now,
-   *  revisit when boxes get a deletion UI. */
   const dispatchBoxPrompt = useCallback(
     (
       imageId: string,
@@ -1930,11 +1839,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       ];
       if (norm[2] <= norm[0] || norm[3] <= norm[1]) return;
 
-      // Snapshot the current sequence so a later clearSegment(imageId) bump
-      // discards this in-flight invoke — same convention as the text path.
-      // Box entries are keyed by `boxId` (not lowercase tag) so two boxes
-      // with the same user label each get their own segment entry and the
-      // later one doesn't clobber the earlier's mask.
+      // Box entries keyed by boxId (not lowercase tag) so duplicate labels don't clobber each other.
       const seq = segmentSeqRef.current[imageId] ?? 0;
       const updateEntry = (patch: TagSegment) => {
         if ((segmentSeqRef.current[imageId] ?? 0) !== seq) return;
@@ -2007,10 +1912,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     [sam3Available],
   );
 
-  /** Confirm the pending box: commit it to `userBoxes` under the trimmed
-   *  label, register the label as a chip in `highlightInputs` so it shows
-   *  in the same tag list as text-prompted segments, and dispatch SAM3.
-   *  Empty/whitespace labels are rejected so the popover stays open. */
   const confirmPendingBoxLabel = useCallback(
     (rawLabel: string) => {
       const label = rawLabel.trim();
@@ -3612,14 +3513,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         />
       )}
 
-      {/* Committed user-drawn boxes. Viewport-space so border weight stays
-          crisp at every zoom level. Only rendered for images currently in
-          paint range to match the segmentation bbox culling.
-          A box is "loading" while its matching segment entry (looked up by
-          label) is in `status: 'loading'` — i.e. SAM3 is still processing
-          the prompt. We render a scan-line overlay during that window so
-          the user sees the work in progress on the box itself, in addition
-          to the chip in the corner. */}
       {paintMedia
         .filter((m) => m.kind === 'image' && (userBoxes[m.id]?.length ?? 0) > 0)
         .flatMap((m) => {
@@ -3630,9 +3523,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
             const wy = m.y + ry1;
             const ww = Math.max(1, rx2 - rx1);
             const wh = Math.max(1, ry2 - ry1);
-            // Match the segment entry by boxId (one entry per drawn box), not
-            // by label — two boxes can share a label ("cat"/"cat") and we
-            // still need each to show its own loading/ready/error state.
             const matched = entries.find(
               (e) => e.kind === 'box' && e.boxId === b.id,
             );
@@ -3663,8 +3553,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           });
         })}
 
-      {/* Live preview of the box being drawn. Matches the committed style
-          with reduced opacity so release feels like a "snap". */}
       {drawBoxPreview && drawBoxPreview.moved && (() => {
         const b = drawBoxPreview;
         const x1 = Math.min(b.startWorldX, b.currentWorldX);
@@ -3690,9 +3578,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         );
       })()}
 
-      {/* Pending box: drawn but not yet labeled. Shows the box outline and
-          anchors the label popover. The outline reuses .user-box without
-          .is-drawing so it reads as "committed visual but awaiting input". */}
       {pendingBoxLabel && (() => {
         const r = pendingBoxLabel.worldRect;
         const left = r.x1 * view.scale + view.x;
@@ -3724,10 +3609,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       })()}
 
       {(() => {
-        // Dim "at-rest" bboxes are painted to a single viewport-space
-        // <canvas> via BboxOverlayLayer. The active (selected / hovered)
-        // mask is skipped here and rendered by the block below as DOM so
-        // it keeps its resize handles and hover pill.
         const sel = selectedMask;
         const hov = hoveredMask;
         const activeId = activeMedia?.id ?? null;

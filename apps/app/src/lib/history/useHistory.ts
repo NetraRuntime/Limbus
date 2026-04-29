@@ -8,11 +8,6 @@ import type {
 
 export type UseHistoryReturn<M = unknown> = HistoryController<M> & HistorySnapshot;
 
-/** React wrapper around `createHistoryController`. The controller instance is
- *  stable across renders; `canUndo` / `canRedo` track the controller's
- *  `getSnapshot()` via `useSyncExternalStore` so React components re-render on
- *  stack changes. `opts.onError` is read through a ref so callers can pass
- *  inline callbacks without recreating the controller. */
 export function useHistory<M = unknown>(
   opts: HistoryOptions = {},
 ): UseHistoryReturn<M> {
@@ -25,8 +20,6 @@ export function useHistory<M = unknown>(
         limit: opts.limit,
         onError: (err, phase) => optsRef.current.onError?.(err, phase),
       }),
-    // limit is captured once at mount; callers that need a different limit
-    // should re-mount the component. onError is proxied through the ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );

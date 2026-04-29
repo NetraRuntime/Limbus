@@ -11,13 +11,8 @@ import { App } from './App';
 import { readProjectIdFromLocation, ProjectIdMissingError } from './lib/projectId';
 import { Home } from './features/projects';
 
-// Forward uncaught errors/rejections AND console.{log,warn,error} to the
-// Tauri process stderr via the `debug_log` command so webview diagnostics
-// surface in the dev terminal without opening devtools.
 const forward = (level: string, message: string) => {
-  invoke('debug_log', { level, message }).catch(() => {
-    /* backend not up yet — devtools console still has the original log */
-  });
+  invoke('debug_log', { level, message }).catch(() => {});
 };
 
 window.addEventListener('error', (ev) => {
@@ -51,9 +46,7 @@ for (const level of ['log', 'warn', 'error'] as const) {
         )
         .join(' ');
       forward(level, msg);
-    } catch {
-      /* JSON.stringify circular-ref safety */
-    }
+    } catch {}
   };
 }
 

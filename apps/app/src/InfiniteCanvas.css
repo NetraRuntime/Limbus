@@ -6,10 +6,6 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  /* Isolate the root's compositor layer so a failing child layer inside
-     .ic-content can't blow away the entire WebView's backing. Without
-     this, zooming in then out on WKWebView occasionally drops the whole
-     window to blank until another input forces a re-raster. */
   isolation: isolate;
 }
 

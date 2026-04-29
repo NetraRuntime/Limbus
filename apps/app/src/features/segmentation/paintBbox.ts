@@ -1,12 +1,4 @@
-/**
- * Paint one at-rest bbox (rect + 4 corner ticks) onto a 2D context.
- * Mirrors `.segment-mask-bbox` CSS in App.css:
- *   - 1px rect stroke at 55% accent alpha, 3px corner radius.
- *   - 6x6 corner tick marks in 1.5px solid accent.
- *
- * Coordinates are in viewport pixels. Caller is responsible for
- * applying devicePixelRatio via `ctx.setTransform` before calling.
- */
+/** Mirrors `.segment-mask-bbox` CSS; caller applies devicePixelRatio via ctx.setTransform. */
 export function paintBbox(
   ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   rect: { left: number; top: number; width: number; height: number },
@@ -16,8 +8,6 @@ export function paintBbox(
   if (width <= 0 || height <= 0) return;
 
   ctx.save();
-  // Dim rect. `color-mix(srgb, accent 55%, transparent)` is approximated
-  // here by globalAlpha; the accent string carries the hue.
   ctx.strokeStyle = accent;
   ctx.globalAlpha = 0.55;
   ctx.lineWidth = 1;
@@ -25,12 +15,10 @@ export function paintBbox(
   ctx.stroke();
   ctx.globalAlpha = 1;
 
-  // Corner ticks: 6×6 L-shapes at each corner, 1.5px stroke. Drawn as
-  // two line segments per corner.
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = accent;
   const tick = 6;
-  const t = 0.75; // half of 1.5px stroke → align the inside of the L
+  const t = 0.75;
 
   ctx.beginPath();
   ctx.moveTo(left + tick, top + t);
