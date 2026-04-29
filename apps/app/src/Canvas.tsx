@@ -33,6 +33,7 @@ import { useHoverState } from './features/canvas/hooks/useHoverState';
 import { useUploadPipeline } from './features/canvas/hooks/useUploadPipeline';
 import { useToolMode } from './features/canvas/hooks/useToolMode';
 import { useCanvasHydration } from './features/canvas/hooks/useCanvasHydration';
+import { useBboxResizeGesture } from './features/canvas/hooks/useBboxResizeGesture';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -63,7 +64,6 @@ import {
   BboxOverlayLayer,
   evictBake,
   deleteMaskEntry,
-  resizeBboxEntry,
   nextSoloTag,
   type BboxOverlayRect,
   type MaskIdentity,
@@ -1997,203 +1997,21 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   // for instant visual feedback; history is pushed once on pointerup so an
   // entire drag is a single undo step. Eight handles total: four corners for
   // diagonal resize and four edge midpoints for single-axis resize.
-  type ResizeHandle = 'tl' | 't' | 'tr' | 'r' | 'br' | 'b' | 'bl' | 'l';
-  type BboxResizeDragState = {
-    pointerId: number;
-    handle: ResizeHandle;
-    imageId: string;
-    tag: string;
-    maskIndex: number;
-    startBbox: [number, number, number, number];
-    startClientX: number;
-    startClientY: number;
-    fx: number;
-    fy: number;
-    maskW: number;
-    maskH: number;
-    before: ReadyMaskEntry;
-    moved: boolean;
-  };
-  const bboxResizeRef = useRef<BboxResizeDragState | null>(null);
-  // Non-null while a drag is actively moving — drives the precision guide
-  // overlay. Kept as state (not a ref) so the overlay re-renders when the
-  // drag starts and when it ends.
-  const [activeResize, setActiveResize] = useState<ResizeHandle | null>(null);
-
-  const applyBboxToSegments = useCallback(
-    (
-      imageId: string,
-      tag: string,
-      maskIndex: number,
-      nextBbox: [number, number, number, number],
-    ) => {
-      const key = tag.toLowerCase();
-      setSegments((prev) => {
-        const cur = prev[imageId];
-        if (!cur) return prev;
-        let changed = false;
-        const nextEntries = cur.entries.map((e) => {
-          if (e.status !== 'ready' || e.tag.toLowerCase() !== key) return e;
-          const masks = e.response.masks.map((mm, i) => {
-            if (i !== maskIndex) return mm;
-            const prevBbox = mm.bbox;
-            if (
-              prevBbox &&
-              prevBbox[0] === nextBbox[0] &&
-              prevBbox[1] === nextBbox[1] &&
-              prevBbox[2] === nextBbox[2] &&
-              prevBbox[3] === nextBbox[3]
-            ) {
-              return mm;
-            }
-            changed = true;
-            return { ...mm, bbox: nextBbox };
-          });
-          return changed
-            ? { ...e, response: { ...e.response, masks } }
-            : e;
-        });
-        if (!changed) return prev;
-        return { ...prev, [imageId]: { entries: nextEntries } };
-      });
-    },
-    [],
-  );
-
-  const computeResizedBbox = (
-    s: BboxResizeDragState,
-    clientX: number,
-    clientY: number,
-  ): [number, number, number, number] => {
-    const scale = viewRef.current.scale;
-    const dxMask = (clientX - s.startClientX) / scale / s.fx;
-    const dyMask = (clientY - s.startClientY) / scale / s.fy;
-    let [x1, y1, x2, y2] = s.startBbox;
-    const dragsLeft = s.handle === 'tl' || s.handle === 'bl' || s.handle === 'l';
-    const dragsRight = s.handle === 'tr' || s.handle === 'br' || s.handle === 'r';
-    const dragsTop = s.handle === 'tl' || s.handle === 'tr' || s.handle === 't';
-    const dragsBottom = s.handle === 'bl' || s.handle === 'br' || s.handle === 'b';
-    if (dragsLeft) x1 = Math.max(0, Math.min(x2 - 1, x1 + dxMask));
-    if (dragsRight) x2 = Math.min(s.maskW, Math.max(x1 + 1, x2 + dxMask));
-    if (dragsTop) y1 = Math.max(0, Math.min(y2 - 1, y1 + dyMask));
-    if (dragsBottom) y2 = Math.min(s.maskH, Math.max(y1 + 1, y2 + dyMask));
-    return [x1, y1, x2, y2];
-  };
-
-  const handleBboxResizePointerDown = useCallback(
-    (
-      e: React.PointerEvent<HTMLSpanElement>,
-      id: MaskIdentity,
-      handle: ResizeHandle,
-    ) => {
-      if (e.button !== 0) return;
-      const current = segmentsRef.current[id.imageId];
-      if (!current) return;
-      const ready = current.entries.find(
-        (x): x is TagSegment & { status: 'ready' } =>
-          x.status === 'ready' && x.tag.toLowerCase() === id.tag.toLowerCase(),
-      );
-      if (!ready) return;
-      const mask = ready.response.masks[id.maskIndex];
-      if (!mask || !mask.bbox) return;
-      const mediaItem = mediaRef.current.find((m) => m.id === id.imageId);
-      if (!mediaItem || mediaItem.kind !== 'image') return;
-      const fx = mediaItem.width / mask.width;
-      const fy = mediaItem.height / mask.height;
-      const before: ReadyMaskEntry = {
-        tag: ready.tag,
-        status: 'ready',
-        response: {
-          ...ready.response,
-          masks: ready.response.masks.map((mm) => ({ ...mm })),
-        },
-      };
-      bboxResizeRef.current = {
-        pointerId: e.pointerId,
-        handle,
-        imageId: id.imageId,
-        tag: ready.tag,
-        maskIndex: id.maskIndex,
-        startBbox: [...mask.bbox] as [number, number, number, number],
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        fx,
-        fy,
-        maskW: mask.width,
-        maskH: mask.height,
-        before,
-        moved: false,
-      };
-      try {
-        (e.currentTarget as Element).setPointerCapture(e.pointerId);
-      } catch {
-        // pointer capture can fail mid-transition; drag still tracked via ref.
-      }
-      e.stopPropagation();
-      e.preventDefault();
-    },
-    [],
-  );
-
-  const handleBboxResizePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLSpanElement>) => {
-      const s = bboxResizeRef.current;
-      if (!s || s.pointerId !== e.pointerId) return;
-      const next = computeResizedBbox(s, e.clientX, e.clientY);
-      if (!s.moved) {
-        const dx = Math.abs(e.clientX - s.startClientX);
-        const dy = Math.abs(e.clientY - s.startClientY);
-        if (dx < 1 && dy < 1) return;
-        s.moved = true;
-        setActiveResize(s.handle);
-      }
-      applyBboxToSegments(s.imageId, s.tag, s.maskIndex, next);
-    },
-    [applyBboxToSegments],
-  );
-
-  const handleBboxResizePointerUp = useCallback(
-    (e: React.PointerEvent<HTMLSpanElement>) => {
-      const s = bboxResizeRef.current;
-      if (!s || s.pointerId !== e.pointerId) return;
-      try {
-        (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-      } catch {
-        // Already released or the element is gone; nothing to do.
-      }
-      bboxResizeRef.current = null;
-      setActiveResize(null);
-      if (!s.moved) return;
-      const finalBbox = computeResizedBbox(s, e.clientX, e.clientY);
-      const before = s.before;
-      const after: ReadyMaskEntry = {
-        tag: before.tag,
-        status: 'ready',
-        response: {
-          ...before.response,
-          masks: before.response.masks.map((mm, i) =>
-            i === s.maskIndex ? { ...mm, bbox: finalBbox } : mm,
-          ),
-        },
-      };
-      // Segments already reflect `after` from the last pointermove, so do()
-      // reapplies an equivalent state but still triggers the upsert — mirrors
-      // the deleteMaskEntry call site which does the same alreadyApplied dance.
-      const entry = resizeBboxEntry({
-        projectId,
-        imageId: s.imageId,
-        tag: s.tag,
-        maskIndex: s.maskIndex,
-        before,
-        after,
-        replaceTag: replaceReadyTag,
-        onConn: setConn,
-      });
-      entry.do();
-      history.push(entry, { alreadyApplied: true });
-    },
-    [history, replaceReadyTag],
-  );
+  const {
+    activeResize,
+    handlePointerDown: handleBboxResizePointerDown,
+    handlePointerMove: handleBboxResizePointerMove,
+    handlePointerUp: handleBboxResizePointerUp,
+  } = useBboxResizeGesture({
+    projectId,
+    viewRef,
+    mediaRef,
+    segmentsRef,
+    setSegments,
+    setConn,
+    history,
+    replaceReadyTag,
+  });
 
   const initial = useMemo<Partial<View>>(() => getInitialView(), []);
 
