@@ -31,6 +31,7 @@ import { useCanvasKeyboardShortcuts } from './features/canvas/hooks/useCanvasKey
 import { useLodSetup } from './features/canvas/hooks/useLodSetup';
 import { useDropHandler } from './features/canvas/hooks/useDropHandler';
 import { useSelectionDerived } from './features/canvas/hooks/useSelectionDerived';
+import { useVisibleMedia } from './features/canvas/hooks/useVisibleMedia';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -58,11 +59,6 @@ import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
 import {
-  computeLabelPlacements,
-  type LabelPlacement,
-} from './lib/labelPlacement';
-import { labelOuterWidth } from './lib/labelMetrics';
-import {
   type MaskIdentity,
   type ReadyMaskEntry,
 } from './features/segmentation';
@@ -84,7 +80,6 @@ import {
   writeStoredView,
 } from './lib/canvasView';
 import {
-  CULL_BUFFER_FACTOR,
   DRAG_THRESHOLD_PX,
   DRAW_BOX_MIN_SIZE_PX,
   HIGHLIGHT_BOTTOM_INSET_PX,
@@ -97,6 +92,7 @@ import {
   writeStoredStackOrder,
   type CanvasMedia,
   type ConnState,
+  type DragState,
   type MediaPointerEvent,
   type PendingBoxLabel,
   type SegMask,
@@ -179,6 +175,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const viewRef = useRef<View>(view);
   viewRef.current = view;
 
+  const dragRef = useRef<DragState | null>(null);
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
   const clearSelectionRef = useRef<() => void>(() => {});
@@ -204,47 +201,15 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const visibleMedia = useMemo(() => {
-    if (!viewport.w || !viewport.h || !media.length) return media;
-    const padX = viewport.w * CULL_BUFFER_FACTOR;
-    const padY = viewport.h * CULL_BUFFER_FACTOR;
-    const minX = (-view.x - padX) / view.scale;
-    const minY = (-view.y - padY) / view.scale;
-    const maxX = (viewport.w - view.x + padX) / view.scale;
-    const maxY = (viewport.h - view.y + padY) / view.scale;
-    const draggingIds = dragRef.current?.orig;
-    return media.filter((m) => {
-      if (selectedIds.has(m.id) || m.id === hoverId) return true;
-      if (draggingIds && draggingIds.has(m.id)) return true;
-      return (
-        m.x + m.width >= minX &&
-        m.y + m.height >= minY &&
-        m.x <= maxX &&
-        m.y <= maxY
-      );
-    });
-  }, [media, view, viewport, selectedIds, hoverId]);
-
-  // Canvas paint order: apply `stackOrder` on top of `visibleMedia`. Items not
-  // yet ranked (freshly loaded or uploaded before the sync effect runs) sort
-  // below ranked ones, breaking ties by their media-array position.
-  const paintMedia = useMemo(() => {
-    if (visibleMedia.length <= 1) return visibleMedia;
-    const rank = new Map<string, number>();
-    stackOrder.forEach((id, i) => rank.set(id, i));
-    const fallback = new Map<string, number>();
-    media.forEach((m, i) => fallback.set(m.id, i));
-    const items = [...visibleMedia];
-    items.sort((a, b) => {
-      const ra = rank.get(a.id);
-      const rb = rank.get(b.id);
-      if (ra !== undefined && rb !== undefined) return ra - rb;
-      if (ra !== undefined) return 1;
-      if (rb !== undefined) return -1;
-      return (fallback.get(a.id) ?? 0) - (fallback.get(b.id) ?? 0);
-    });
-    return items;
-  }, [visibleMedia, stackOrder, media]);
+  const { visibleMedia, paintMedia, labelPlacements } = useVisibleMedia({
+    media,
+    stackOrder,
+    view,
+    viewport,
+    selectedIds,
+    hoverId,
+    getDraggingIds: () => dragRef.current?.orig.keys() ?? null,
+  });
 
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
   const { lodCache, lodSources, priorityIds, setPriorityIds, dropAsset } =
@@ -261,22 +226,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     });
 
 
-  // Label placement: per-item corner (tl/tr/bl/br) chosen so the filename
-  // badge doesn't land over a strictly-higher-stacked neighbor. Rank comes
-  // from `stackOrder` (canvas paint order) with a fallback index in
-  // `media` for items not yet synced into it.
-  const labelPlacements = useMemo(() => {
-    const rankMap = new Map<string, number>();
-    const baseOffset = media.length;
-    media.forEach((m, i) => rankMap.set(m.id, i));
-    stackOrder.forEach((id, i) => rankMap.set(id, baseOffset + i));
-    return computeLabelPlacements({
-      items: paintMedia,
-      rank: (id) => rankMap.get(id) ?? -1,
-      scale: view.scale,
-      labelWidth: labelOuterWidth,
-    });
-  }, [paintMedia, media, stackOrder, view.scale]);
 
   useEffect(() => {
     const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
@@ -459,7 +408,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   });
 
   const {
-    dragRef,
     shiftToggledRef,
     beginDrag,
     handlePointerMove: handleMediaPointerMove,
@@ -468,6 +416,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     viewRef,
     mediaRef,
     selectedIdsRef,
+    dragRef,
     setMedia,
     setConn,
     history,

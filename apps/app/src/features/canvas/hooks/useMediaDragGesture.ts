@@ -22,6 +22,8 @@ type Args = {
   viewRef: RefObject<View>;
   mediaRef: RefObject<CanvasMedia[]>;
   selectedIdsRef: RefObject<Set<string>>;
+  /** Caller-owned ref so useVisibleMedia can keep dragging items in view. */
+  dragRef: MutableRefObject<DragState | null>;
   setMedia: React.Dispatch<React.SetStateAction<CanvasMedia[]>>;
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   history: UseHistoryReturn<CanvasActionMeta>;
@@ -49,12 +51,12 @@ export function useMediaDragGesture({
   viewRef,
   mediaRef,
   selectedIdsRef,
+  dragRef,
   setMedia,
   setConn,
   history,
   bringToFront,
 }: Args): MediaDragGesture {
-  const dragRef = useRef<DragState | null>(null);
   const shiftToggledRef = useRef(false);
 
   const beginDrag = useCallback(
