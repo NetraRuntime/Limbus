@@ -7,13 +7,7 @@ import {
   type WorldPoint,
   type WorldRect,
 } from './InfiniteCanvas';
-import {
-  hardDeleteImage,
-  hardDeleteVideo,
-  listTrashed,
-  type ImageRecord,
-  type VideoRecord,
-} from './lib/pb';
+import type { ImageRecord, VideoRecord } from './lib/pb';
 import { colorForTag, useSavedTags } from './components/savedTags';
 import { MediaItem } from './features/canvas/components/MediaItem';
 import { BakeForImage } from './features/canvas/components/BakeForImage';
@@ -32,6 +26,8 @@ import { useLodSetup } from './features/canvas/hooks/useLodSetup';
 import { useDropHandler } from './features/canvas/hooks/useDropHandler';
 import { useSelectionDerived } from './features/canvas/hooks/useSelectionDerived';
 import { useVisibleMedia } from './features/canvas/hooks/useVisibleMedia';
+import { useTrashSweep } from './features/canvas/hooks/useTrashSweep';
+import { useStackOrder } from './features/canvas/hooks/useStackOrder';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -83,13 +79,9 @@ import {
   DRAG_THRESHOLD_PX,
   DRAW_BOX_MIN_SIZE_PX,
   HIGHLIGHT_BOTTOM_INSET_PX,
-  STACK_ORDER_PERSIST_DEBOUNCE_MS,
-  deleteImageEncoding,
   genBoxId,
   medianLongestSide,
-  readStoredStackOrder,
   uid,
-  writeStoredStackOrder,
   type CanvasMedia,
   type ConnState,
   type DragState,
@@ -136,11 +128,11 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
 
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
   // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
+  const initialMediaLoadedRef = useRef<boolean>(false);
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
   // Paint order (bottom → top); separate from `media` so raise-to-top doesn't reshuffle sidebar.
-  const [stackOrder, setStackOrder] = useState<string[]>(readStoredStackOrder);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
@@ -201,6 +193,11 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const { stackOrder, setStackOrder, bringToFront } = useStackOrder({
+    media,
+    initialMediaLoadedRef,
+  });
+
   const { visibleMedia, paintMedia, labelPlacements } = useVisibleMedia({
     media,
     stackOrder,
@@ -231,14 +228,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [view]);
-
-  useEffect(() => {
-    const t = window.setTimeout(
-      () => writeStoredStackOrder(stackOrder),
-      STACK_ORDER_PERSIST_DEBOUNCE_MS,
-    );
-    return () => window.clearTimeout(t);
-  }, [stackOrder]);
 
   const {
     segments,
@@ -285,119 +274,22 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       setMultiHighlightInput,
     });
 
-  const { initialMediaLoadedRef } = useCanvasHydration({
+  useCanvasHydration({
     projectId,
     canvasRef,
     initialHadStoredView,
+    initialMediaLoadedRef,
     setMedia,
     setSegments,
     setConn,
   });
 
   // Launch-time sweep: hard-delete PB records soft-deleted more than 1 hour
-  // ago. Catches sessions that ended before an entry could be evicted from
-  // the history stack (quits, crashes, or idle closes).
-  //
-  // Gated on `conn` reaching a terminal state so the sweep doesn't contend
-  // with initial hydration for network/main-thread time, and deferred to an
-  // idle callback so it never delays first paint.
-  const didSweepRef = useRef(false);
-  useEffect(() => {
-    if (conn === 'connecting') return;
-    if (didSweepRef.current) return;
-    didSweepRef.current = true;
-
-    let cancelled = false;
-    const runSweep = () => {
-      const ONE_HOUR_MS = 60 * 60 * 1000;
-      void listTrashed(projectId, { olderThanMs: ONE_HOUR_MS })
-        .then(({ images, videos }) => {
-          if (cancelled) return;
-          for (const img of images) {
-            void hardDeleteImage(img.id)
-              .then(() => {
-                void deleteImageEncoding(img.id);
-              })
-              .catch((err) => {
-                console.warn('[history] sweep hardDeleteImage failed', img.id, err);
-              });
-          }
-          for (const vid of videos) {
-            void hardDeleteVideo(vid.id).catch((err) => {
-              console.warn('[history] sweep hardDeleteVideo failed', vid.id, err);
-            });
-          }
-        })
-        .catch((err) => {
-          console.warn('[history] trash sweep failed', err);
-        });
-    };
-
-    let cancelSchedule: () => void;
-    if (typeof window.requestIdleCallback === 'function') {
-      const handle = window.requestIdleCallback(runSweep);
-      cancelSchedule = () => window.cancelIdleCallback(handle);
-    } else {
-      const handle = window.setTimeout(runSweep, 0);
-      cancelSchedule = () => window.clearTimeout(handle);
-    }
-
-    return () => {
-      cancelled = true;
-      cancelSchedule();
-    };
-  }, [conn]);
+  useTrashSweep({ projectId, conn });
 
   const lastSelectedIdRef = useRef(lastSelectedId);
   lastSelectedIdRef.current = lastSelectedId;
 
-  // Keep `stackOrder` in step with `media` membership: new items get appended
-  // to the top of the stack, deleted items fall out. The relative order of
-  // already-tracked items is preserved so prior raises persist.
-  //
-  // Gated on initialMediaLoadedRef because `media` starts as `[]` while the
-  // PocketBase list call is in flight — running the sync against that empty
-  // transient would drop every hydrated id and wipe persisted stacking order.
-  useEffect(() => {
-    if (!initialMediaLoadedRef.current) return;
-    setStackOrder((prev) => {
-      const currentIds = new Set(media.map((m) => m.id));
-      const kept = prev.filter((id) => currentIds.has(id));
-      const keptSet = new Set(kept);
-      const added: string[] = [];
-      for (const m of media) {
-        if (!keptSet.has(m.id)) added.push(m.id);
-      }
-      if (added.length === 0 && kept.length === prev.length) return prev;
-      return [...kept, ...added];
-    });
-  }, [media]);
-
-  // Raise the given ids to the top of the canvas stacking order by moving
-  // them to the end of `stackOrder`. `media` itself is left untouched, so
-  // the sidebar (which renders `media` directly) does not reshuffle.
-  const bringToFront = useCallback((ids: Set<string>) => {
-    if (ids.size === 0) return;
-    setStackOrder((prev) => {
-      if (prev.length <= 1) return prev;
-      const below: string[] = [];
-      const raised: string[] = [];
-      for (const id of prev) {
-        if (ids.has(id)) raised.push(id);
-        else below.push(id);
-      }
-      if (raised.length === 0 || raised.length === prev.length) return prev;
-      let alreadyAtEnd = true;
-      for (let i = 0; i < raised.length; i++) {
-        if (prev[below.length + i] !== raised[i]) {
-          alreadyAtEnd = false;
-          break;
-        }
-      }
-      if (alreadyAtEnd) return prev;
-      return [...below, ...raised];
-    });
-  }, []);
 
   const { drawBoxPreview, drawBoxRef, beginDraw } = useDrawBoxGesture({
     viewRef,

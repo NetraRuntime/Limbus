@@ -25,14 +25,11 @@ type Args = {
   projectId: string;
   canvasRef: RefObject<InfiniteCanvasHandle>;
   initialHadStoredView: RefObject<boolean>;
+  /** Owned by the caller so consumers (stack-order sync) can gate on it. */
+  initialMediaLoadedRef: React.MutableRefObject<boolean>;
   setMedia: React.Dispatch<React.SetStateAction<CanvasMedia[]>>;
   setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
-};
-
-export type CanvasHydration = {
-  initialMediaLoadedRef: RefObject<boolean>;
-  didInitialFitRef: RefObject<boolean>;
 };
 
 /**
@@ -46,11 +43,11 @@ export function useCanvasHydration({
   projectId,
   canvasRef,
   initialHadStoredView,
+  initialMediaLoadedRef,
   setMedia,
   setSegments,
   setConn,
-}: Args): CanvasHydration {
-  const initialMediaLoadedRef = useRef<boolean>(false);
+}: Args): void {
   const didInitialFitRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -144,5 +141,5 @@ export function useCanvasHydration({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { initialMediaLoadedRef, didInitialFitRef };
+  void didInitialFitRef;
 }
