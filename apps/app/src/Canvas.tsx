@@ -16,16 +16,12 @@ import {
   deleteVideo,
   hardDeleteImage,
   hardDeleteVideo,
-  listImages,
-  listSegmentations,
   listTrashed,
-  listVideos,
   updateImagePosition,
   updateVideoPosition,
   upsertSegmentation,
   type ImageRecord,
   type MediaKind,
-  type SegmentationRecord,
   type VideoRecord,
 } from './lib/pb';
 import { HighlightInput } from './components/HighlightInput';
@@ -35,6 +31,8 @@ import { BakeForImage } from './features/canvas/components/BakeForImage';
 import { useWindowKeydown } from './features/canvas/hooks/useWindowKeydown';
 import { useHoverState } from './features/canvas/hooks/useHoverState';
 import { useUploadPipeline } from './features/canvas/hooks/useUploadPipeline';
+import { useToolMode } from './features/canvas/hooks/useToolMode';
+import { useCanvasHydration } from './features/canvas/hooks/useCanvasHydration';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -60,7 +58,6 @@ import {
   type LabelPlacement,
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
-import { groupSegmentationsByImage } from './lib/segmentations';
 import {
   SegmentBakeLayer,
   BboxOverlayLayer,
@@ -128,12 +125,10 @@ import {
   STACK_ORDER_PERSIST_DEBOUNCE_MS,
   describeDrop,
   deleteImageEncoding,
-  fromImageRecord,
-  fromVideoRecord,
+  exportMedia,
   genBoxId,
   loadImage,
   loadVideo,
-  mediaBounds,
   medianLongestSide,
   normalizeUploadSize,
   readStoredStackOrder,
@@ -206,9 +201,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   }, []);
 
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
-  const didInitialFitRef = useRef<boolean>(false);
   // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
-  const initialMediaLoadedRef = useRef<boolean>(false);
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
@@ -243,16 +236,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const [pendingBoxLabel, setPendingBoxLabel] = useState<PendingBoxLabel | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [tool, setTool] = useState<CanvasTool>('drag');
-  const toolRef = useRef(tool);
-  toolRef.current = tool;
-
-  useEffect(() => {
-    document.body.dataset.canvasTool = tool;
-    return () => {
-      delete document.body.dataset.canvasTool;
-    };
-  }, [tool]);
+  const { tool, setTool, toolRef } = useToolMode();
 
   const history = useHistory<CanvasActionMeta>({
     limit: 100,
@@ -497,102 +481,14 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     return () => window.clearTimeout(t);
   }, [stackOrder]);
 
-  useEffect(() => {
-    // `tauri dev` starts Vite before the Rust binary can boot the
-    // PocketBase sidecar, so the first fetch from this effect often
-    // races and hits ECONNREFUSED. Retry on a flat 500ms interval
-    // until we get at least one successful list — PB is local, so
-    // polling is cheap and the user only sees 'offline' for a few
-    // hundred ms after PB is reachable. Stops on unmount.
-    const RETRY_MS = 500;
-    let cancelled = false;
-    let retryTimer: number | null = null;
-    let loaded = false;
-    const load = () => {
-      void Promise.all([
-        listImages(projectId).then(
-          (r) => ({ ok: true as const, records: r }),
-          (err) => {
-            console.warn('[pb] failed to load images:', err);
-            return { ok: false as const, records: [] as ImageRecord[] };
-          },
-        ),
-        listVideos(projectId).then(
-          (r) => ({ ok: true as const, records: r }),
-          (err) => {
-            console.warn('[pb] failed to load videos:', err);
-            return { ok: false as const, records: [] as VideoRecord[] };
-          },
-        ),
-        listSegmentations(projectId).then(
-          (r) => r,
-          (err) => {
-            console.warn('[pb] failed to load segmentations:', err);
-            return [] as SegmentationRecord[];
-          },
-        ),
-      ]).then(([imgRes, vidRes, segRows]) => {
-        if (cancelled) return;
-        const anyOk = imgRes.ok || vidRes.ok;
-        if (!anyOk) {
-          setConn('offline');
-          retryTimer = window.setTimeout(load, RETRY_MS);
-          return;
-        }
-        if (loaded) return;
-        loaded = true;
-        const merged: CanvasMedia[] = [
-          ...imgRes.records.map(fromImageRecord),
-          ...vidRes.records.map(fromVideoRecord),
-        ];
-        merged.sort((a, b) => a.id.localeCompare(b.id));
-        setMedia(merged);
-
-        const grouped = groupSegmentationsByImage(segRows);
-        if (grouped.size > 0) {
-          const initial: Record<string, SegmentState> = {};
-          for (const [imageId, rows] of grouped) {
-            initial[imageId] = {
-              entries: rows.map((r) => ({
-                tag: r.tag,
-                status: 'ready' as const,
-                response: {
-                  masks: r.masks,
-                  source_width: r.source_width,
-                  source_height: r.source_height,
-                },
-              })),
-            };
-          }
-          setSegments((prev) => ({ ...initial, ...prev }));
-        }
-        initialMediaLoadedRef.current = true;
-        setConn('ready');
-
-        if (
-          !initialHadStoredView.current &&
-          !didInitialFitRef.current &&
-          merged.length > 0
-        ) {
-          const bounds = mediaBounds(merged);
-          if (bounds) {
-            didInitialFitRef.current = true;
-            requestAnimationFrame(() => {
-              canvasRef.current?.focusOn(bounds, {
-                animate: false,
-                bottomInset: HIGHLIGHT_BOTTOM_INSET_PX,
-              });
-            });
-          }
-        }
-      });
-    };
-    load();
-    return () => {
-      cancelled = true;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-    };
-  }, []);
+  const { initialMediaLoadedRef } = useCanvasHydration({
+    projectId,
+    canvasRef,
+    initialHadStoredView,
+    setMedia,
+    setSegments,
+    setConn,
+  });
 
   // Launch-time sweep: hard-delete PB records soft-deleted more than 1 hour
   // ago. Catches sessions that ended before an entry could be evicted from
@@ -1855,42 +1751,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setContextMenu({ id, x: e.clientX, y: e.clientY });
   }, [clearHideTimer]);
 
-  const exportMedia = useCallback(async (m: CanvasMedia) => {
-    const extFromName = m.name && /\.[a-z0-9]+$/i.test(m.name)
-      ? m.name.match(/\.[a-z0-9]+$/i)![0]
-      : m.kind === 'video' ? '.mp4' : '.png';
-    const filename = m.name && /\.[a-z0-9]+$/i.test(m.name)
-      ? m.name
-      : `${m.name || m.id}${extFromName}`;
-
-    const triggerDownload = (href: string, revoke: boolean) => {
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = filename;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // Revoke on the next tick so Safari has time to start the download.
-      if (revoke) window.setTimeout(() => URL.revokeObjectURL(href), 1000);
-    };
-
-    try {
-      if (m.pending) {
-        // Local blob: URL — safe to use directly.
-        triggerDownload(m.src, false);
-        return;
-      }
-      const res = await fetch(m.src, { credentials: 'include' });
-      if (!res.ok) throw new Error(`fetch ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      triggerDownload(url, true);
-    } catch (err) {
-      console.warn('[export] download failed for', m.id, err);
-      triggerDownload(m.src, false);
-    }
-  }, []);
 
   const handleSidebarSelect = useCallback(
     (id: string) => {

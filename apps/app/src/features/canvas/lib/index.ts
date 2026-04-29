@@ -7,3 +7,4 @@ export * from './sam3Encoding';
 export * from './stackOrder';
 export * from './describeDrop';
 export * from './subscribeWindowDrag';
+export * from './exportMedia';
