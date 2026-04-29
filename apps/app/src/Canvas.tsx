@@ -28,6 +28,7 @@ import { useDrawBoxGesture } from './features/canvas/hooks/useDrawBoxGesture';
 import { useMediaDragGesture } from './features/canvas/hooks/useMediaDragGesture';
 import { useSelectionActions } from './features/canvas/hooks/useSelectionActions';
 import { useCanvasKeyboardShortcuts } from './features/canvas/hooks/useCanvasKeyboardShortcuts';
+import { useLodSetup } from './features/canvas/hooks/useLodSetup';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -78,14 +79,6 @@ import {
 import { subscribeTauriDrops } from './lib/tauriDragDrop';
 import type { AnnotationFormat, AnnotationPlan } from './lib/annotations';
 import { useImportPreview } from './hooks/useImportPreview';
-import {
-  createLodCache,
-  createMipWorkerClient,
-  useLodHydration,
-  useLodSources,
-  type LodCache,
-  type MipWorkerClient,
-} from './features/lod';
 import {
   DeletedBanner,
   useProject,
@@ -150,30 +143,12 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const settingsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
 
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
-  const [lodCache, setLodCache] = useState<LodCache | null>(null);
-  const [lodWorker, setLodWorker] = useState<MipWorkerClient | null>(null);
 
   const getLodCanvas = useCallback((): HTMLCanvasElement | null => {
     const el = document.querySelector('canvas.lod-layer');
     return el instanceof HTMLCanvasElement ? el : null;
   }, []);
   useProjectThumbnail(projectId, getLodCanvas);
-
-  useEffect(() => {
-    let cancelled = false;
-    createLodCache()
-      .then((c) => {
-        if (!cancelled) setLodCache(c);
-      })
-      .catch((err) => console.warn('[lod] cache open failed', err));
-    const worker = createMipWorkerClient();
-    setLodWorker(worker);
-    return () => {
-      cancelled = true;
-      worker?.terminate();
-      setLodWorker(null);
-    };
-  }, []);
 
   const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
   // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
@@ -354,26 +329,8 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   }, [visibleMedia, stackOrder, media]);
 
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const lodItems = useMemo(
-    () =>
-      paintMedia
-        .filter((m) => !m.pending)
-        .map((m) => ({
-          id: m.id,
-          kind: m.kind,
-          src: m.src,
-          width: m.width,
-          height: m.height,
-        })),
-    [paintMedia],
-  );
-  const { sources: lodSources, reportLevelBlob, reportDims, dropAsset } = useLodSources({
-    items: lodItems,
-    viewScale: view.scale,
-    dpr,
-    cache: lodCache,
-  });
-  const [priorityIds, setPriorityIds] = useState<Set<string>>(() => new Set());
+  const { lodCache, lodSources, priorityIds, setPriorityIds, dropAsset } =
+    useLodSetup({ paintMedia, media, viewScale: view.scale, dpr });
 
   const { uploadStatus, encodingIds, runUploadPlan, abortUpload } =
     useUploadPipeline({
@@ -385,50 +342,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       history,
     });
 
-  const hydrationItems = useMemo(
-    () =>
-      media
-        .filter((m) => !m.pending)
-        .map((m) => ({
-          id: m.id,
-          kind: m.kind,
-          src: m.src,
-          priority: priorityIds.has(m.id),
-        })),
-    [media, priorityIds],
-  );
-
-  const handleLevelReady = useCallback(
-    (e: { assetId: string; levelPx: number; blob: Blob }) => {
-      reportLevelBlob(e.assetId, e.levelPx, e.blob);
-    },
-    [reportLevelBlob],
-  );
-
-  const handleAssetReady = useCallback(
-    (id: string) => {
-      setPriorityIds((prev) => {
-        if (!prev.has(id)) return prev;
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      if (lodCache) {
-        void lodCache.getDims(id).then((d) => {
-          if (d) reportDims(id, d.naturalWidth, d.naturalHeight);
-        });
-      }
-    },
-    [lodCache, reportDims],
-  );
-
-  useLodHydration({
-    items: hydrationItems,
-    cache: lodCache,
-    worker: lodWorker,
-    onLevelReady: handleLevelReady,
-    onAssetReady: handleAssetReady,
-  });
 
   // Label placement: per-item corner (tl/tr/bl/br) chosen so the filename
   // badge doesn't land over a strictly-higher-stacked neighbor. Rank comes
