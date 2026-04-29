@@ -251,10 +251,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     history,
     bringToFront,
   });
-  // Bbox drag-resize on the selected mask. Live edits run through setSegments
-  // for instant visual feedback; history is pushed once on pointerup so an
-  // entire drag is a single undo step. Eight handles total: four corners for
-  // diagonal resize and four edge midpoints for single-axis resize.
+  
   const {
     activeResize,
     handlePointerDown: handleBboxResizePointerDown,
