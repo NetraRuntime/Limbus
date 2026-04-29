@@ -15,3 +15,5 @@ export { CanvasTopHud } from './CanvasTopHud';
 export { CanvasBottomHud } from './CanvasBottomHud';
 export { CanvasAppControlsHud } from './CanvasAppControlsHud';
 export { TagInputLayer } from './TagInputLayer';
+export { BoxCrosshair } from './BoxCrosshair';
+export { ActiveTagListLayer } from './ActiveTagListLayer';

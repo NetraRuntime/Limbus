@@ -47,12 +47,13 @@ import {
   CanvasBottomHud,
   CanvasAppControlsHud,
   TagInputLayer,
+  BoxCrosshair,
+  ActiveTagListLayer,
 } from './features/canvas/components/layers';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import type { SearchItem } from './components/MediaSearchPalette';
 import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
-import { MediaTagList } from './components/MediaTagList';
-import { useAutoLiquidGlassFilter } from './components/LiquidGlass';
+import { useCanvasGlass } from './features/canvas/hooks/useCanvasGlass';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
 import {
@@ -90,7 +91,6 @@ import {
   type PendingBoxLabel,
   type SegMask,
   type SegmentState,
-  type TagSegment,
   type UploadPlan,
   type UserBox,
 } from './features/canvas/lib';
@@ -113,11 +113,13 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   }, [projectId, projectState]);
 
   const { remember: rememberSavedTag } = useSavedTags(projectId);
-  const searchPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
-  const statusPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
-  const controlsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
-  const wordmarkGlass = useAutoLiquidGlassFilter({ radius: 10 });
-  const settingsPillGlass = useAutoLiquidGlassFilter({ radius: 999 });
+  const {
+    searchPillGlass,
+    statusPillGlass,
+    controlsPillGlass,
+    wordmarkGlass,
+    settingsPillGlass,
+  } = useCanvasGlass();
 
   const canvasRef = useRef<InfiniteCanvasHandle>(null);
 
@@ -540,39 +542,13 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         segments={segments}
       />
 
-      {tool === 'box' && activeMedia && activeRect && cursor && (() => {
-        const cx = cursor.worldX * view.scale + view.x;
-        const cy = cursor.worldY * view.scale + view.y;
-        if (
-          cx < activeRect.x ||
-          cx > activeRect.x + activeRect.width ||
-          cy < activeRect.y ||
-          cy > activeRect.y + activeRect.height
-        ) {
-          return null;
-        }
-        return (
-          <div
-            className="box-crosshair"
-            aria-hidden
-            style={{
-              left: activeRect.x,
-              top: activeRect.y,
-              width: activeRect.width,
-              height: activeRect.height,
-            }}
-          >
-            <span
-              className="box-crosshair-line is-vertical"
-              style={{ left: cx - activeRect.x }}
-            />
-            <span
-              className="box-crosshair-line is-horizontal"
-              style={{ top: cy - activeRect.y }}
-            />
-          </div>
-        );
-      })()}
+      <BoxCrosshair
+        tool={tool}
+        activeMedia={activeMedia}
+        activeRect={activeRect}
+        cursor={cursor}
+        view={view}
+      />
 
       {activeMedia && activeRect && (
         <MediaToolbar
@@ -584,38 +560,16 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         />
       )}
 
-      {activeMedia &&
-        activeRect &&
-        activeMedia.kind === 'image' &&
-        (segments[activeMedia.id]?.entries.length ?? 0) > 0 && (
-          <MediaTagList
-            rect={activeRect}
-            entries={(() => {
-              // Dedup by tag: two box entries can share a label ("cat"/"cat");
-              // the chip list only shows one per label. Prefer a 'ready' entry
-              // over loading/error so the final state wins visually.
-              const byTag = new Map<string, { tag: string; status: TagSegment['status'] }>();
-              for (const e of segments[activeMedia.id]!.entries) {
-                const key = e.tag.toLowerCase();
-                const prev = byTag.get(key);
-                if (!prev || (prev.status !== 'ready' && e.status === 'ready')) {
-                  byTag.set(key, { tag: e.tag, status: e.status });
-                }
-              }
-              return Array.from(byTag.values());
-            })()}
-            onRemove={(tag) => deleteAllMasksForTag(activeMedia.id, tag)}
-            onSelect={(tag) => {
-              // Toggle: re-clicking the current solo tag clears the filter.
-              setSoloTag((prev) =>
-                prev && prev.toLowerCase() === tag.toLowerCase() ? null : tag,
-              );
-            }}
-            soloTag={soloTag}
-            onMouseEnter={clearHideTimer}
-            onMouseLeave={scheduleHide}
-          />
-        )}
+      <ActiveTagListLayer
+        activeMedia={activeMedia}
+        activeRect={activeRect}
+        segments={segments}
+        soloTag={soloTag}
+        setSoloTag={setSoloTag}
+        onRemoveTag={deleteAllMasksForTag}
+        onMouseEnter={clearHideTimer}
+        onMouseLeave={scheduleHide}
+      />
 
 
       <MarqueeRect rect={marqueeRect} view={view} />
