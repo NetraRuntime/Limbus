@@ -17,7 +17,6 @@ import {
 import { colorForTag, useSavedTags } from './components/savedTags';
 import { MediaItem } from './features/canvas/components/MediaItem';
 import { BakeForImage } from './features/canvas/components/BakeForImage';
-import { useWindowKeydown } from './features/canvas/hooks/useWindowKeydown';
 import { useHoverState } from './features/canvas/hooks/useHoverState';
 import { useUploadPipeline } from './features/canvas/hooks/useUploadPipeline';
 import { useToolMode } from './features/canvas/hooks/useToolMode';
@@ -28,6 +27,7 @@ import { useMarqueeGesture } from './features/canvas/hooks/useMarqueeGesture';
 import { useDrawBoxGesture } from './features/canvas/hooks/useDrawBoxGesture';
 import { useMediaDragGesture } from './features/canvas/hooks/useMediaDragGesture';
 import { useSelectionActions } from './features/canvas/hooks/useSelectionActions';
+import { useCanvasKeyboardShortcuts } from './features/canvas/hooks/useCanvasKeyboardShortcuts';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -60,11 +60,9 @@ import {
 } from './lib/labelPlacement';
 import { labelOuterWidth } from './lib/labelMetrics';
 import {
-  nextSoloTag,
   type MaskIdentity,
   type ReadyMaskEntry,
 } from './features/segmentation';
-import { isTypingContext } from './lib/dom/isTypingContext';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import {
   createEntry,
@@ -668,158 +666,29 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       dropAsset,
     });
 
-  useWindowKeydown((e) => {
-      if (e.key === 'Escape') {
-        clearSelection();
-        return;
-      }
-      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        // The HighlightInput autofocuses when a single item is selected, so
-        // cycling lands us back in a typing context on every other press.
-        // Treat it as a navigation companion — Tab there still cycles.
-        const tgt = e.target instanceof Element ? e.target : null;
-        const activeEl =
-          document.activeElement instanceof Element ? document.activeElement : null;
-        const inHighlightInput =
-          tgt?.closest('.highlight-input') != null ||
-          activeEl?.closest('.highlight-input') != null;
-        if (!inHighlightInput && isTypingContext(e)) return;
-        const list = mediaRef.current.filter((m) => !m.pending);
-        if (list.length === 0) return;
-        e.preventDefault();
-        const selIds = selectedIdsRef.current;
-        const anchorId =
-          (lastSelectedIdRef.current && selIds.has(lastSelectedIdRef.current)
-            ? lastSelectedIdRef.current
-            : null) ??
-          (selIds.size > 0 ? Array.from(selIds).pop() ?? null : null);
-        const currentIndex = anchorId
-          ? list.findIndex((m) => m.id === anchorId)
-          : -1;
-        const dir = e.shiftKey ? -1 : 1;
-        const nextIndex =
-          currentIndex === -1
-            ? dir === 1
-              ? 0
-              : list.length - 1
-            : (currentIndex + dir + list.length) % list.length;
-        const target = list[nextIndex];
-        if (!target) return;
-        clearHideTimer();
-        setSelectedIds(new Set([target.id]));
-        setLastSelectedId(target.id);
-        setHoverId(target.id);
-        canvasRef.current?.focusOn(
-          { x: target.x, y: target.y, width: target.width, height: target.height },
-          { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-        );
-        return;
-      }
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.altKey &&
-        !e.shiftKey &&
-        e.key.toLowerCase() === 'a'
-      ) {
-        if (isTypingContext(e)) return;
-        e.preventDefault();
-        selectAll();
-        return;
-      }
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.altKey &&
-        !e.shiftKey &&
-        e.key.toLowerCase() === 'd'
-      ) {
-        e.preventDefault();
-        if (selectedIdsRef.current.size === 0) return;
-        void duplicateSelection();
-        return;
-      }
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      if (isTypingContext(e)) return;
-      if (selectedIdsRef.current.size === 0) return;
-      e.preventDefault();
-      deleteSelection();
-    }, { capture: true });
-
-  // Tool shortcuts — only meaningful while the floating media toolbar is
-  // visible, which is exactly when there's an active media. Keep them off
-  // when the user is typing (label input, popovers, etc).
-  useWindowKeydown((e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isTypingContext(e)) return;
-      const k = e.key.toLowerCase();
-      if (k === 'v') {
-        e.preventDefault();
-        setTool('drag');
-      } else if (k === 'b') {
-        e.preventDefault();
-        setTool('box');
-      }
-    }, { enabled: !!activeMedia });
-
-  useWindowKeydown((e) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      if (!selectedMask) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      e.preventDefault();
-      deleteMask(selectedMask);
-    });
-
-  useWindowKeydown((e) => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      if (isTypingContext(e)) return;
-      if (!activeMedia || activeMedia.kind !== 'image') return;
-      if (!soloTag) return;
-      const entries = segmentsRef.current?.[activeMedia.id]?.entries;
-      if (!entries || entries.length === 0) return;
-      const dir = e.key === 'ArrowDown' ? 'next' : 'prev';
-      const next = nextSoloTag(
-        soloTag,
-        entries.map((en) => ({ tag: en.tag, status: en.status })),
-        dir,
-      );
-      if (!next) return;
-      e.preventDefault();
-      setSoloTag(next);
-    });
-
-  useWindowKeydown((e) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isTypingContext(e)) return;
-      if (!activeMedia || activeMedia.kind !== 'image') return;
-      if (!soloTag) return;
-      // Defer to the existing mask-delete handler when a specific mask is
-      // selected — that path deletes one mask, not the whole tag.
-      if (selectedMask) return;
-      // The pill's own button-level onKeyDown already handles Delete when a
-      // pill is focused. Skip here to avoid double-firing (and pushing two
-      // history entries) as the native event bubbles to window.
-      const target = e.target instanceof Element ? e.target : null;
-      if (target?.closest('.media-tag-list')) return;
-      e.preventDefault();
-      deleteAllMasksForTag(activeMedia.id, soloTag);
-    });
-
-  useWindowKeydown((e) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.altKey || e.shiftKey) return;
-      if (e.key.toLowerCase() !== 'k') return;
-      e.preventDefault();
-      setSearchOpen((o) => !o);
-    }, { capture: true });
+  useCanvasKeyboardShortcuts({
+    canvasRef,
+    mediaRef,
+    selectedIdsRef,
+    lastSelectedIdRef,
+    segmentsRef,
+    activeMedia,
+    selectedMask,
+    soloTag,
+    setSelectedIds,
+    setLastSelectedId,
+    setHoverId,
+    setSoloTag,
+    setSearchOpen,
+    setTool,
+    clearHideTimer,
+    clearSelection,
+    selectAll,
+    duplicateSelection,
+    deleteSelection,
+    deleteMask,
+    deleteAllMasksForTag,
+  });
 
   const searchItems = useMemo<SearchItem[]>(
     () =>
