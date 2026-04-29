@@ -24,7 +24,6 @@ import {
   type MediaKind,
   type VideoRecord,
 } from './lib/pb';
-import { HighlightInput } from './components/HighlightInput';
 import { colorForTag, useSavedTags } from './components/savedTags';
 import { MediaItem } from './features/canvas/components/MediaItem';
 import { BakeForImage } from './features/canvas/components/BakeForImage';
@@ -45,10 +44,15 @@ import {
   CanvasModals,
   ContextMenuLayer,
   BboxOverlayContainer,
+  SelectionHud,
+  SelectionBboxLayer,
+  EmptyState,
+  CanvasTopHud,
+  CanvasBottomHud,
+  CanvasAppControlsHud,
+  TagInputLayer,
 } from './features/canvas/components/layers';
 import { FloatingSidebar } from './components/FloatingSidebar';
-import { Sam3VersionBadge } from './components/Sam3VersionBadge';
-import { SavedTagsPopover } from './components/SavedTagsPopover';
 import type { SearchItem } from './components/MediaSearchPalette';
 import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
 import { MediaTagList } from './components/MediaTagList';
@@ -95,16 +99,13 @@ import {
   type MipWorkerClient,
 } from './features/lod';
 import {
-  ProjectChip,
   DeletedBanner,
   useProject,
   useProjectThumbnail,
 } from './features/projects';
-import { setCanvasTitle, focusHome } from './lib/windows';
+import { setCanvasTitle } from './lib/windows';
 import {
   VIEW_PERSIST_DEBOUNCE_MS,
-  formatZoom,
-  formatCoord,
   getInitialView,
   readStoredView,
   writeStoredView,
@@ -113,7 +114,6 @@ import {
   CULL_BUFFER_FACTOR,
   DRAG_THRESHOLD_PX,
   DRAW_BOX_MIN_SIZE_PX,
-  EMPTY_TAGS,
   HIGHLIGHT_BOTTOM_INSET_PX,
   STACK_ORDER_PERSIST_DEBOUNCE_MS,
   describeDrop,
@@ -2066,43 +2066,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           />
         )}
 
-      {activeMedia && activeRect && (
-        <HighlightInput
-          key={activeMedia.id}
-          rect={activeRect}
-          tags={highlightInputs[activeMedia.id] ?? (EMPTY_TAGS as string[])}
-          onTagsChange={(next) =>
-            setHighlightInputs((prev) => ({ ...prev, [activeMedia.id]: next }))
-          }
-          onMouseEnter={clearHideTimer}
-          onMouseLeave={scheduleHide}
-          onFocus={() => {
-            clearHideTimer();
-            setSelectedIds(new Set([activeMedia.id]));
-            setLastSelectedId(activeMedia.id);
-          }}
-          onBlur={() => {
-            const current = highlightInputs[activeMedia.id] ?? [];
-            if (current.length === 0) clearSelection();
-            scheduleHide();
-          }}
-          onEscape={() => {
-            clearSelection();
-            scheduleHide();
-          }}
-          onSubmit={(next) => {
-            submitSegment(activeMedia, next);
-            setHighlightInputs((prev) =>
-              activeMedia.id in prev
-                ? { ...prev, [activeMedia.id]: EMPTY_TAGS as string[] }
-                : prev,
-            );
-          }}
-          onDeleteWhenEmpty={deleteSelection}
-          autoFocus={selectedIds.has(activeMedia.id)}
-          projectId={projectId}
-        />
-      )}
 
       <MarqueeRect rect={marqueeRect} view={view} />
 
@@ -2134,237 +2097,50 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         viewport={viewport}
       />
 
-      {(() => {
-        // Viewport-space chrome for the currently-selected and currently-hovered
-        // masks. Rendered outside InfiniteCanvas so border weight, corner handles
-        // and the hover pill stay pixel-crisp at any zoom.
-        const activeId = activeMedia?.id ?? null;
-        const soloLower = soloTag ? soloTag.toLowerCase() : null;
-        const resolve = (id: MaskIdentity) => {
-          // Hide chrome when the mask's tag is filtered out on the active
-          // image. Leaves the underlying state intact — clearing solo will
-          // make the chrome reappear.
-          if (
-            soloLower &&
-            id.imageId === activeId &&
-            id.tag.toLowerCase() !== soloLower
-          ) {
-            return null;
-          }
-          const m = paintMedia.find((x) => x.id === id.imageId);
-          if (!m || m.kind !== 'image') return null;
-          const state = segments[id.imageId];
-          if (!state) return null;
-          // Match by entryId when present (two box entries can share a tag;
-          // the unique boxId pins down the right entry). Fall back to a
-          // tag-only match for text entries where boxId is absent.
-          const entry = state.entries.find((e) => {
-            if (e.status !== 'ready') return false;
-            if (id.entryId !== undefined) {
-              return e.kind === 'box' && e.boxId === id.entryId;
-            }
-            return e.tag.toLowerCase() === id.tag.toLowerCase();
-          });
-          if (!entry || entry.status !== 'ready') return null;
-          const mask = entry.response.masks[id.maskIndex];
-          if (!mask || !mask.bbox) return null;
-          const [x1, y1, x2, y2] = mask.bbox;
-          const fx = m.width / mask.width;
-          const fy = m.height / mask.height;
-          const wx = m.x + x1 * fx;
-          const wy = m.y + y1 * fy;
-          const ww = Math.max(1, (x2 - x1) * fx);
-          const wh = Math.max(1, (y2 - y1) * fy);
-          const { accent } = colorForTag(entry.tag);
-          return {
-            tag: entry.tag,
-            score: mask.score,
-            accent,
-            left: wx * view.scale + view.x,
-            top: wy * view.scale + view.y,
-            width: ww * view.scale,
-            height: wh * view.scale,
-          };
-        };
+      <SelectionHud
+        paintMedia={paintMedia}
+        view={view}
+        segments={segments}
+        selectedMask={selectedMask}
+        hoveredMask={hoveredMask}
+        activeId={activeMedia?.id ?? null}
+        soloTag={soloTag}
+        activeResize={activeResize}
+        onResizePointerDown={handleBboxResizePointerDown}
+        onResizePointerMove={handleBboxResizePointerMove}
+        onResizePointerUp={handleBboxResizePointerUp}
+      />
 
-        const selected = selectedMask ? resolve(selectedMask) : null;
-        const hoverId =
-          hoveredMask &&
-          (!selectedMask ||
-            hoveredMask.imageId !== selectedMask.imageId ||
-            hoveredMask.tag !== selectedMask.tag ||
-            hoveredMask.maskIndex !== selectedMask.maskIndex ||
-            hoveredMask.entryId !== selectedMask.entryId)
-            ? hoveredMask
-            : null;
-        const hover = hoverId ? resolve(hoverId) : null;
+      <SelectionBboxLayer
+        selectionBBox={selectionBBox}
+        marqueeRect={marqueeRect}
+        view={view}
+        selectedCount={selectedIds.size}
+      />
 
-        return (
-          <>
-            {selected && (
-              <>
-                <div
-                  key={`selected-${selectedMask!.imageId}-${selectedMask!.tag}-${selectedMask!.maskIndex}`}
-                  className="segment-mask-selected"
-                  style={
-                    {
-                      left: selected.left,
-                      top: selected.top,
-                      width: selected.width,
-                      height: selected.height,
-                      '--seg-accent': selected.accent,
-                    } as React.CSSProperties
-                  }
-                >
-                  {(['tl', 't', 'tr', 'r', 'br', 'b', 'bl', 'l'] as const).map(
-                    (corner) => (
-                      <span
-                        key={corner}
-                        className={`segment-mask-handle interactive ${corner}`}
-                        role="button"
-                        aria-label={`Resize ${corner}`}
-                        onPointerDown={(e) =>
-                          handleBboxResizePointerDown(e, selectedMask!, corner)
-                        }
-                        onPointerMove={handleBboxResizePointerMove}
-                        onPointerUp={handleBboxResizePointerUp}
-                        onPointerCancel={handleBboxResizePointerUp}
-                      />
-                    ),
-                  )}
-                </div>
-                {activeResize && (() => {
-                  // Precision guides through the edge(s) being dragged. Corner
-                  // handles move two edges and therefore light both axes; edge
-                  // handles move one edge and only light that axis.
-                  const vGuide: number | null =
-                    activeResize === 'tl' ||
-                    activeResize === 'bl' ||
-                    activeResize === 'l'
-                      ? selected.left
-                      : activeResize === 'tr' ||
-                          activeResize === 'br' ||
-                          activeResize === 'r'
-                        ? selected.left + selected.width
-                        : null;
-                  const hGuide: number | null =
-                    activeResize === 'tl' ||
-                    activeResize === 'tr' ||
-                    activeResize === 't'
-                      ? selected.top
-                      : activeResize === 'bl' ||
-                          activeResize === 'br' ||
-                          activeResize === 'b'
-                        ? selected.top + selected.height
-                        : null;
-                  return (
-                    <>
-                      {vGuide !== null && (
-                        <div
-                          className="bbox-resize-guide v"
-                          aria-hidden
-                          style={{ left: vGuide }}
-                        />
-                      )}
-                      {hGuide !== null && (
-                        <div
-                          className="bbox-resize-guide h"
-                          aria-hidden
-                          style={{ top: hGuide }}
-                        />
-                      )}
-                    </>
-                  );
-                })()}
-              </>
-            )}
-            {hover && (
-              <div
-                key={`hover-${hoverId!.imageId}-${hoverId!.tag}-${hoverId!.maskIndex}`}
-                className="segment-mask-hover"
-                aria-hidden
-                style={
-                  {
-                    left: hover.left,
-                    top: hover.top,
-                    width: hover.width,
-                    height: hover.height,
-                    '--seg-accent': hover.accent,
-                  } as React.CSSProperties
-                }
-              >
-                <span className="segment-mask-handle tl" />
-                <span className="segment-mask-handle tr" />
-                <span className="segment-mask-handle bl" />
-                <span className="segment-mask-handle br" />
-                <span className="segment-mask-hover-pill">
-                  <span className="segment-mask-hover-tag">{hover.tag}</span>
-                  <span className="segment-mask-hover-score">
-                    {hover.score.toFixed(2)}
-                  </span>
-                </span>
-              </div>
-            )}
-          </>
-        );
-      })()}
+      <TagInputLayer
+        projectId={projectId}
+        activeMedia={activeMedia}
+        activeRect={activeRect}
+        highlightInputs={highlightInputs}
+        setHighlightInputs={setHighlightInputs}
+        selectionBBox={selectionBBox}
+        marqueeRect={marqueeRect}
+        view={view}
+        multiSelectKey={multiSelectKey}
+        multiHighlightInput={multiHighlightInput}
+        setMultiHighlightInput={setMultiHighlightInput}
+        selectedIds={selectedIds}
+        setSelectedIds={setSelectedIds}
+        setLastSelectedId={setLastSelectedId}
+        clearSelection={clearSelection}
+        clearHideTimer={clearHideTimer}
+        scheduleHide={scheduleHide}
+        deleteSelection={deleteSelection}
+        onSubmitSegment={submitSegment}
+      />
 
-      {selectionBBox && !marqueeRect && (() => {
-        const LABEL_OVERHANG_PX = 26;
-        return (
-        <div
-          className="selection-bbox"
-          aria-hidden
-          style={{
-            left: selectionBBox.minX * view.scale + view.x,
-            top: selectionBBox.minY * view.scale + view.y - LABEL_OVERHANG_PX,
-            width: Math.max(0, (selectionBBox.maxX - selectionBBox.minX) * view.scale),
-            height: Math.max(
-              0,
-              (selectionBBox.maxY - selectionBBox.minY) * view.scale + LABEL_OVERHANG_PX,
-            ),
-          }}
-        >
-          <span className="selection-bbox-handle tl" />
-          <span className="selection-bbox-handle tr" />
-          <span className="selection-bbox-handle bl" />
-          <span className="selection-bbox-handle br" />
-          <span className="selection-bbox-count">
-            <i className="ri-checkbox-multiple-blank-line" aria-hidden />
-            {selectedIds.size}
-          </span>
-        </div>
-        );
-      })()}
-
-      {selectionBBox && !marqueeRect && (
-        <HighlightInput
-          key={multiSelectKey}
-          rect={{
-            x: selectionBBox.minX * view.scale + view.x,
-            y: selectionBBox.minY * view.scale + view.y,
-            width: Math.max(0, (selectionBBox.maxX - selectionBBox.minX) * view.scale),
-            height: Math.max(0, (selectionBBox.maxY - selectionBBox.minY) * view.scale),
-          }}
-          tags={multiHighlightInput}
-          onTagsChange={setMultiHighlightInput}
-          onEscape={clearSelection}
-          onDeleteWhenEmpty={deleteSelection}
-          projectId={projectId}
-        />
-      )}
-
-      {isEmpty && (
-        <div className="empty-state" aria-hidden>
-          <div className="empty-state-inner">
-            <div className="empty-eyebrow">Drop to begin</div>
-            <div className="empty-title">
-              Drop images or videos <span className="accent">anywhere</span>
-            </div>
-            <div className="empty-sub">They'll land where you drop and zoom into view.</div>
-          </div>
-        </div>
-      )}
+      <EmptyState isEmpty={isEmpty} />
 
       <FloatingSidebar
         items={media}
@@ -2381,154 +2157,29 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onClose={() => setContextMenu(null)}
       />
 
-      <div className="hud hud-top-left">
-        {wordmarkGlass.filterSvg}
-        <div
-          ref={wordmarkGlass.ref}
-          className="wordmark is-liquid-glass"
-          aria-label="NetraRT"
-          style={wordmarkGlass.style}
-        >
-          <button
-            type="button"
-            className="wordmark-home"
-            aria-label="Back to Home"
-            title="Back to Home"
-            onClick={() => void focusHome()}
-          >
-            <i className="ri-home-2-line wordmark-home-icon" aria-hidden />
-            <span className="wordmark-glyph">NetraRT</span>
-          </button>
-          {projectState.status === 'ready' && (
-            <>
-              <span className="wordmark-divider" aria-hidden />
-              <ProjectChip project={projectState.project} />
-            </>
-          )}
-          <span className="wordmark-divider" aria-hidden />
-          <span className={`conn-dot conn-${conn}`} aria-label={`connection ${conn}`} />
-          <span className="wordmark-tag">{conn}</span>
-          <span className="wordmark-divider" aria-hidden />
-          {sam3Error ? (
-            <span className="wordmark-tag sam3-error-tag" role="alert" title={sam3Error}>
-              SAM3 Error
-            </span>
-          ) : (
-            <Sam3VersionBadge />
-          )}
-        </div>
-      </div>
+      <CanvasTopHud
+        glass={wordmarkGlass}
+        project={projectState.status === 'ready' ? projectState.project : null}
+        conn={conn}
+        sam3Error={sam3Error}
+      />
 
-      <div className="hud hud-bottom-center">
-        {searchPillGlass.filterSvg}
-        {statusPillGlass.filterSvg}
-        {controlsPillGlass.filterSvg}
-        <div
-          ref={searchPillGlass.ref}
-          className="btn-cluster is-liquid-glass"
-          role="group"
-          aria-label="Search"
-          style={searchPillGlass.style}
-        >
-          <button
-            className="btn-ghost"
-            type="button"
-            aria-label="Search media (⌘K / Ctrl+K)"
-            title="Search media (⌘K)"
-            onClick={() => setSearchOpen(true)}
-          >
-            <i className="ri-search-line" aria-hidden />
-          </button>
-        </div>
+      <CanvasBottomHud
+        searchPillGlass={searchPillGlass}
+        statusPillGlass={statusPillGlass}
+        controlsPillGlass={controlsPillGlass}
+        view={view}
+        cursor={cursor}
+        canvasRef={canvasRef}
+        mediaRef={mediaRef}
+        onSearchOpen={() => setSearchOpen(true)}
+      />
 
-        <div
-          ref={statusPillGlass.ref}
-          className="status-pill is-liquid-glass"
-          style={statusPillGlass.style}
-        >
-          <span className="status-label">Zoom</span>
-          <span className="status-value">{formatZoom(view.scale)}</span>
-          <span className="status-sep" aria-hidden />
-          <span className="status-label">X</span>
-          <span className="status-value">{formatCoord(cursor?.worldX)}</span>
-          <span className="status-label">Y</span>
-          <span className="status-value">{formatCoord(cursor?.worldY)}</span>
-        </div>
-
-        <div
-          ref={controlsPillGlass.ref}
-          className="btn-cluster is-liquid-glass"
-          role="group"
-          aria-label="Canvas controls"
-          style={controlsPillGlass.style}
-        >
-          <button
-            className="btn-ghost"
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => canvasRef.current?.zoomBy(1 / 1.4)}
-          >
-            −
-          </button>
-          <button
-            className="btn-ghost"
-            type="button"
-            aria-label="Fit all to view"
-            onClick={() => {
-              const items = mediaRef.current;
-              if (items.length === 0) {
-                canvasRef.current?.reset();
-                return;
-              }
-              let minX = Infinity;
-              let minY = Infinity;
-              let maxX = -Infinity;
-              let maxY = -Infinity;
-              for (const m of items) {
-                if (m.x < minX) minX = m.x;
-                if (m.y < minY) minY = m.y;
-                if (m.x + m.width > maxX) maxX = m.x + m.width;
-                if (m.y + m.height > maxY) maxY = m.y + m.height;
-              }
-              canvasRef.current?.focusOn(
-                { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-                { padding: 0.12, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-              );
-            }}
-          >
-            Reset
-          </button>
-          <button
-            className="btn-ghost"
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => canvasRef.current?.zoomBy(1.4)}
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      <div className="hud hud-top-right">
-        <SavedTagsPopover projectId={projectId} />
-        {settingsPillGlass.filterSvg}
-        <div
-          ref={settingsPillGlass.ref}
-          className="btn-cluster is-liquid-glass"
-          role="group"
-          aria-label="App controls"
-          style={settingsPillGlass.style}
-        >
-          <button
-            className="btn-ghost"
-            type="button"
-            aria-label="Open settings"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <i className="ri-settings-3-line" aria-hidden />
-          </button>
-        </div>
-      </div>
+      <CanvasAppControlsHud
+        projectId={projectId}
+        glass={settingsPillGlass}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
       <CanvasModals
         settingsOpen={settingsOpen}
