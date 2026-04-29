@@ -30,6 +30,7 @@ import { useSelectionActions } from './features/canvas/hooks/useSelectionActions
 import { useCanvasKeyboardShortcuts } from './features/canvas/hooks/useCanvasKeyboardShortcuts';
 import { useLodSetup } from './features/canvas/hooks/useLodSetup';
 import { useDropHandler } from './features/canvas/hooks/useDropHandler';
+import { useSelectionDerived } from './features/canvas/hooks/useSelectionDerived';
 import {
   PendingOverlays,
   EncodingOverlays,
@@ -192,76 +193,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       clearSelectionRef,
     });
 
-  const marqueeInside = useMemo(() => {
-    if (!marqueeRect) return null;
-    const inside = new Set<string>();
-    for (const m of media) {
-      if (
-        m.x + m.width >= marqueeRect.minX &&
-        m.x <= marqueeRect.maxX &&
-        m.y + m.height >= marqueeRect.minY &&
-        m.y <= marqueeRect.maxY
-      ) {
-        inside.add(m.id);
-      }
-    }
-    return inside;
-  }, [marqueeRect, media]);
-
-  const activeSet = useMemo<Set<string>>(() => {
-    if (marqueeInside && marqueeRef.current) {
-      const s = new Set(marqueeRef.current.additive ? marqueeRef.current.baseSet : []);
-      for (const id of marqueeInside) s.add(id);
-      return s;
-    }
-    if (selectedIds.size > 0) return selectedIds;
-    if (hoverId) return new Set([hoverId]);
-    return new Set();
-  }, [selectedIds, hoverId, marqueeInside]);
-
-  const activeId = useMemo<string | null>(() => {
-    if (marqueeRef.current) return null;
-    if (selectedIds.size === 1) return lastSelectedId ?? Array.from(selectedIds)[0] ?? null;
-    if (selectedIds.size === 0) return hoverId;
-    return null;
-  }, [selectedIds, hoverId, lastSelectedId]);
-
-  const activeMedia = useMemo(
-    () => (activeId ? media.find((m) => m.id === activeId) ?? null : null),
-    [activeId, media],
-  );
-
-  // Solo-tag is scoped to the currently active image. When the active image
-  // changes, drop the filter so the next image starts unfiltered.
-  useEffect(() => {
-    setSoloTag(null);
-  }, [activeMedia?.id]);
-
-  const selectionBBox = useMemo(() => {
-    if (selectedIds.size < 2) return null;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const m of media) {
-      if (!selectedIds.has(m.id)) continue;
-      if (m.x < minX) minX = m.x;
-      if (m.y < minY) minY = m.y;
-      if (m.x + m.width > maxX) maxX = m.x + m.width;
-      if (m.y + m.height > maxY) maxY = m.y + m.height;
-    }
-    if (!Number.isFinite(minX)) return null;
-    return { minX, minY, maxX, maxY };
-  }, [selectedIds, media]);
-
-  const multiSelectKey = useMemo(() => {
-    if (selectedIds.size < 2) return '';
-    return Array.from(selectedIds).sort().join(' ');
-  }, [selectedIds]);
-  useEffect(() => {
-    setMultiHighlightInput([]);
-  }, [multiSelectKey]);
-
   const [viewport, setViewport] = useState<{ w: number; h: number }>(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : 0,
     h: typeof window !== 'undefined' ? window.innerHeight : 0,
@@ -392,6 +323,18 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setUserBoxes,
     rememberSavedTag,
   });
+
+  const { activeSet, activeId, activeMedia, selectionBBox, multiSelectKey } =
+    useSelectionDerived({
+      media,
+      selectedIds,
+      lastSelectedId,
+      hoverId,
+      marqueeRect,
+      marqueeRef,
+      setSoloTag,
+      setMultiHighlightInput,
+    });
 
   const { initialMediaLoadedRef } = useCanvasHydration({
     projectId,
