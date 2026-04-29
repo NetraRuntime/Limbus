@@ -32,10 +32,18 @@ import { HighlightInput } from './components/HighlightInput';
 import { colorForTag, useSavedTags } from './components/savedTags';
 import { MediaItem } from './features/canvas/components/MediaItem';
 import { BakeForImage } from './features/canvas/components/BakeForImage';
-import { BoxLabelPopover } from './features/canvas/components/BoxLabelPopover';
 import { useWindowKeydown } from './features/canvas/hooks/useWindowKeydown';
 import { useHoverState } from './features/canvas/hooks/useHoverState';
 import { useUploadPipeline } from './features/canvas/hooks/useUploadPipeline';
+import {
+  PendingOverlays,
+  EncodingOverlays,
+  MarqueeRect,
+  UserBoxesLayer,
+  DrawBoxPreview,
+  PendingBoxLabelLayer,
+  SegmentChipsLayer,
+} from './features/canvas/components/layers';
 import { FloatingSidebar } from './components/FloatingSidebar';
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu';
 import { SettingsModal } from './components/SettingsModal';
@@ -2395,164 +2403,23 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           ))}
       </InfiniteCanvas>
 
-      {visibleMedia
-        .filter((m) => m.pending)
-        .map((m) => {
-          const rx = m.x * view.scale + view.x;
-          const ry = m.y * view.scale + view.y;
-          const rw = m.width * view.scale;
-          const rh = m.height * view.scale;
-          // Hide the label for small rects so the pill doesn't overflow.
-          const showLabel = rw > 160 && rh > 72;
-          const status = uploadStatus[m.id];
-          const isError = status?.phase === 'error';
-          let label = 'Uploading';
-          if (status) {
-            if (status.phase === 'error') {
-              label = status.message
-                ? `Failed — ${status.message}`
-                : 'Failed';
-            } else if (status.phase === 'finalizing') {
-              label = 'Finalizing';
-            } else {
-              label = `${Math.floor(status.pct * 100)}%`;
-            }
-          }
-          return (
-            <div
-              key={`pending-${m.id}`}
-              className={`pending-overlay ${isError ? 'is-error' : ''}`}
-              style={{ left: rx, top: ry, width: rw, height: rh }}
-              role="status"
-              aria-live="polite"
-              aria-label={`${m.kind} ${isError ? 'upload failed' : 'uploading'}, ${label}`}
-              title={isError ? label : undefined}
-            >
-              <div className={`pending-chip ${isError ? 'is-error' : ''}`}>
-                {isError ? (
-                  <i className="ri-error-warning-line pending-chip-icon" aria-hidden />
-                ) : (
-                  <span className="pending-spinner" aria-hidden />
-                )}
-                {showLabel && <span className="pending-label">{label}</span>}
-              </div>
-            </div>
-          );
-        })}
+      <PendingOverlays
+        visibleMedia={visibleMedia}
+        view={view}
+        uploadStatus={uploadStatus}
+      />
 
-      {visibleMedia
-        .filter((m) => !m.pending && m.kind === 'image' && encodingIds.has(m.id))
-        .map((m) => {
-          const rx = m.x * view.scale + view.x;
-          const ry = m.y * view.scale + view.y;
-          const rw = m.width * view.scale;
-          const rh = m.height * view.scale;
-          const showLabel = rw > 110 && rh > 48;
-          return (
-            <div
-              key={`encoding-${m.id}`}
-              className="encoding-overlay"
-              style={{ left: rx, top: ry, width: rw, height: rh }}
-              role="status"
-              aria-live="polite"
-              aria-label="Encoding image for SAM3"
-            >
-              <div className="encoding-chip">
-                <span className="encoding-spinner" aria-hidden />
-                {showLabel && <span className="encoding-label">Encoding</span>}
-              </div>
-            </div>
-          );
-        })}
+      <EncodingOverlays
+        visibleMedia={visibleMedia}
+        view={view}
+        encodingIds={encodingIds}
+      />
 
-      {visibleMedia
-        .filter((m) => m.kind === 'image' && segments[m.id])
-        .flatMap((m) => {
-          const rx = m.x * view.scale + view.x;
-          const ry = m.y * view.scale + view.y;
-          const rw = m.width * view.scale;
-          const rh = m.height * view.scale;
-          const state = segments[m.id]!;
-          const base = `segment-${m.id}`;
-
-          // Box entries can collide by tag (two boxes labeled "cat"), so
-          // dedup by lowercase tag here — one chip per label is plenty for
-          // the chip stack and avoids React's duplicate-key warning.
-          const dedupByTag = <T extends TagSegment>(arr: T[]): T[] => {
-            const seen = new Set<string>();
-            const out: T[] = [];
-            for (const e of arr) {
-              const k = e.tag.toLowerCase();
-              if (seen.has(k)) continue;
-              seen.add(k);
-              out.push(e);
-            }
-            return out;
-          };
-          const loadingTags = dedupByTag(
-            state.entries.filter((e) => e.status === 'loading'),
-          );
-          const errorTags = dedupByTag(
-            state.entries.filter(
-              (e): e is Extract<TagSegment, { status: 'error' }> => e.status === 'error',
-            ),
-          );
-
-          if (loadingTags.length === 0 && errorTags.length === 0) return [];
-
-          return [
-            <div
-              key={`${base}-chips`}
-              className="segment-overlay segment-overlay--chips"
-              style={{ left: rx, top: ry, width: rw, height: rh }}
-              aria-hidden
-            >
-              <div className="segment-chip-stack">
-                {loadingTags.map((entry) => {
-                  const { bg, fg, border } = colorForTag(entry.tag);
-                  return (
-                    <div
-                      key={`loading-${entry.tag}`}
-                      className="segment-chip"
-                      style={{
-                        background: bg,
-                        color: fg,
-                        borderColor: border,
-                      }}
-                      role="status"
-                      aria-live="polite"
-                      aria-label={`Segmenting "${entry.tag}"`}
-                    >
-                      <span className="encoding-spinner" aria-hidden />
-                      <span className="encoding-label">{entry.tag}</span>
-                    </div>
-                  );
-                })}
-                {errorTags.map((entry) => {
-                  const { bg, fg, border } = colorForTag(entry.tag);
-                  return (
-                    <div
-                      key={`error-${entry.tag}`}
-                      className="segment-chip segment-chip--error"
-                      style={{
-                        background: bg,
-                        color: fg,
-                        borderColor: border,
-                      }}
-                      role="alert"
-                      title={entry.message}
-                    >
-                      <i className="ri-error-warning-line" aria-hidden />
-                      <span className="encoding-label">
-                        No match — {entry.tag}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>,
-          ];
-        })}
+      <SegmentChipsLayer
+        visibleMedia={visibleMedia}
+        view={view}
+        segments={segments}
+      />
 
       {tool === 'box' && activeMedia && activeRect && cursor && (() => {
         const cx = cursor.worldX * view.scale + view.x;
@@ -2669,113 +2536,24 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         />
       )}
 
-      {marqueeRect && (
-        <div
-          className="marquee-rect"
-          aria-hidden
-          style={{
-            left: marqueeRect.minX * view.scale + view.x,
-            top: marqueeRect.minY * view.scale + view.y,
-            width: Math.max(0, (marqueeRect.maxX - marqueeRect.minX) * view.scale),
-            height: Math.max(0, (marqueeRect.maxY - marqueeRect.minY) * view.scale),
-          }}
-        />
-      )}
+      <MarqueeRect rect={marqueeRect} view={view} />
 
-      {paintMedia
-        .filter((m) => m.kind === 'image' && (userBoxes[m.id]?.length ?? 0) > 0)
-        .flatMap((m) => {
-          const entries = segments[m.id]?.entries ?? [];
-          return userBoxes[m.id]!.map((b) => {
-            const [rx1, ry1, rx2, ry2] = b.box;
-            const wx = m.x + rx1;
-            const wy = m.y + ry1;
-            const ww = Math.max(1, rx2 - rx1);
-            const wh = Math.max(1, ry2 - ry1);
-            const matched = entries.find(
-              (e) => e.kind === 'box' && e.boxId === b.id,
-            );
-            const isLoading = matched?.status === 'loading';
-            const isError = matched?.status === 'error';
-            const cls = `user-box${isLoading ? ' user-box--loading' : ''}${
-              isError ? ' user-box--error' : ''
-            }`;
-            return (
-              <div
-                key={`ubox-${m.id}-${b.id}`}
-                className={cls}
-                aria-hidden
-                style={{
-                  left: wx * view.scale + view.x,
-                  top: wy * view.scale + view.y,
-                  width: ww * view.scale,
-                  height: wh * view.scale,
-                }}
-              >
-                {isLoading && <span className="user-box-scan" aria-hidden />}
-                <span className="user-box-tick tl" />
-                <span className="user-box-tick tr" />
-                <span className="user-box-tick bl" />
-                <span className="user-box-tick br" />
-              </div>
-            );
-          });
-        })}
+      <UserBoxesLayer
+        paintMedia={paintMedia}
+        view={view}
+        userBoxes={userBoxes}
+        segments={segments}
+      />
 
-      {drawBoxPreview && drawBoxPreview.moved && (() => {
-        const b = drawBoxPreview;
-        const x1 = Math.min(b.startWorldX, b.currentWorldX);
-        const y1 = Math.min(b.startWorldY, b.currentWorldY);
-        const x2 = Math.max(b.startWorldX, b.currentWorldX);
-        const y2 = Math.max(b.startWorldY, b.currentWorldY);
-        return (
-          <div
-            className="user-box is-drawing"
-            aria-hidden
-            style={{
-              left: x1 * view.scale + view.x,
-              top: y1 * view.scale + view.y,
-              width: Math.max(0, (x2 - x1) * view.scale),
-              height: Math.max(0, (y2 - y1) * view.scale),
-            }}
-          >
-            <span className="user-box-tick tl" />
-            <span className="user-box-tick tr" />
-            <span className="user-box-tick bl" />
-            <span className="user-box-tick br" />
-          </div>
-        );
-      })()}
+      <DrawBoxPreview preview={drawBoxPreview} view={view} />
 
-      {pendingBoxLabel && (() => {
-        const r = pendingBoxLabel.worldRect;
-        const left = r.x1 * view.scale + view.x;
-        const top = r.y1 * view.scale + view.y;
-        const width = Math.max(0, (r.x2 - r.x1) * view.scale);
-        const height = Math.max(0, (r.y2 - r.y1) * view.scale);
-        return (
-          <>
-            <div
-              className="user-box user-box--pending"
-              aria-hidden
-              style={{ left, top, width, height }}
-            >
-              <span className="user-box-tick tl" />
-              <span className="user-box-tick tr" />
-              <span className="user-box-tick bl" />
-              <span className="user-box-tick br" />
-            </div>
-            <BoxLabelPopover
-              screenX={left}
-              screenY={top + height + 8}
-              maxWidth={width}
-              projectId={projectId}
-              onConfirm={confirmPendingBoxLabel}
-              onCancel={cancelPendingBoxLabel}
-            />
-          </>
-        );
-      })()}
+      <PendingBoxLabelLayer
+        pending={pendingBoxLabel}
+        view={view}
+        projectId={projectId}
+        onConfirm={confirmPendingBoxLabel}
+        onCancel={cancelPendingBoxLabel}
+      />
 
       {(() => {
         const sel = selectedMask;
