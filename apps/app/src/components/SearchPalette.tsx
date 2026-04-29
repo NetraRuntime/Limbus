@@ -7,12 +7,12 @@ export type SearchPaletteItem = {
 type Props<T extends SearchPaletteItem> = {
   open: boolean;
   items: T[];
-  onSelect: (item: T) => void;
+  onSelect: (item: T, ctx: { query: string }) => void;
   onClose: () => void;
   /** Returns true when the item should be included for the given query. */
   match: (item: T, query: string) => boolean;
   /** Renders a single result row. */
-  renderItem: (item: T, ctx: { active: boolean }) => ReactNode;
+  renderItem: (item: T, ctx: { active: boolean; query: string }) => ReactNode;
   placeholder?: string;
   ariaLabel?: string;
   emptyText?: string;
@@ -75,7 +75,7 @@ export function SearchPalette<T extends SearchPaletteItem>({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const picked = results[activeIdx];
-      if (picked) onSelect(picked);
+      if (picked) onSelect(picked, { query });
     } else if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
@@ -158,9 +158,9 @@ export function SearchPalette<T extends SearchPaletteItem>({
                 data-idx={idx}
                 className={`search-result ${idx === activeIdx ? 'is-active' : ''}`}
                 onMouseEnter={() => setCursor(idx)}
-                onClick={() => onSelect(it)}
+                onClick={() => onSelect(it, { query })}
               >
-                {renderItem(it, { active: idx === activeIdx })}
+                {renderItem(it, { active: idx === activeIdx, query })}
               </button>
             ))
           )}
