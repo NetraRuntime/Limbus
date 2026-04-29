@@ -1,99 +1,71 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   InfiniteCanvas,
-  type BackgroundPointerDown,
   type InfiniteCanvasHandle,
   type View,
   type WorldPoint,
-  type WorldRect,
 } from './InfiniteCanvas';
-import type { ImageRecord, VideoRecord } from './lib/pb';
-import { colorForTag, useSavedTags } from './components/savedTags';
-import { MediaItem } from './features/canvas/components/MediaItem';
-import { BakeForImage } from './features/canvas/components/BakeForImage';
-import { useHoverState } from './features/canvas/hooks/useHoverState';
-import { useUploadPipeline } from './features/canvas/hooks/useUploadPipeline';
-import { useToolMode } from './features/canvas/hooks/useToolMode';
-import { useCanvasHydration } from './features/canvas/hooks/useCanvasHydration';
-import { useBboxResizeGesture } from './features/canvas/hooks/useBboxResizeGesture';
-import { useSegmentationState } from './features/canvas/hooks/useSegmentationState';
-import { useMarqueeGesture } from './features/canvas/hooks/useMarqueeGesture';
-import { useDrawBoxGesture } from './features/canvas/hooks/useDrawBoxGesture';
-import { useMediaDragGesture } from './features/canvas/hooks/useMediaDragGesture';
-import { useSelectionActions } from './features/canvas/hooks/useSelectionActions';
-import { useCanvasKeyboardShortcuts } from './features/canvas/hooks/useCanvasKeyboardShortcuts';
-import { useLodSetup } from './features/canvas/hooks/useLodSetup';
-import { useDropHandler } from './features/canvas/hooks/useDropHandler';
-import { useSelectionDerived } from './features/canvas/hooks/useSelectionDerived';
-import { useVisibleMedia } from './features/canvas/hooks/useVisibleMedia';
-import { useTrashSweep } from './features/canvas/hooks/useTrashSweep';
-import { useStackOrder } from './features/canvas/hooks/useStackOrder';
-import { useMediaHandlers } from './features/canvas/hooks/useMediaHandlers';
 import {
-  PendingOverlays,
+  ActiveTagListLayer,
+  BakeForImage,
+  BboxOverlayContainer,
+  BoxCrosshair,
+  CanvasAppControlsHud,
+  CanvasBottomHud,
+  CanvasModals,
+  CanvasTopHud,
+  ContextMenuLayer,
+  DrawBoxPreview,
+  EmptyState,
   EncodingOverlays,
   MarqueeRect,
-  UserBoxesLayer,
-  DrawBoxPreview,
+  MediaItem,
   PendingBoxLabelLayer,
+  PendingOverlays,
   SegmentChipsLayer,
-  CanvasModals,
-  ContextMenuLayer,
-  BboxOverlayContainer,
-  SelectionHud,
   SelectionBboxLayer,
-  EmptyState,
-  CanvasTopHud,
-  CanvasBottomHud,
-  CanvasAppControlsHud,
+  SelectionHud,
   TagInputLayer,
-  BoxCrosshair,
-  ActiveTagListLayer,
-} from './features/canvas/components/layers';
-import { FloatingSidebar } from './components/FloatingSidebar';
-import type { SearchItem } from './components/MediaSearchPalette';
-import { MediaToolbar, type CanvasTool } from './components/MediaToolbar';
-import { useCanvasGlass } from './features/canvas/hooks/useCanvasGlass';
-import { useSettings } from './hooks/useSettings';
-import { useAppliedTheme } from './hooks/useAppliedTheme';
-import {
-  type MaskIdentity,
-  type ReadyMaskEntry,
-} from './features/segmentation';
-import { useHistory, useHistoryShortcuts } from './lib/history';
-import {
-  createEntry,
-  type CanvasActionMeta,
-} from './lib/canvasHistory';
-import {
-  DeletedBanner,
-  useProject,
-  useProjectThumbnail,
-} from './features/projects';
-import { setCanvasTitle } from './lib/windows';
-import {
-  VIEW_PERSIST_DEBOUNCE_MS,
-  getInitialView,
-  readStoredView,
-  writeStoredView,
-} from './lib/canvasView';
-import {
-  DRAG_THRESHOLD_PX,
-  DRAW_BOX_MIN_SIZE_PX,
-  HIGHLIGHT_BOTTOM_INSET_PX,
-  genBoxId,
-  medianLongestSide,
-  uid,
+  UserBoxesLayer,
+  useBboxResizeGesture,
+  useCanvasGlass,
+  useCanvasHydration,
+  useCanvasKeyboardShortcuts,
+  useCanvasTitle,
+  useDrawBoxGesture,
+  useDropHandler,
+  useHoverState,
+  useLodSetup,
+  useMarqueeGesture,
+  useMediaDragGesture,
+  useMediaHandlers,
+  useSegmentationState,
+  useSelectionActions,
+  useSelectionDerived,
+  useStackOrder,
+  useToolMode,
+  useTrashSweep,
+  useUploadPipeline,
+  useViewPersist,
+  useViewport,
+  useVisibleMedia,
   type CanvasMedia,
   type ConnState,
   type DragState,
-  type MediaPointerEvent,
   type PendingBoxLabel,
-  type SegMask,
-  type SegmentState,
-  type UploadPlan,
   type UserBox,
-} from './features/canvas/lib';
+} from './features/canvas';
+import { FloatingSidebar } from './components/FloatingSidebar';
+import { MediaToolbar } from './components/MediaToolbar';
+import { type SearchItem } from './components/MediaSearchPalette';
+import { useSavedTags } from './components/savedTags';
+import { useSettings } from './hooks/useSettings';
+import { useAppliedTheme } from './hooks/useAppliedTheme';
+import { useHistory, useHistoryShortcuts } from './lib/history';
+import { type CanvasActionMeta } from './lib/canvasHistory';
+import { DeletedBanner, useProject, useProjectThumbnail } from './features/projects';
+import { getInitialView, readStoredView } from './lib/canvasView';
+import { HIGHLIGHT_BOTTOM_INSET_PX } from './features/canvas/lib';
 import './App.css';
 
 type CanvasProps = {
@@ -105,102 +77,74 @@ type CanvasProps = {
 export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
   const sam3Available = !sam3Error;
 
-  const projectState = useProject(projectId);
-
-  useEffect(() => {
-    if (projectState.status !== 'ready') return;
-    void setCanvasTitle(projectId, projectState.project.name);
-  }, [projectId, projectState]);
-
-  const { remember: rememberSavedTag } = useSavedTags(projectId);
-  const {
-    searchPillGlass,
-    statusPillGlass,
-    controlsPillGlass,
-    wordmarkGlass,
-    settingsPillGlass,
-  } = useCanvasGlass();
-
-  const canvasRef = useRef<InfiniteCanvasHandle>(null);
-
-  const getLodCanvas = useCallback((): HTMLCanvasElement | null => {
-    const el = document.querySelector('canvas.lod-layer');
-    return el instanceof HTMLCanvasElement ? el : null;
-  }, []);
-  useProjectThumbnail(projectId, getLodCanvas);
-
-  const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
-  // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
-  const initialMediaLoadedRef = useRef<boolean>(false);
+  // ─── Plain state ────────────────────────────────────────────────────────
   const [view, setView] = useState<View>(getInitialView);
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [media, setMedia] = useState<CanvasMedia[]>([]);
-  // Paint order (bottom → top); separate from `media` so raise-to-top doesn't reshuffle sidebar.
   const [conn, setConn] = useState<ConnState>('connecting');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
-  useAppliedTheme(settings.theme);
-
-  const { hoverId, setHoverId, clearHideTimer, scheduleHide } = useHoverState();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
   const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
-
   const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
-
   const [pendingBoxLabel, setPendingBoxLabel] = useState<PendingBoxLabel | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    { id: string; x: number; y: number } | null
+  >(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
+  // ─── Refs (live mirrors + gesture state) ────────────────────────────────
+  const canvasRef = useRef<InfiniteCanvasHandle>(null);
+  const initialHadStoredView = useRef<boolean>(readStoredView() !== null);
+  // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
+  const initialMediaLoadedRef = useRef<boolean>(false);
+  const dragRef = useRef<DragState | null>(null);
+  const viewRef = useRef<View>(view);
   const mediaRef = useRef<CanvasMedia[]>(media);
+  const selectedIdsRef = useRef(selectedIds);
+  const lastSelectedIdRef = useRef(lastSelectedId);
+  const clearSelectionRef = useRef<() => void>(() => {});
+  viewRef.current = view;
   mediaRef.current = media;
+  selectedIdsRef.current = selectedIds;
+  lastSelectedIdRef.current = lastSelectedId;
 
-  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // ─── External one-line hooks ────────────────────────────────────────────
+  const projectState = useProject(projectId);
+  const { remember: rememberSavedTag } = useSavedTags(projectId);
+  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
+  useAppliedTheme(settings.theme);
+  useCanvasTitle(projectId, projectState);
+  const glass = useCanvasGlass();
+  const viewport = useViewport();
+  const { hoverId, setHoverId, clearHideTimer, scheduleHide } = useHoverState();
   const { tool, setTool, toolRef } = useToolMode();
-
   const history = useHistory<CanvasActionMeta>({
     limit: 100,
-    onError: (err, phase) => {
-      console.warn(`[history] ${phase} failed`, err);
-    },
+    onError: (err, phase) => console.warn(`[history] ${phase} failed`, err),
   });
   useHistoryShortcuts(history);
+  useViewPersist(view);
+  useTrashSweep({ projectId, conn });
 
-  const viewRef = useRef<View>(view);
-  viewRef.current = view;
-
-  const dragRef = useRef<DragState | null>(null);
-  const selectedIdsRef = useRef(selectedIds);
-  selectedIdsRef.current = selectedIds;
-  const clearSelectionRef = useRef<() => void>(() => {});
-
-  const { marqueeRect, marqueeRef, handleBackgroundPointerDown } =
-    useMarqueeGesture({
-      viewRef,
-      mediaRef,
-      selectedIdsRef,
-      setSelectedIds,
-      setLastSelectedId,
-      clearSelectionRef,
-    });
-
-  const [viewport, setViewport] = useState<{ w: number; h: number }>(() => ({
-    w: typeof window !== 'undefined' ? window.innerWidth : 0,
-    h: typeof window !== 'undefined' ? window.innerHeight : 0,
-  }));
-  useEffect(() => {
-    const onResize = () =>
-      setViewport({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  const { stackOrder, setStackOrder, bringToFront } = useStackOrder({
-    media,
-    initialMediaLoadedRef,
+  // ─── Marquee gesture (must run before useVisibleMedia consumes marqueeRect)
+  const { marqueeRect, marqueeRef, handleBackgroundPointerDown } = useMarqueeGesture({
+    viewRef,
+    mediaRef,
+    selectedIdsRef,
+    setSelectedIds,
+    setLastSelectedId,
+    clearSelectionRef,
   });
 
+  // ─── Stack order, visible/paint media, LOD ──────────────────────────────
+  const { stackOrder, setStackOrder, bringToFront } = useStackOrder({
+    media,
+    selectedIds,
+    initialMediaLoadedRef,
+  });
   const { visibleMedia, paintMedia, labelPlacements } = useVisibleMedia({
     media,
     stackOrder,
@@ -210,28 +154,37 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     hoverId,
     getDraggingIds: () => dragRef.current?.orig.keys() ?? null,
   });
-
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const { lodCache, lodSources, priorityIds, setPriorityIds, dropAsset } =
-    useLodSetup({ paintMedia, media, viewScale: view.scale, dpr });
+  const { lodCache, lodSources, setPriorityIds, dropAsset } = useLodSetup({
+    paintMedia,
+    media,
+    viewScale: view.scale,
+    dpr,
+  });
 
-  const { uploadStatus, encodingIds, runUploadPlan, abortUpload } =
-    useUploadPipeline({
-      projectId,
-      sam3Available,
-      setMedia,
-      setPriorityIds,
-      setConn,
-      history,
-    });
-
-
-
-  useEffect(() => {
-    const t = window.setTimeout(() => writeStoredView(view), VIEW_PERSIST_DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [view]);
-
+  // ─── Upload + segmentation state ────────────────────────────────────────
+  const { uploadStatus, encodingIds, runUploadPlan, abortUpload } = useUploadPipeline({
+    projectId,
+    sam3Available,
+    setMedia,
+    setPriorityIds,
+    setConn,
+    history,
+  });
+  const segmentation = useSegmentationState({
+    projectId,
+    sam3Available,
+    mediaRef,
+    history,
+    setConn,
+    pendingBoxLabel,
+    setPendingBoxLabel,
+    selectedIds,
+    setSelectedIds,
+    setLastSelectedId,
+    setUserBoxes,
+    rememberSavedTag,
+  });
   const {
     segments,
     setSegments,
@@ -247,24 +200,13 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     replaceReadyTag,
     deleteMask,
     deleteAllMasksForTag,
-    removeSegmentTag,
     submitSegment,
     confirmPendingBoxLabel,
     cancelPendingBoxLabel,
-  } = useSegmentationState({
-    projectId,
-    sam3Available,
-    mediaRef,
-    history,
-    setConn,
-    pendingBoxLabel,
-    setPendingBoxLabel,
-    setSelectedIds,
-    setLastSelectedId,
-    setUserBoxes,
-    rememberSavedTag,
-  });
+  } = segmentation;
+  void setStackOrder; // currently only mutated inside useStackOrder
 
+  // ─── Selection-derived view state + hydration ──────────────────────────
   const { activeSet, activeId, activeMedia, selectionBBox, multiSelectKey } =
     useSelectionDerived({
       media,
@@ -276,7 +218,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
       setSoloTag,
       setMultiHighlightInput,
     });
-
   useCanvasHydration({
     projectId,
     canvasRef,
@@ -287,21 +228,14 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setConn,
   });
 
-  // Launch-time sweep: hard-delete PB records soft-deleted more than 1 hour
-  useTrashSweep({ projectId, conn });
-
-  const lastSelectedIdRef = useRef(lastSelectedId);
-  lastSelectedIdRef.current = lastSelectedId;
-
-
-  const { drawBoxPreview, drawBoxRef, beginDraw } = useDrawBoxGesture({
+  // ─── Pointer gestures ───────────────────────────────────────────────────
+  const { drawBoxPreview, beginDraw } = useDrawBoxGesture({
     viewRef,
     selectedIdsRef,
     setSelectedIds,
     setLastSelectedId,
     setPendingBoxLabel,
   });
-
   const {
     shiftToggledRef,
     beginDrag,
@@ -317,12 +251,27 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     history,
     bringToFront,
   });
+  // Bbox drag-resize on the selected mask. Live edits run through setSegments
+  // for instant visual feedback; history is pushed once on pointerup so an
+  // entire drag is a single undo step. Eight handles total: four corners for
+  // diagonal resize and four edge midpoints for single-axis resize.
+  const {
+    activeResize,
+    handlePointerDown: handleBboxResizePointerDown,
+    handlePointerMove: handleBboxResizePointerMove,
+    handlePointerUp: handleBboxResizePointerUp,
+  } = useBboxResizeGesture({
+    projectId,
+    viewRef,
+    mediaRef,
+    segmentsRef,
+    setSegments,
+    setConn,
+    history,
+    replaceReadyTag,
+  });
 
-  useEffect(() => {
-    if (selectedIds.size === 0) return;
-    bringToFront(selectedIds);
-  }, [selectedIds, bringToFront]);
-
+  // ─── Selection actions + clear (must precede keyboard shortcuts) ───────
   const clearSelection = useCallback(() => {
     setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     setLastSelectedId(null);
@@ -330,11 +279,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     setSoloTag(null);
   }, [setSelectedMask, setSoloTag]);
   clearSelectionRef.current = clearSelection;
-
-  useEffect(() => {
-    if (selectedIds.size > 0) setSelectedMask(null);
-  }, [selectedIds]);
-
 
   const { selectAll, duplicateSelection, deleteMediaById, deleteSelection } =
     useSelectionActions({
@@ -377,33 +321,7 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     deleteAllMasksForTag,
   });
 
-  const searchItems = useMemo<SearchItem[]>(
-    () =>
-      media
-        .filter((m) => !m.pending)
-        .map((m) => ({
-          id: m.id,
-          name: m.name,
-          kind: m.kind,
-          x: m.x,
-          y: m.y,
-          width: m.width,
-          height: m.height,
-        })),
-    [media],
-  );
-
-  const handleSearchSelect = useCallback((item: SearchItem) => {
-    setSearchOpen(false);
-    canvasRef.current?.focusOn(
-      { x: item.x, y: item.y, width: item.width, height: item.height },
-      { animate: true, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
-    );
-  }, []);
-
-  const handleChange = useCallback((v: View) => setView(v), []);
-  const handlePointerWorld = useCallback((p: WorldPoint | null) => setCursor(p), []);
-
+  // ─── Canvas-event handlers ──────────────────────────────────────────────
   const { preview, handleDrop, onConfirmImport } = useDropHandler({
     projectId,
     canvasRef,
@@ -411,7 +329,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     runUploadPlan,
     setSegments,
   });
-
   const {
     handleMediaEnter,
     handleMediaLeave,
@@ -435,31 +352,22 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
     beginDrag,
     beginDraw,
   });
+  const handleChange = useCallback((v: View) => setView(v), []);
+  const handlePointerWorld = useCallback(
+    (p: WorldPoint | null) => setCursor(p),
+    [],
+  );
+  const handleSearchSelect = useCallback((item: SearchItem) => {
+    setSearchOpen(false);
+    canvasRef.current?.focusOn(
+      { x: item.x, y: item.y, width: item.width, height: item.height },
+      { animate: true, bottomInset: HIGHLIGHT_BOTTOM_INSET_PX },
+    );
+  }, []);
 
-  // Bbox drag-resize on the selected mask. Live edits run through setSegments
-  // for instant visual feedback; history is pushed once on pointerup so an
-  // entire drag is a single undo step. Eight handles total: four corners for
-  // diagonal resize and four edge midpoints for single-axis resize.
-  const {
-    activeResize,
-    handlePointerDown: handleBboxResizePointerDown,
-    handlePointerMove: handleBboxResizePointerMove,
-    handlePointerUp: handleBboxResizePointerUp,
-  } = useBboxResizeGesture({
-    projectId,
-    viewRef,
-    mediaRef,
-    segmentsRef,
-    setSegments,
-    setConn,
-    history,
-    replaceReadyTag,
-  });
-
+  // ─── Derived values used by JSX ────────────────────────────────────────
   const initial = useMemo<Partial<View>>(() => getInitialView(), []);
-
   const isEmpty = media.length === 0 && conn !== 'connecting';
-
   const activeRect = activeMedia
     ? {
         x: activeMedia.x * view.scale + view.x,
@@ -468,6 +376,21 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         height: activeMedia.height * view.scale,
       }
     : null;
+  const searchItems = useMemo<SearchItem[]>(
+    () =>
+      media
+        .filter((m) => !m.pending)
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          kind: m.kind,
+          x: m.x,
+          y: m.y,
+          width: m.width,
+          height: m.height,
+        })),
+    [media],
+  );
 
   if (projectState.status === 'deleted') return <DeletedBanner />;
 
@@ -529,19 +452,16 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         view={view}
         uploadStatus={uploadStatus}
       />
-
       <EncodingOverlays
         visibleMedia={visibleMedia}
         view={view}
         encodingIds={encodingIds}
       />
-
       <SegmentChipsLayer
         visibleMedia={visibleMedia}
         view={view}
         segments={segments}
       />
-
       <BoxCrosshair
         tool={tool}
         activeMedia={activeMedia}
@@ -549,7 +469,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         cursor={cursor}
         view={view}
       />
-
       {activeMedia && activeRect && (
         <MediaToolbar
           rect={activeRect}
@@ -559,7 +478,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
           onMouseLeave={scheduleHide}
         />
       )}
-
       <ActiveTagListLayer
         activeMedia={activeMedia}
         activeRect={activeRect}
@@ -570,19 +488,14 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onMouseEnter={clearHideTimer}
         onMouseLeave={scheduleHide}
       />
-
-
       <MarqueeRect rect={marqueeRect} view={view} />
-
       <UserBoxesLayer
         paintMedia={paintMedia}
         view={view}
         userBoxes={userBoxes}
         segments={segments}
       />
-
       <DrawBoxPreview preview={drawBoxPreview} view={view} />
-
       <PendingBoxLabelLayer
         pending={pendingBoxLabel}
         view={view}
@@ -590,7 +503,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onConfirm={confirmPendingBoxLabel}
         onCancel={cancelPendingBoxLabel}
       />
-
       <BboxOverlayContainer
         paintMedia={paintMedia}
         view={view}
@@ -601,7 +513,6 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         soloTag={soloTag}
         viewport={viewport}
       />
-
       <SelectionHud
         paintMedia={paintMedia}
         view={view}
@@ -615,14 +526,12 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onResizePointerMove={handleBboxResizePointerMove}
         onResizePointerUp={handleBboxResizePointerUp}
       />
-
       <SelectionBboxLayer
         selectionBBox={selectionBBox}
         marqueeRect={marqueeRect}
         view={view}
         selectedCount={selectedIds.size}
       />
-
       <TagInputLayer
         projectId={projectId}
         activeMedia={activeMedia}
@@ -644,15 +553,12 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         deleteSelection={deleteSelection}
         onSubmitSegment={submitSegment}
       />
-
       <EmptyState isEmpty={isEmpty} />
-
       <FloatingSidebar
         items={media}
         activeId={activeId}
         onSelect={handleSidebarSelect}
       />
-
       <ContextMenuLayer
         contextMenu={contextMenu}
         media={media}
@@ -661,31 +567,27 @@ export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
         onDeleteMedia={deleteMediaById}
         onClose={() => setContextMenu(null)}
       />
-
       <CanvasTopHud
-        glass={wordmarkGlass}
+        glass={glass.wordmarkGlass}
         project={projectState.status === 'ready' ? projectState.project : null}
         conn={conn}
         sam3Error={sam3Error}
       />
-
       <CanvasBottomHud
-        searchPillGlass={searchPillGlass}
-        statusPillGlass={statusPillGlass}
-        controlsPillGlass={controlsPillGlass}
+        searchPillGlass={glass.searchPillGlass}
+        statusPillGlass={glass.statusPillGlass}
+        controlsPillGlass={glass.controlsPillGlass}
         view={view}
         cursor={cursor}
         canvasRef={canvasRef}
         mediaRef={mediaRef}
         onSearchOpen={() => setSearchOpen(true)}
       />
-
       <CanvasAppControlsHud
         projectId={projectId}
-        glass={settingsPillGlass}
+        glass={glass.settingsPillGlass}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-
       <CanvasModals
         settingsOpen={settingsOpen}
         setSettingsOpen={setSettingsOpen}

@@ -8,29 +8,19 @@ import {
 
 type Args = {
   media: CanvasMedia[];
-  /**
-   * Gates the media→stackOrder sync until PocketBase hydration finishes.
-   * `media` starts as [] while the PB list call is in flight — running
-   * the sync against that empty transient would drop every hydrated id
-   * and wipe persisted stacking order.
-   */
+  selectedIds: Set<string>;
   initialMediaLoadedRef: RefObject<boolean>;
 };
 
 export type StackOrderHook = {
   stackOrder: string[];
   setStackOrder: React.Dispatch<React.SetStateAction<string[]>>;
-  /**
-   * Raise the given ids to the top of the canvas stacking order by
-   * moving them to the end of `stackOrder`. `media` itself is left
-   * untouched so the sidebar (which renders `media` directly) does not
-   * reshuffle.
-   */
   bringToFront: (ids: Set<string>) => void;
 };
 
 export function useStackOrder({
   media,
+  selectedIds,
   initialMediaLoadedRef,
 }: Args): StackOrderHook {
   const [stackOrder, setStackOrder] = useState<string[]>(readStoredStackOrder);
@@ -61,9 +51,32 @@ export function useStackOrder({
       if (added.length === 0 && kept.length === prev.length) return prev;
       return [...kept, ...added];
     });
-    // initialMediaLoadedRef is a ref; only `media` triggers re-evaluation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media]);
+
+  // Raise the active selection to the top whenever it changes, so a
+  // freshly-selected item paints above its neighbors.
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    setStackOrder((prev) => {
+      if (prev.length <= 1) return prev;
+      const below: string[] = [];
+      const raised: string[] = [];
+      for (const id of prev) {
+        if (selectedIds.has(id)) raised.push(id);
+        else below.push(id);
+      }
+      if (raised.length === 0 || raised.length === prev.length) return prev;
+      let alreadyAtEnd = true;
+      for (let i = 0; i < raised.length; i++) {
+        if (prev[below.length + i] !== raised[i]) {
+          alreadyAtEnd = false;
+          break;
+        }
+      }
+      if (alreadyAtEnd) return prev;
+      return [...below, ...raised];
+    });
+  }, [selectedIds]);
 
   const bringToFront = useCallback((ids: Set<string>) => {
     if (ids.size === 0) return;

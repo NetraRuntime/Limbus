@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   deleteAllSegmentationsForImage,
@@ -31,6 +31,7 @@ type Args = {
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   pendingBoxLabel: PendingBoxLabel | null;
   setPendingBoxLabel: React.Dispatch<React.SetStateAction<PendingBoxLabel | null>>;
+  selectedIds: Set<string>;
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setLastSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
   setUserBoxes: React.Dispatch<React.SetStateAction<Record<string, UserBox[]>>>;
@@ -70,6 +71,7 @@ export function useSegmentationState({
   setConn,
   pendingBoxLabel,
   setPendingBoxLabel,
+  selectedIds,
   setSelectedIds,
   setLastSelectedId,
   setUserBoxes,
@@ -82,6 +84,12 @@ export function useSegmentationState({
   const segmentSeqRef = useRef<Record<string, number>>({});
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
+
+  // Selecting media unselects any individual mask — the two are mutually
+  // exclusive selection modes.
+  useEffect(() => {
+    if (selectedIds.size > 0) setSelectedMask(null);
+  }, [selectedIds]);
 
   const handleMaskSelect = useCallback(
     (id: MaskIdentity) => {
