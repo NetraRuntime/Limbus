@@ -15,15 +15,12 @@ import type {
 
 export type FocusedExample = {
   idx: number;
-  /** Bumped each time the parent requests focus, so a repeat focus on the
-   *  same example index still re-opens the row. */
   token: number;
 };
 
 type Props = {
   node: NodeRecord;
   onClose: () => void;
-  /** Parent owns debounce + persistence. */
   onPatch?: (id: string, patch: { examples?: NodeExample[] }) => void;
   focusedExample?: FocusedExample | null;
   children?: ReactNode;
@@ -172,8 +169,6 @@ type Caret = 'start' | 'end';
 
 type PendingNav = {
   exampleIdx: number;
-  /** UI slot index — slot 0 is always the system bubble (virtual or real),
-   *  slot k>=1 is the k-th non-system message. */
   slotIdx: number;
   caret: Caret;
 };
