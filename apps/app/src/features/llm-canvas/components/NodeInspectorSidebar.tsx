@@ -18,10 +18,20 @@ export type FocusedExample = {
   token: number;
 };
 
+export type ExamplesPatchOptions = {
+  history?: { label: string; coalesceKey?: string };
+};
+
+export type ExamplesPatchFn = (
+  id: string,
+  patch: { examples?: NodeExample[] },
+  opts?: ExamplesPatchOptions,
+) => void;
+
 type Props = {
   node: NodeRecord;
   onClose: () => void;
-  onPatch?: (id: string, patch: { examples?: NodeExample[] }) => void;
+  onPatch?: ExamplesPatchFn;
   focusedExample?: FocusedExample | null;
   children?: ReactNode;
 };
@@ -161,7 +171,7 @@ export function NodeInspectorSidebar({
 
 type ListProps = {
   node: NodeRecord;
-  onPatch?: (id: string, patch: { examples?: NodeExample[] }) => void;
+  onPatch?: ExamplesPatchFn;
   focusedExample: FocusedExample | null;
 };
 
@@ -224,25 +234,30 @@ function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
     setPendingNav(null);
   }, [pendingNav, node.examples]);
 
-  const commit = (next: NodeExample[]) => onPatch?.(node.id, { examples: next });
+  const commit = (next: NodeExample[], opts?: ExamplesPatchOptions) =>
+    onPatch?.(node.id, { examples: next }, opts);
 
-  const updateExample = (idx: number, patch: NodeExample) => {
+  const updateExample = (
+    idx: number,
+    patch: NodeExample,
+    opts?: ExamplesPatchOptions,
+  ) => {
     const base = node.examples.length > 0 ? node.examples.slice() : [emptyExample()];
     while (base.length <= idx) base.push(emptyExample());
     base[idx] = patch;
-    commit(base);
+    commit(base, opts);
   };
 
   const addExample = () => {
     const base = node.examples.length > 0 ? node.examples.slice() : [emptyExample()];
     base.push(emptyExample());
-    commit(base);
+    commit(base, { history: { label: 'Add conversation example' } });
   };
 
   const removeExample = (idx: number) => {
     const base = node.examples.length > 0 ? node.examples : [emptyExample()];
     const next = base.filter((_, i) => i !== idx);
-    commit(next);
+    commit(next, { history: { label: 'Remove conversation example' } });
     setOpenSet((s) => {
       const n = new Set<number>();
       for (const i of s) {
@@ -327,7 +342,9 @@ function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
     const insertAt = msgIdx < 0 ? 0 : msgIdx + 1;
     const newMessages = [...ex.messages];
     newMessages.splice(insertAt, 0, { role: newRole, content: '' });
-    updateExample(exIdx, { messages: newMessages });
+    updateExample(exIdx, { messages: newMessages }, {
+      history: { label: 'Add turn' },
+    });
     requestFocus(exIdx, slotIdx + 1, 'end');
   };
 
@@ -336,7 +353,9 @@ function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
     const msgIdx = slotToMsgIdx(ex, slotIdx);
     if (msgIdx < 0) return; // virtual system slot — nothing to remove
     const remaining = ex.messages.filter((_, i) => i !== msgIdx);
-    updateExample(exIdx, { messages: remaining });
+    updateExample(exIdx, { messages: remaining }, {
+      history: { label: 'Remove turn' },
+    });
     if (slotIdx > 0) {
       requestFocus(exIdx, slotIdx - 1, 'end');
     } else if (exIdx > 0) {
@@ -363,7 +382,7 @@ function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
             open={openSet.has(idx)}
             focusedExample={focusedExample}
             onToggleOpen={() => toggleOpen(idx)}
-            onChange={(next) => updateExample(idx, next)}
+            onChange={(next, opts) => updateExample(idx, next, opts)}
             onRemove={() => removeExample(idx)}
             onAddTurnAfter={(slotIdx) => addTurnAfter(idx, slotIdx)}
             onBackspaceEmpty={(slotIdx) => handleBackspaceEmpty(idx, slotIdx)}
@@ -395,7 +414,7 @@ type RowProps = {
   open: boolean;
   focusedExample: FocusedExample | null;
   onToggleOpen: () => void;
-  onChange: (next: NodeExample) => void;
+  onChange: (next: NodeExample, opts?: ExamplesPatchOptions) => void;
   onRemove: () => void;
   onAddTurnAfter: (slotIdx: number) => void;
   onBackspaceEmpty: (slotIdx: number) => void;
@@ -441,19 +460,37 @@ function ConversationRow({
   if (assistantText) previewParts.push(assistantText);
   const previewText = previewParts.join(' → ');
 
-  const updateMessage = (msgIdx: number, patch: Partial<ConversationMessage>) => {
+  // Coalesce-key per slot folds rapid keystrokes into a single undo entry.
+  // System edits — whether the row already has a system message or is being
+  // materialized — share key `:system` so the materialize → update transition
+  // doesn't split into two history entries mid-typing.
+  const editOpts = (slotIdx: number, role: 'system' | 'other'): ExamplesPatchOptions => ({
+    history: {
+      label: 'Edit message',
+      coalesceKey: `${index}:${role === 'system' ? 'system' : `slot${slotIdx}`}`,
+    },
+  });
+
+  const updateMessage = (
+    msgIdx: number,
+    patch: Partial<ConversationMessage>,
+    opts?: ExamplesPatchOptions,
+  ) => {
     const next = messages.map((m, i) => (i === msgIdx ? { ...m, ...patch } : m));
-    onChange({ messages: next });
+    onChange({ messages: next }, opts);
   };
 
   const removeMessage = (msgIdx: number) => {
     const next = messages.filter((_, i) => i !== msgIdx);
-    onChange({ messages: next });
+    onChange({ messages: next }, { history: { label: 'Remove turn' } });
   };
 
   const materializeSystem = (content: string) => {
     if (content === '') return;
-    onChange({ messages: [{ role: 'system', content }, ...messages] });
+    onChange(
+      { messages: [{ role: 'system', content }, ...messages] },
+      editOpts(0, 'system'),
+    );
   };
 
   const realMessages = hasSystem ? messages.slice(1) : messages;
@@ -533,7 +570,7 @@ function ConversationRow({
             onAddTurn={() => onAddTurnAfter(0)}
             onChange={
               hasSystem
-                ? (patch) => updateMessage(0, patch)
+                ? (patch) => updateMessage(0, patch, editOpts(0, 'system'))
                 : (patch) => materializeSystem(patch.content ?? '')
             }
             onRemove={hasSystem ? () => removeMessage(0) : undefined}
@@ -550,7 +587,9 @@ function ConversationRow({
                 message={msg}
                 inputRef={(el) => registerInput(slotIdx, el)}
                 onAddTurn={() => onAddTurnAfter(slotIdx)}
-                onChange={(patch) => updateMessage(msgIdx, patch)}
+                onChange={(patch) =>
+                  updateMessage(msgIdx, patch, editOpts(slotIdx, 'other'))
+                }
                 onRemove={() => removeMessage(msgIdx)}
                 onBackspaceEmpty={() => onBackspaceEmpty(slotIdx)}
                 onNavigatePrev={() => onNavigatePrev(slotIdx)}

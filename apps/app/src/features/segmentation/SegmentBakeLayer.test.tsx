@@ -55,9 +55,15 @@ const mkProps = (overrides: Partial<SegmentBakeLayerProps> = {}): SegmentBakeLay
 beforeEach(() => {
   // Return a stable fake bake synchronously via the hook shim.
   vi.spyOn(bakeCache, 'useSegmentBake').mockReturnValue({ bake: mkBake() });
-  // Stub the canvas getContext('bitmaprenderer'); jsdom lacks it.
+  // jsdom's CanvasRenderingContext2D doesn't implement the drawing methods
+  // the bake-paint effect calls. Stub a 2d-shaped context with the handful we
+  // touch so the effect doesn't throw mid-render.
   HTMLCanvasElement.prototype.getContext = vi.fn(
-    () => ({ transferFromImageBitmap: () => {} }),
+    () => ({
+      clearRect: () => {},
+      drawImage: () => {},
+      transferFromImageBitmap: () => {},
+    }),
   ) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 });
 

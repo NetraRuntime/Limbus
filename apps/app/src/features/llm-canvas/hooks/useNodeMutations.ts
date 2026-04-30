@@ -27,12 +27,51 @@ export function useNodeMutations({
   // Per-node debounce timers for inspector patches.
   const patchTimersRef = useRef<Map<string, number>>(new Map());
 
+  // Active coalesce slot for inspector content edits — successive patches
+  // with the same key fold into one history entry instead of one-per-keystroke.
+  const coalesceRef = useRef<{
+    key: string;
+    nextRef: { current: NodeExample[] };
+    timer: number;
+  } | null>(null);
+
   useEffect(() => {
     return () => {
       for (const t of patchTimersRef.current.values()) clearTimeout(t);
       patchTimersRef.current.clear();
+      if (coalesceRef.current) {
+        clearTimeout(coalesceRef.current.timer);
+        coalesceRef.current = null;
+      }
     };
   }, []);
+
+  const schedulePersistExamples = useCallback(
+    (id: string) => {
+      const existing = patchTimersRef.current.get(id);
+      if (existing !== undefined) clearTimeout(existing);
+      const timer = window.setTimeout(() => {
+        patchTimersRef.current.delete(id);
+        const fresh = nodesRef.current?.find((n) => n.id === id);
+        if (!fresh) return;
+        void updateNode(id, { examples: fresh.examples }).catch((err) =>
+          warn('persist patch failed', err),
+        );
+      }, 500);
+      patchTimersRef.current.set(id, timer);
+    },
+    [nodesRef],
+  );
+
+  const applyExamples = useCallback(
+    (id: string, examples: NodeExample[]) => {
+      setNodes((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, examples } : n)),
+      );
+      schedulePersistExamples(id);
+    },
+    [setNodes, schedulePersistExamples],
+  );
 
   const move = useCallback(
     (id: string, next: { x: number; y: number }) => {
@@ -77,23 +116,68 @@ export function useNodeMutations({
   );
 
   const patch = useCallback(
-    (id: string, patch: { examples?: NodeExample[] }) => {
-      setNodes((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+    (
+      id: string,
+      patch: { examples?: NodeExample[] },
+      opts?: { history?: { label: string; coalesceKey?: string } },
+    ) => {
+      const nextExamples = patch.examples;
+      if (nextExamples === undefined) return;
+
+      const prevExamples =
+        nodesRef.current?.find((n) => n.id === id)?.examples ?? [];
+
+      // Always apply optimistically and schedule the persist debounce.
+      applyExamples(id, nextExamples);
+
+      if (!opts?.history) return;
+
+      const { label, coalesceKey } = opts.history;
+      // Namespace by node id so switching nodes (or distinct nodes sharing a
+      // logical key) never accidentally fold into the same entry.
+      const fullKey = coalesceKey ? `${id}::${coalesceKey}` : undefined;
+      const coalesce = coalesceRef.current;
+
+      // Same coalesce key as the live entry — extend its `next` instead of
+      // pushing a fresh entry. Preserves the original `prev` so a single undo
+      // unwinds the whole edit burst.
+      if (fullKey && coalesce && coalesce.key === fullKey) {
+        coalesce.nextRef.current = nextExamples;
+        clearTimeout(coalesce.timer);
+        coalesce.timer = window.setTimeout(() => {
+          if (coalesceRef.current === coalesce) coalesceRef.current = null;
+        }, 800);
+        return;
+      }
+
+      // Different key (or no key) — close the prior coalesce window before
+      // starting a new entry.
+      if (coalesce) {
+        clearTimeout(coalesce.timer);
+        coalesceRef.current = null;
+      }
+
+      const prevRef = { current: prevExamples };
+      const nextRef = { current: nextExamples };
+
+      const apply = () => applyExamples(id, nextRef.current);
+      const revert = () => applyExamples(id, prevRef.current);
+
+      history.push(
+        { do: apply, undo: revert, label },
+        { alreadyApplied: true },
       );
-      const existing = patchTimersRef.current.get(id);
-      if (existing !== undefined) clearTimeout(existing);
-      const timer = window.setTimeout(() => {
-        patchTimersRef.current.delete(id);
-        const fresh = nodesRef.current?.find((n) => n.id === id);
-        if (!fresh) return;
-        void updateNode(id, { examples: fresh.examples }).catch((err) =>
-          warn('persist patch failed', err),
-        );
-      }, 500);
-      patchTimersRef.current.set(id, timer);
+
+      if (fullKey) {
+        const timer = window.setTimeout(() => {
+          if (coalesceRef.current?.key === fullKey) {
+            coalesceRef.current = null;
+          }
+        }, 800);
+        coalesceRef.current = { key: fullKey, nextRef, timer };
+      }
     },
-    [nodesRef, setNodes],
+    [applyExamples, history, nodesRef],
   );
 
   const rename = useCallback(
