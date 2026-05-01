@@ -1,10 +1,6 @@
 import { SettingsModal } from '../../../../components/SettingsModal';
 import { ImportPreviewModal } from '../ImportPreviewModal';
 import {
-  MediaSearchPalette,
-  type SearchItem,
-} from '../MediaSearchPalette';
-import {
   DeleteProjectModal,
   updateProject,
   type ProjectRecord,
@@ -17,27 +13,19 @@ type SettingsHook = ReturnType<typeof useSettings>;
 type ImportPreviewHook = ReturnType<typeof useImportPreview>;
 
 type Props = {
-  // Settings
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
   settings: SettingsHook['settings'];
   updateSetting: SettingsHook['update'];
   resetSettings: SettingsHook['reset'];
-  // Project
   project: ProjectRecord | undefined;
   deleteProjectOpen: boolean;
   setDeleteProjectOpen: (open: boolean) => void;
-  // Import preview
   preview: ImportPreviewHook;
   onConfirmImport: () => void;
-  // Search palette
-  searchOpen: boolean;
-  setSearchOpen: (open: boolean) => void;
-  searchItems: SearchItem[];
-  onSearchSelect: (item: SearchItem) => void;
 };
 
-export function CanvasModals({
+export function VisionCanvasModals({
   settingsOpen,
   setSettingsOpen,
   settings,
@@ -48,10 +36,6 @@ export function CanvasModals({
   setDeleteProjectOpen,
   preview,
   onConfirmImport,
-  searchOpen,
-  setSearchOpen,
-  searchItems,
-  onSearchSelect,
 }: Props) {
   return (
     <>
@@ -80,7 +64,6 @@ export function CanvasModals({
           project={project}
           onClose={() => {
             setDeleteProjectOpen(false);
-            // Cancel returns the user to settings — where they came from.
             setSettingsOpen(true);
           }}
           onDeleted={() => void closeCurrentCanvas()}
@@ -92,13 +75,6 @@ export function CanvasModals({
         onCancel={preview.cancel}
         onImport={onConfirmImport}
         onChangeFormat={preview.setChosenFormat}
-      />
-
-      <MediaSearchPalette
-        open={searchOpen}
-        items={searchItems}
-        onSelect={onSearchSelect}
-        onClose={() => setSearchOpen(false)}
       />
     </>
   );

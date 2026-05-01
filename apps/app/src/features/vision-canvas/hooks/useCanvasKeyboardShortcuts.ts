@@ -27,7 +27,6 @@ type Args = {
   setLastSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
   setHoverId: React.Dispatch<React.SetStateAction<string | null>>;
   setSoloTag: React.Dispatch<React.SetStateAction<string | null>>;
-  setSearchOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setTool: (tool: 'drag' | 'box') => void;
   clearHideTimer: () => void;
   clearSelection: () => void;
@@ -55,7 +54,6 @@ const isInputTarget = (target: EventTarget | null): boolean => {
  * - Delete/Backspace (delete the selected mask)
  * - ArrowUp/Down (cycle solo tag)
  * - Delete/Backspace (delete all masks for solo tag)
- * - Cmd-K (toggle search palette)
  */
 export function useCanvasKeyboardShortcuts({
   canvasRef,
@@ -70,7 +68,6 @@ export function useCanvasKeyboardShortcuts({
   setLastSelectedId,
   setHoverId,
   setSoloTag,
-  setSearchOpen,
   setTool,
   clearHideTimer,
   clearSelection,
@@ -231,17 +228,4 @@ export function useCanvasKeyboardShortcuts({
     e.preventDefault();
     deleteAllMasksForTag(activeMedia.id, soloTag);
   });
-
-  // Cmd/Ctrl + K toggles the search palette (capture so input fields don't
-  // swallow it).
-  useWindowKeydown(
-    (e) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.altKey || e.shiftKey) return;
-      if (e.key.toLowerCase() !== 'k') return;
-      e.preventDefault();
-      setSearchOpen((o) => !o);
-    },
-    { capture: true },
-  );
 }

@@ -48,6 +48,7 @@ type Props = {
   searchAriaLabel?: string;
   searchTitle?: string;
   topHudExtra?: ReactNode;
+  appControlsLeading?: ReactNode;
   onOpenSettings: () => void;
   children: ReactNode;
 };
@@ -85,6 +86,7 @@ export function CanvasShell({
   searchAriaLabel,
   searchTitle,
   topHudExtra,
+  appControlsLeading,
   onOpenSettings,
   children,
 }: Props) {
@@ -201,6 +203,7 @@ export function CanvasShell({
       <CanvasAppControlsHud
         glass={glass.settingsPillGlass}
         onOpenSettings={onOpenSettings}
+        leading={appControlsLeading}
       />
 
       <DropErrorToast message={dropError} onDismiss={() => setDropError(null)} />
