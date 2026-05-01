@@ -95,7 +95,7 @@ export function LlmCanvas({ projectId }: Props) {
 
   const getFitBounds = useFitBounds(
     nodes,
-    useCallback((id: string) => nodeSizes[id] ?? null, [nodeSizes]),
+    useCallback((n) => nodeSizes[n.id] ?? null, [nodeSizes]),
   );
 
   const nodeMut = useNodeMutations({

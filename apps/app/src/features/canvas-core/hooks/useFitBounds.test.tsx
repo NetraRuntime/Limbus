@@ -15,8 +15,8 @@ describe('useFitBounds', () => {
       { id: 'a', x: 0, y: 0 },
       { id: 'b', x: 10, y: 20 },
     ];
-    const sizeOf = (id: string) =>
-      id === 'a' ? { w: 4, h: 4 } : { w: 6, h: 6 };
+    const sizeOf = (item: { id: string }) =>
+      item.id === 'a' ? { w: 4, h: 4 } : { w: 6, h: 6 };
     const { result } = renderHook(() => useFitBounds(items, sizeOf));
     expect(result.current()).toEqual({ x: 0, y: 0, width: 16, height: 26 });
   });
@@ -26,7 +26,8 @@ describe('useFitBounds', () => {
       { id: 'a', x: 0, y: 0 },
       { id: 'b', x: 100, y: 100 },
     ];
-    const sizeOf = (id: string) => (id === 'a' ? { w: 4, h: 4 } : null);
+    const sizeOf = (item: { id: string }) =>
+      item.id === 'a' ? { w: 4, h: 4 } : null;
     const { result } = renderHook(() => useFitBounds(items, sizeOf));
     expect(result.current()).toEqual({ x: 0, y: 0, width: 4, height: 4 });
   });
