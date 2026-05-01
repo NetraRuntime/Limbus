@@ -41,5 +41,6 @@ export { useTrashSweep } from './hooks/useTrashSweep';
 export { useUploadPipeline } from './hooks/useUploadPipeline';
 export type { UploadPipeline } from './hooks/useUploadPipeline';
 export { useVisibleMedia } from './hooks/useVisibleMedia';
+export { useSam3Boot, type Sam3BootState } from './hooks/useSam3Boot';
 
 export { VisionCanvasPage } from './VisionCanvasPage';
