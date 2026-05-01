@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -12,6 +13,7 @@ import type {
   NodeExample,
   NodeRecord,
 } from '../types/canvas';
+import { ImportError, parseConversationsFile } from '../lib/importExamples';
 
 export type FocusedExample = {
   idx: number;
@@ -79,13 +81,105 @@ export function NodeInspectorSidebar({
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState<number>(() => clampWidth(readWidth()));
   const [resizing, setResizing] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const dragCounter = useRef(0);
+  const focusOnImportRef = useRef<((idx: number) => void) | null>(null);
   const widthRef = useRef(width);
   widthRef.current = width;
+
+  const importFile = useCallback(
+    (file: File) => {
+      if (!onPatch) return;
+      setImportError(null);
+      file
+        .text()
+        .then((text) => {
+          try {
+            const result = parseConversationsFile(file.name, text);
+            const imported = result.examples;
+            if (imported.length === 0) {
+              setImportError('No conversations found in file.');
+              return;
+            }
+            const stored = node.examples;
+            const base =
+              stored.length === 1 && stored[0]!.messages.length === 0
+                ? []
+                : stored.slice();
+            const next = [...base, ...imported];
+            const label =
+              imported.length === 1
+                ? 'Import conversation'
+                : `Import ${imported.length} conversations`;
+            onPatch(node.id, { examples: next }, { history: { label } });
+            focusOnImportRef.current?.(next.length - imported.length);
+          } catch (err) {
+            if (err instanceof ImportError) setImportError(err.message);
+            else
+              setImportError(
+                err instanceof Error ? err.message : 'Failed to parse file.',
+              );
+          }
+        })
+        .catch((err: unknown) => {
+          setImportError(err instanceof Error ? err.message : 'Failed to read file.');
+        });
+    },
+    [node.id, node.examples, onPatch],
+  );
+
+  const hasFiles = (e: ReactDragEvent<HTMLElement>) =>
+    Array.from(e.dataTransfer.types).includes('Files');
+
+  const handleDragEnter = (e: ReactDragEvent<HTMLElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+    setDragActive(true);
+  };
+
+  const handleDragOver = (e: ReactDragEvent<HTMLElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDragLeave = (e: ReactDragEvent<HTMLElement>) => {
+    if (!hasFiles(e)) return;
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) setDragActive(false);
+  };
+
+  const handleDrop = (e: ReactDragEvent<HTMLElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) importFile(file);
+  };
 
   useEffect(() => {
     if (resizing) return;
     writeWidth(width);
   }, [width, resizing]);
+
+  // Suppress the browser's default file-drop handler at the document level so
+  // dropping outside the inspector doesn't navigate the webview to the file.
+  useEffect(() => {
+    const block = (e: DragEvent) => {
+      if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('dragover', block);
+    window.addEventListener('drop', block);
+    return () => {
+      window.removeEventListener('dragover', block);
+      window.removeEventListener('drop', block);
+    };
+  }, []);
 
   useEffect(() => {
     const onResize = () => setWidth((w) => clampWidth(w));
@@ -119,9 +213,13 @@ export function NodeInspectorSidebar({
     <aside
       className={`node-inspector${expanded ? ' is-expanded' : ''}${
         resizing ? ' is-resizing' : ''
-      }`}
+      }${dragActive ? ' is-drag-target' : ''}`}
       aria-label={`${node.name} details`}
       style={expanded ? undefined : { width }}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div
         className="node-inspector-resizer"
@@ -162,9 +260,20 @@ export function NodeInspectorSidebar({
             node={node}
             onPatch={onPatch}
             focusedExample={focusedExample ?? null}
+            importError={importError}
+            onClearImportError={() => setImportError(null)}
+            registerFocusOnImport={(fn) => {
+              focusOnImportRef.current = fn;
+            }}
           />
         )}
       </div>
+      {dragActive && (
+        <div className="node-inspector-drop-overlay" aria-hidden>
+          <i className="ri-upload-cloud-2-line" aria-hidden />
+          <span>Drop ShareGPT, ChatML, CSV, or text file</span>
+        </div>
+      )}
     </aside>
   );
 }
@@ -173,6 +282,9 @@ type ListProps = {
   node: NodeRecord;
   onPatch?: ExamplesPatchFn;
   focusedExample: FocusedExample | null;
+  importError: string | null;
+  onClearImportError: () => void;
+  registerFocusOnImport: (fn: (idx: number) => void) => void;
 };
 
 type Caret = 'start' | 'end';
@@ -199,7 +311,14 @@ const slotToMsgIdx = (ex: NodeExample, slotIdx: number): number => {
   return hasSys ? slotIdx : slotIdx - 1;
 };
 
-function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
+function NodeConversationList({
+  node,
+  onPatch,
+  focusedExample,
+  importError,
+  onClearImportError,
+  registerFocusOnImport,
+}: ListProps) {
   const examples: NodeExample[] =
     node.examples.length > 0 ? node.examples : [emptyExample()];
 
@@ -253,6 +372,12 @@ function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
     base.push(emptyExample());
     commit(base, { history: { label: 'Add conversation example' } });
   };
+
+  useEffect(() => {
+    registerFocusOnImport((idx) => {
+      setOpenSet(() => new Set([idx]));
+    });
+  }, [registerFocusOnImport]);
 
   const removeExample = (idx: number) => {
     const base = node.examples.length > 0 ? node.examples : [emptyExample()];
@@ -403,6 +528,20 @@ function NodeConversationList({ node, onPatch, focusedExample }: ListProps) {
           <span>Add conversation</span>
         </button>
       </div>
+      {importError && (
+        <div className="node-convo-import-error" role="alert">
+          <i className="ri-error-warning-line" aria-hidden />
+          <span>{importError}</span>
+          <button
+            type="button"
+            className="node-convo-import-error-close"
+            onClick={onClearImportError}
+            aria-label="Dismiss"
+          >
+            <i className="ri-close-line" aria-hidden />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

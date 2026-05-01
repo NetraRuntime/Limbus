@@ -886,6 +886,8 @@
   bottom: 0;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-start;
   padding: 8px 14px 14px;
   background: linear-gradient(
@@ -918,6 +920,136 @@
 }
 .node-convo-add-btn i {
   font-size: 14px;
+}
+
+.canvas-drop-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 420px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, #ef4444 12%, var(--bg));
+  border: 1px solid color-mix(in srgb, #ef4444 40%, var(--border-muted));
+  box-shadow: 0 16px 32px -12px rgb(0 0 0 / 0.32);
+  color: var(--fg);
+  font: 500 12.5px/1.4 var(--font-display, system-ui);
+  z-index: 60;
+  animation: canvas-drop-toast-in 160ms ease-out both;
+}
+.canvas-drop-toast i {
+  flex: 0 0 auto;
+  font-size: 16px;
+  color: #ef4444;
+  margin-top: 1px;
+}
+.canvas-drop-toast span {
+  flex: 1;
+  word-break: break-word;
+}
+.canvas-drop-toast-close {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.canvas-drop-toast-close:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+@keyframes canvas-drop-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.node-inspector.is-drag-target {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  box-shadow:
+    0 24px 48px -16px rgb(0 0 0 / 0.35),
+    0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.node-inspector-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border: 2px dashed color-mix(in srgb, var(--accent) 70%, var(--border));
+  color: var(--fg);
+  font: 600 14px/1.4 var(--font-display, system-ui);
+  text-align: center;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: node-inspector-drop-overlay-in 140ms ease-out both;
+}
+.node-inspector-drop-overlay i {
+  font-size: 36px;
+  color: var(--accent);
+}
+@keyframes node-inspector-drop-overlay-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.node-convo-import-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 14px 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, #ef4444 10%, var(--bg));
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border-muted));
+  color: var(--fg);
+  font: 500 12px/1.4 var(--font-display, system-ui);
+}
+.node-convo-import-error i {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: #ef4444;
+  margin-top: 1px;
+}
+.node-convo-import-error span {
+  flex: 1;
+  word-break: break-word;
+}
+.node-convo-import-error-close {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.node-convo-import-error-close:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
 }
 
 .llm-edge-overlay {

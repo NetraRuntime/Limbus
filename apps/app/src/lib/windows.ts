@@ -37,7 +37,10 @@ export async function openCanvasWindow(
     height: 820,
     minWidth: 900,
     minHeight: 600,
-    dragDropEnabled: true,
+    // Forward OS file drops to the webview as DOM events so the LLM-canvas
+    // inspector sidebar can intercept them. With `true`, Tauri swallows the
+    // drop at the native layer and the browser drop handlers never fire.
+    dragDropEnabled: false,
     focus: true,
     visible: true,
     titleBarStyle: 'overlay',

@@ -23,7 +23,7 @@
         "maxHeight": 560,
         "resizable": false,
         "fullscreen": false,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }
