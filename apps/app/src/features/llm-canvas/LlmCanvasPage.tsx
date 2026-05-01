@@ -1,11 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  CanvasPage,
-  CanvasShell,
-  useCanvasPage,
-  useCanvasShell,
-  useFitBounds,
-} from '../canvas-core';
+import { useMemo, useState } from 'react';
+import { CanvasPage, CanvasShell, useCanvasShell } from '../canvas-core';
 import {
   EdgeOverlay,
   LLM_VIEW_STORAGE_KEY,
@@ -17,7 +11,6 @@ import {
   StepSearchPalette,
   useLlmCanvas,
   useLlmConnect,
-  useLlmImportDrop,
   useLlmMutations,
   useLlmNodes,
 } from './';
@@ -42,19 +35,9 @@ export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
 }
 
 function LlmCanvasBody() {
-  const { projectId, history } = useCanvasPage();
-  const shell = useCanvasShell();
-  const {
-    view,
-    searchOpen,
-    setSearchOpen,
-    setDropError,
-    setDropHandler,
-    setFitBoundsGetter,
-    setBackgroundPointerDown,
-  } = shell;
+  const { view, searchOpen, setSearchOpen } = useCanvasShell();
 
-  const { nodes, edges, setNodes, nodeSizes, handleMeasure } = useLlmNodes();
+  const { nodes, edges, nodeSizes, handleMeasure } = useLlmNodes();
   const { selectedId, setSelectedId } = useLlmCanvas();
   const [focusedExample, setFocusedExample] = useState<{
     nodeId: string;
@@ -73,33 +56,6 @@ function LlmCanvasBody() {
     rerouting,
     startReroute,
   } = useLlmConnect();
-
-  const { handleDrop } = useLlmImportDrop({
-    projectId,
-    history,
-    setNodes,
-    onError: setDropError,
-    onCreated: setSelectedId,
-  });
-
-  useEffect(() => {
-    setDropHandler(handleDrop);
-    return () => setDropHandler(null);
-  }, [setDropHandler, handleDrop]);
-
-  const getFitBounds = useFitBounds(nodes, (n) => nodeSizes[n.id] ?? null);
-  useEffect(() => {
-    setFitBoundsGetter(getFitBounds);
-    return () => setFitBoundsGetter(null);
-  }, [setFitBoundsGetter, getFitBounds]);
-
-  useEffect(() => {
-    const onBackground = () => {
-      setSelectedId(null);
-    };
-    setBackgroundPointerDown(onBackground);
-    return () => setBackgroundPointerDown(null);
-  }, [setBackgroundPointerDown]);
 
   const stepNodes = nodes.filter((n) => n.kind === 'step');
   const selectedNode = selectedId

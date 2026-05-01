@@ -1,7 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   useCanvasPage,
   useCanvasShell,
+  useFitBounds,
   type InfiniteCanvasHandle,
 } from '../../canvas-core';
 import { useLlmHydration } from '../hooks/useLlmHydration';
@@ -13,6 +14,7 @@ import { useCommitStep } from '../hooks/useCommitStep';
 import { useEdgeRerouteGesture } from '../hooks/useEdgeRerouteGesture';
 import { useSelectedNodeFocus } from '../hooks/useSelectedNodeFocus';
 import { useLlmCanvasKeyboardShortcuts } from '../hooks/useLlmCanvasKeyboardShortcuts';
+import { useLlmImportDrop } from '../hooks/useLlmImportDrop';
 import {
   LlmCanvasContextProvider,
   type LlmCanvasValue,
@@ -68,6 +70,36 @@ export function LlmCanvasProvider({ children }: Props) {
 
   useSelectedNodeFocus({ canvasRef, nodesRef, nodeSizes, selectedId });
   useLlmCanvasKeyboardShortcuts({ setSelectedId });
+
+  const { setDropHandler, setFitBoundsGetter, setBackgroundPointerDown, setDropError } = shell;
+
+  const { handleDrop } = useLlmImportDrop({
+    projectId,
+    history,
+    setNodes,
+    onError: setDropError,
+    onCreated: setSelectedId,
+  });
+
+  useEffect(() => {
+    setDropHandler(handleDrop);
+    return () => setDropHandler(null);
+  }, [setDropHandler, handleDrop]);
+
+  const getFitBounds = useFitBounds(
+    nodes,
+    useCallback((n) => nodeSizes[n.id] ?? null, [nodeSizes]),
+  );
+  useEffect(() => {
+    setFitBoundsGetter(getFitBounds);
+    return () => setFitBoundsGetter(null);
+  }, [setFitBoundsGetter, getFitBounds]);
+
+  useEffect(() => {
+    const onBackground = () => setSelectedId(null);
+    setBackgroundPointerDown(onBackground);
+    return () => setBackgroundPointerDown(null);
+  }, [setBackgroundPointerDown]);
 
   const value: LlmCanvasValue = {
     selectedId,
