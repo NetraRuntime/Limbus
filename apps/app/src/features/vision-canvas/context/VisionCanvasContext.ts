@@ -27,6 +27,7 @@ import type { MarqueeGesture } from '../hooks/useMarqueeGesture';
 import type { DrawBoxGesture } from '../hooks/useDrawBoxGesture';
 import type { BboxResizeGesture } from '../hooks/useBboxResizeGesture';
 import type { MediaDragGesture } from '../hooks/useMediaDragGesture';
+import type { useImportPreview } from '../../../hooks/useImportPreview';
 
 export type VisionCanvasValue = {
   // C1: connection + sam3
@@ -128,6 +129,10 @@ export type VisionCanvasValue = {
   setMultiHighlightInput: Dispatch<SetStateAction<string[]>>;
   highlightInputs: Record<string, string[]>;
   setHighlightInputs: Dispatch<SetStateAction<Record<string, string[]>>>;
+
+  // C6: import preview + drop
+  preview: ReturnType<typeof useImportPreview>;
+  onConfirmImport: () => void;
 };
 
 const Ctx = createContext<VisionCanvasValue | null>(null);

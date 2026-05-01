@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   CanvasPage,
   CanvasShell,
   useCanvasPage,
   useCanvasShell,
-  useFitBounds,
   useViewport,
   type InfiniteCanvasHandle,
 } from '../canvas-core';
@@ -30,24 +29,21 @@ import {
   SelectionHud,
   TagInputLayer,
   UserBoxesLayer,
-  VisionCanvasModals,
+  VisionCanvasModalsConnected,
   VisionCanvasProvider,
   useCanvasKeyboardShortcuts,
-  useDropHandler,
   useMediaHandlers,
   useTrashSweep,
   useVisionMedia,
   useVisionSegmentation,
   useVisionSelection,
   useVisionTools,
-  type CanvasMedia,
   type ConnState,
   type SearchItem,
 } from './';
 import { FloatingSidebar } from '../../components/FloatingSidebar';
 import { BootCard } from '../../components/BootCard';
 import { useSettings } from '../../hooks/useSettings';
-import { useImportPreview } from '../../hooks/useImportPreview';
 import { focusHome } from '../../lib/windows';
 import { HIGHLIGHT_BOTTOM_INSET_PX, VISION_VIEW_STORAGE_KEY } from './lib';
 import { useSam3Boot } from './hooks/useSam3Boot';
@@ -98,12 +94,6 @@ type InnerProps = { projectId: string; sam3Error: string | null };
 function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
   const [conn, setConn] = useState<ConnState>('connecting');
 
-  const preview = useImportPreview();
-  const confirmImportRef = useRef<() => void>(() => {});
-  const handleConfirmImport = useCallback(() => {
-    confirmImportRef.current();
-  }, []);
-
   return (
     <CanvasPage
       projectId={projectId}
@@ -113,24 +103,16 @@ function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
       fitFocusOpts={{ bottomInset: HIGHLIGHT_BOTTOM_INSET_PX }}
       topHudExtra={<TopHudExtra conn={conn} sam3Error={sam3Error} />}
       appControlsLeading={<SavedTagsPopover projectId={projectId} />}
-      modals={(m) => (
-        <VisionCanvasModals
-          {...m}
-          preview={preview}
-          onConfirmImport={handleConfirmImport}
-        />
-      )}
     >
       <VisionCanvasProvider
         conn={conn}
         setConn={setConn}
         sam3Error={sam3Error}
       >
-        <CanvasBody
-          conn={conn}
-          preview={preview}
-          confirmImportRef={confirmImportRef}
-        />
+        <CanvasBody conn={conn} />
+        <CanvasShell.Modals>
+          <VisionCanvasModalsConnected />
+        </CanvasShell.Modals>
       </VisionCanvasProvider>
     </CanvasPage>
   );
@@ -168,39 +150,23 @@ function TopHudExtra({ conn, sam3Error }: TopHudExtraProps) {
 
 type BodyProps = {
   conn: ConnState;
-  preview: ReturnType<typeof useImportPreview>;
-  confirmImportRef: React.MutableRefObject<() => void>;
 };
 
-function CanvasBody({
-  conn,
-  preview,
-  confirmImportRef,
-}: BodyProps) {
+function CanvasBody({ conn }: BodyProps) {
   const { projectId } = useCanvasPage();
   const shell = useCanvasShell();
   const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
-  const {
-    view,
-    cursor,
-    searchOpen,
-    setSearchOpen,
-    setDropHandler,
-    setBackgroundPointerDown,
-    setFitBoundsGetter,
-  } = shell;
+  const { view, cursor, searchOpen, setSearchOpen } = shell;
 
   // ─── Media + upload + lod come from the provider ────────────────────────
   const {
     media,
-    setMedia,
     mediaRef,
     paintMedia,
     visibleMedia,
     labelPlacements,
     uploadStatus,
     encodingIds,
-    runUploadPlan,
     lodSources,
     setPriorityIds,
   } = useVisionMedia();
@@ -228,7 +194,6 @@ function CanvasBody({
   // ─── Segmentation comes from the provider ───────────────────────────────
   const {
     segments,
-    setSegments,
     segmentsRef,
     selectedMask,
     hoveredMask,
@@ -254,7 +219,6 @@ function CanvasBody({
     clearHideTimer,
     scheduleHide,
     marqueeRect,
-    handleBackgroundPointerDown,
     drawBoxPreview,
     beginDraw,
     activeResize,
@@ -303,38 +267,6 @@ function CanvasBody({
     deleteMask,
     deleteAllMasksForTag,
   });
-
-  // ─── Canvas-event handlers ──────────────────────────────────────────────
-  const { handleDrop, onConfirmImport } = useDropHandler({
-    projectId,
-    canvasRef,
-    mediaRef,
-    runUploadPlan,
-    setSegments,
-    preview,
-  });
-
-  // Register the drop handler with the shell so InfiniteCanvas receives it.
-  useEffect(() => {
-    setDropHandler(handleDrop);
-    return () => setDropHandler(null);
-  }, [setDropHandler, handleDrop]);
-
-  // Register the marquee background-pointer handler with the shell.
-  useEffect(() => {
-    setBackgroundPointerDown(handleBackgroundPointerDown);
-    return () => setBackgroundPointerDown(null);
-  }, [setBackgroundPointerDown, handleBackgroundPointerDown]);
-
-  // Register fit-bounds for the bottom HUD's Reset button.
-  const getFitBounds = useFitBounds<CanvasMedia>(media, (m) => ({
-    w: m.width,
-    h: m.height,
-  }));
-  useEffect(() => {
-    setFitBoundsGetter(getFitBounds);
-    return () => setFitBoundsGetter(null);
-  }, [setFitBoundsGetter, getFitBounds]);
 
   const {
     handleMediaEnter,
@@ -396,9 +328,6 @@ function CanvasBody({
         })),
     [media],
   );
-
-  // Publish the body-owned `onConfirmImport` to the page-level Modals slot.
-  confirmImportRef.current = onConfirmImport;
 
   return (
     <>

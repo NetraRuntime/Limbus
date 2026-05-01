@@ -25,6 +25,7 @@ export { StepNameInput } from './components/StepNameInput';
 export { StepSearchPalette } from './components/StepSearchPalette';
 export { EdgeOverlay } from './components/EdgeOverlay';
 export { LlmCanvasModals } from './components/LlmCanvasModals';
+export { LlmCanvasModalsConnected } from './components/LlmCanvasModalsConnected';
 export { LlmStartNodes } from './components/LlmStartNodes';
 export { LlmStepNodes } from './components/LlmStepNodes';
 export { LlmEdgeOverlay } from './components/LlmEdgeOverlay';

@@ -1,13 +1,15 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   readStoredView,
   useCanvasPage,
   useCanvasShell,
+  useFitBounds,
   useViewport,
   type InfiniteCanvasHandle,
   type View,
 } from '../../canvas-core';
 import type { MaskIdentity } from '../../segmentation';
+import { useImportPreview } from '../../../hooks/useImportPreview';
 import { useStackOrder } from '../hooks/useStackOrder';
 import { useVisibleMedia } from '../hooks/useVisibleMedia';
 import { useLodSetup } from '../hooks/useLodSetup';
@@ -22,6 +24,7 @@ import { useMarqueeGesture } from '../hooks/useMarqueeGesture';
 import { useDrawBoxGesture } from '../hooks/useDrawBoxGesture';
 import { useBboxResizeGesture } from '../hooks/useBboxResizeGesture';
 import { useMediaDragGesture } from '../hooks/useMediaDragGesture';
+import { useDropHandler } from '../hooks/useDropHandler';
 import { useSavedTags } from '../components/savedTags';
 import {
   VISION_VIEW_STORAGE_KEY,
@@ -265,6 +268,39 @@ export function VisionCanvasProvider({
     replaceReadyTag,
   });
 
+  // C6: Import preview + drop handler.
+  const preview = useImportPreview();
+  const { handleDrop, onConfirmImport } = useDropHandler({
+    projectId,
+    canvasRef,
+    mediaRef,
+    runUploadPlan,
+    setSegments,
+    preview,
+  });
+
+  // Register the drop handler with the shell.
+  useEffect(() => {
+    shell.setDropHandler(handleDrop);
+    return () => shell.setDropHandler(null);
+  }, [shell, handleDrop]);
+
+  // Register the marquee background-pointer handler with the shell.
+  useEffect(() => {
+    shell.setBackgroundPointerDown(handleBackgroundPointerDown);
+    return () => shell.setBackgroundPointerDown(null);
+  }, [shell, handleBackgroundPointerDown]);
+
+  // Register fit-bounds for the bottom HUD's Reset button.
+  const getFitBounds = useFitBounds<CanvasMedia>(
+    media,
+    useCallback((m: CanvasMedia) => ({ w: m.width, h: m.height }), []),
+  );
+  useEffect(() => {
+    shell.setFitBoundsGetter(getFitBounds);
+    return () => shell.setFitBoundsGetter(null);
+  }, [shell, getFitBounds]);
+
   const value: VisionCanvasValue = {
     conn,
     setConn,
@@ -350,6 +386,8 @@ export function VisionCanvasProvider({
     setMultiHighlightInput,
     highlightInputs,
     setHighlightInputs,
+    preview,
+    onConfirmImport,
   };
 
   return (

@@ -1,30 +1,22 @@
 import { useState, type ReactNode } from 'react';
 import { CanvasShell } from './CanvasShell';
-import { CanvasPageProvider } from './CanvasPageContext';
+import {
+  CanvasPageProvider,
+  type CanvasPageModalsCtx,
+} from './CanvasPageContext';
 import { useCanvasTitle } from '../hooks/useCanvasTitle';
 import { useSettings } from '../../../hooks/useSettings';
 import { useAppliedTheme } from '../../../hooks/useAppliedTheme';
 import { useHistory, useHistoryShortcuts } from '../../../lib/history';
-import { DeletedBanner, useProject, type ProjectRecord } from '../../projects';
+import { DeletedBanner, useProject } from '../../projects';
+
+export type { CanvasPageModalsCtx };
 
 type FitFocusOpts = {
   padding?: number;
   bottomInset?: number;
   rightInset?: number;
   leftInset?: number;
-};
-
-type SettingsHook = ReturnType<typeof useSettings>;
-
-export type CanvasPageModalsCtx = {
-  settings: SettingsHook['settings'];
-  updateSetting: SettingsHook['update'];
-  resetSettings: SettingsHook['reset'];
-  project: ProjectRecord | undefined;
-  settingsOpen: boolean;
-  setSettingsOpen: (open: boolean) => void;
-  deleteProjectOpen: boolean;
-  setDeleteProjectOpen: (open: boolean) => void;
 };
 
 type Props = {
@@ -35,7 +27,6 @@ type Props = {
   fitFocusOpts?: FitFocusOpts;
   topHudExtra?: ReactNode;
   appControlsLeading?: ReactNode;
-  modals?: (ctx: CanvasPageModalsCtx) => ReactNode;
   children: ReactNode;
 };
 
@@ -47,7 +38,6 @@ export function CanvasPage({
   fitFocusOpts,
   topHudExtra,
   appControlsLeading,
-  modals,
   children,
 }: Props) {
   const projectState = useProject(projectId);
@@ -93,10 +83,9 @@ export function CanvasPage({
       appControlsLeading={appControlsLeading}
       onOpenSettings={() => setSettingsOpen(true)}
     >
-      <CanvasPageProvider value={{ projectId, history }}>
+      <CanvasPageProvider value={{ projectId, history, modalsCtx }}>
         {children}
       </CanvasPageProvider>
-      {modals && <CanvasShell.Modals>{modals(modalsCtx)}</CanvasShell.Modals>}
     </CanvasShell>
   );
 }

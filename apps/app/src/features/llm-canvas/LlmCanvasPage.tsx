@@ -1,7 +1,7 @@
 import { CanvasPage, CanvasShell } from '../canvas-core';
 import {
   LLM_VIEW_STORAGE_KEY,
-  LlmCanvasModals,
+  LlmCanvasModalsConnected,
   LlmCanvasProvider,
   LlmEdgeOverlay,
   LlmInspectorSidebar,
@@ -21,7 +21,6 @@ export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
       viewKey={LLM_VIEW_STORAGE_KEY}
       searchAriaLabel="Search steps (⌘K / Ctrl+K)"
       searchTitle="Search steps (⌘K)"
-      modals={(m) => <LlmCanvasModals {...m} />}
     >
       <LlmCanvasProvider>
         <CanvasShell.Canvas>
@@ -38,6 +37,9 @@ export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
         <CanvasShell.SearchPalette>
           <LlmStepSearch />
         </CanvasShell.SearchPalette>
+        <CanvasShell.Modals>
+          <LlmCanvasModalsConnected />
+        </CanvasShell.Modals>
       </LlmCanvasProvider>
     </CanvasPage>
   );

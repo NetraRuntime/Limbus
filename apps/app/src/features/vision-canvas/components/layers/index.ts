@@ -6,6 +6,7 @@ export { DrawBoxPreview } from './DrawBoxPreview';
 export { PendingBoxLabelLayer } from './PendingBoxLabelLayer';
 export { SegmentChipsLayer } from './SegmentChipsLayer';
 export { VisionCanvasModals } from './VisionCanvasModals';
+export { VisionCanvasModalsConnected } from './VisionCanvasModalsConnected';
 export { ContextMenuLayer } from './ContextMenuLayer';
 export { BboxOverlayContainer } from './BboxOverlayContainer';
 export { SelectionHud } from './SelectionHud';
