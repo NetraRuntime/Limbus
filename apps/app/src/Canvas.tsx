@@ -7,6 +7,7 @@ import {
   useViewport,
   type InfiniteCanvasHandle,
   type View,
+  readStoredView,
 } from './features/canvas-core';
 import {
   ActiveTagListLayer,
@@ -219,7 +220,9 @@ function CanvasBody({
   >(null);
 
   // ─── Refs (live mirrors + gesture state) ────────────────────────────────
-  const initialHadStoredView = useRef<boolean>(true);
+  const initialHadStoredView = useRef<boolean>(
+    readStoredView(VISION_VIEW_STORAGE_KEY) !== null,
+  );
   // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
   const initialMediaLoadedRef = useRef<boolean>(false);
   const dragRef = useRef<DragState | null>(null);
