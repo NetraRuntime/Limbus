@@ -18,6 +18,7 @@ import { useViewPersist } from '../hooks/useViewPersist';
 import { useWindowKeydown } from '../hooks/useWindowKeydown';
 import {
   InfiniteCanvas,
+  type BackgroundPointerDown,
   type InfiniteCanvasHandle,
   type View,
   type WorldPoint,
@@ -98,6 +99,9 @@ export function CanvasShell({
   const [fitBoundsGetter, setFitBoundsGetter] = useState<
     (() => WorldRect | null) | null
   >(null);
+  const [backgroundPointerDown, setBackgroundPointerDown] = useState<
+    ((e: BackgroundPointerDown) => void) | null
+  >(null);
 
   const glass = useCanvasGlass();
   useViewPersist(viewKey, view);
@@ -144,6 +148,7 @@ export function CanvasShell({
       setDropError,
       setDropHandler,
       setFitBoundsGetter,
+      setBackgroundPointerDown,
     }),
     [projectId, view, cursor, searchOpen],
   );
@@ -163,6 +168,7 @@ export function CanvasShell({
         onChange={handleChange}
         onPointerWorld={handlePointerWorld}
         onDataTransferDrop={dropHandler ?? undefined}
+        onBackgroundPointerDown={backgroundPointerDown ?? undefined}
         zoomSensitivity={zoomSensitivity}
         panSpeed={panSpeed}
       >

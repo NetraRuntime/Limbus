@@ -1,5 +1,6 @@
 import { createContext, useContext, type RefObject } from 'react';
 import type {
+  BackgroundPointerDown,
   InfiniteCanvasHandle,
   View,
   WorldPoint,
@@ -18,6 +19,9 @@ export type CanvasShellValue = {
     fn: ((dt: DataTransfer, p: WorldPoint) => void) | null,
   ) => void;
   setFitBoundsGetter: (fn: (() => WorldRect | null) | null) => void;
+  setBackgroundPointerDown: (
+    fn: ((e: BackgroundPointerDown) => void) | null,
+  ) => void;
 };
 
 const CanvasShellContextRef = createContext<CanvasShellValue | null>(null);

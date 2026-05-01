@@ -92,6 +92,7 @@ function LlmCanvasBody({ projectId, history }: BodyProps) {
     setDropError,
     setDropHandler,
     setFitBoundsGetter,
+    setBackgroundPointerDown,
   } = shell;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -162,6 +163,14 @@ function LlmCanvasBody({ projectId, history }: BodyProps) {
     setFitBoundsGetter(getFitBounds);
     return () => setFitBoundsGetter(null);
   }, [setFitBoundsGetter, getFitBounds]);
+
+  useEffect(() => {
+    const onBackground = () => {
+      setSelectedId(null);
+    };
+    setBackgroundPointerDown(onBackground);
+    return () => setBackgroundPointerDown(null);
+  }, [setBackgroundPointerDown]);
 
   const stepNodes = nodes.filter((n) => n.kind === 'step');
   const selectedNode = selectedId
