@@ -27,3 +27,4 @@ export { CanvasTitlebar } from './components/CanvasTitlebar';
 export { CanvasTopHud } from './components/CanvasTopHud';
 export { CanvasBottomHud } from './components/CanvasBottomHud';
 export { CanvasAppControlsHud } from './components/CanvasAppControlsHud';
+export { DropErrorToast } from './components/DropErrorToast';

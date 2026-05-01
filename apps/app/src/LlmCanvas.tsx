@@ -4,6 +4,7 @@ import {
   CanvasAppControlsHud,
   CanvasBottomHud,
   CanvasTopHud,
+  DropErrorToast,
   InfiniteCanvas,
   getInitialView,
   useCanvasGlass,
@@ -425,20 +426,7 @@ export function LlmCanvas({ projectId }: Props) {
         />
       )}
 
-      {dropError && (
-        <div className="canvas-drop-toast" role="alert">
-          <i className="ri-error-warning-line" aria-hidden />
-          <span>{dropError}</span>
-          <button
-            type="button"
-            className="canvas-drop-toast-close"
-            onClick={() => setDropError(null)}
-            aria-label="Dismiss"
-          >
-            <i className="ri-close-line" aria-hidden />
-          </button>
-        </div>
-      )}
+      <DropErrorToast message={dropError} onDismiss={() => setDropError(null)} />
 
       <StepSearchPalette
         open={searchOpen}
