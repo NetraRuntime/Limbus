@@ -8,11 +8,11 @@ import {
   getInitialView,
   useCanvasGlass,
   useCanvasTitle,
+  useFitBounds,
   useViewPersist,
   type InfiniteCanvasHandle,
   type View,
   type WorldPoint,
-  type WorldRect,
 } from './features/canvas-core';
 import {
   DeletedBanner,
@@ -92,6 +92,11 @@ export function LlmCanvas({ projectId }: Props) {
   edgesRef.current = edges;
 
   const { sizes: nodeSizes, handleMeasure } = useNodeSizes();
+
+  const getFitBounds = useFitBounds(
+    nodes,
+    useCallback((id: string) => nodeSizes[id] ?? null, [nodeSizes]),
+  );
 
   const nodeMut = useNodeMutations({
     history,
@@ -281,25 +286,6 @@ export function LlmCanvas({ projectId }: Props) {
     y: wy * view.scale + view.y,
   });
 
-  const allBounds = (): WorldRect | null => {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let any = false;
-    for (const n of nodes) {
-      const size = nodeSizes[n.id];
-      if (!size) continue;
-      any = true;
-      if (n.x < minX) minX = n.x;
-      if (n.y < minY) minY = n.y;
-      if (n.x + size.w > maxX) maxX = n.x + size.w;
-      if (n.y + size.h > maxY) maxY = n.y + size.h;
-    }
-    if (!any) return null;
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-  };
-
   return (
     <>
       <CanvasTitlebar />
@@ -397,7 +383,7 @@ export function LlmCanvas({ projectId }: Props) {
         view={view}
         cursor={cursor as WorldPoint | null}
         canvasRef={canvasRef}
-        getFitBounds={allBounds}
+        getFitBounds={getFitBounds}
         searchAriaLabel="Search steps (⌘K / Ctrl+K)"
         searchTitle="Search steps (⌘K)"
         onSearchOpen={() => setSearchOpen(true)}
