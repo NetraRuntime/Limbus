@@ -42,3 +42,5 @@ export { useNodeMutations } from './hooks/useNodeMutations';
 export { useEdgeMutations } from './hooks/useEdgeMutations';
 export { useSelectedNodeFocus } from './hooks/useSelectedNodeFocus';
 export { useCommitStep } from './hooks/useCommitStep';
+export { useLlmImportDrop } from './hooks/useLlmImportDrop';
+export type { LlmImportDrop } from './hooks/useLlmImportDrop';

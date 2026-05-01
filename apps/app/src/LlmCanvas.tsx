@@ -28,22 +28,16 @@ import {
   NodeInspectorSidebar,
   StepNameInput,
   StepSearchPalette,
-  STEP_NODE_HEIGHT,
   useCommitStep,
   useConnectGesture,
   useEdgeMutations,
   useEdgeRerouteGesture,
   useLlmHydration,
+  useLlmImportDrop,
   useNodeMutations,
   useNodeSizes,
   useSelectedNodeFocus,
 } from './features/llm-canvas';
-import { createNode, deleteNode, updateNode } from './features/llm-canvas/api/nodes';
-import {
-  ImportError,
-  parseConversationsFile,
-} from './features/llm-canvas/lib/importExamples';
-import type { NodeRecord } from './features/llm-canvas';
 import { SettingsModal } from './components/SettingsModal';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
@@ -70,13 +64,6 @@ export function LlmCanvas({ projectId }: Props) {
     idx: number;
     token: number;
   } | null>(null);
-  const [dropError, setDropError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!dropError) return;
-    const t = window.setTimeout(() => setDropError(null), 5000);
-    return () => window.clearTimeout(t);
-  }, [dropError]);
 
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
@@ -131,6 +118,13 @@ export function LlmCanvas({ projectId }: Props) {
     onCommit: edgeMut.reroute,
   });
 
+  const { handleDrop, dropError, dismissDropError } = useLlmImportDrop({
+    projectId,
+    history,
+    setNodes,
+    onCreated: setSelectedId,
+  });
+
   useViewPersist(LLM_VIEW_STORAGE_KEY, view);
   useSelectedNodeFocus({ canvasRef, nodesRef, nodeSizes, selectedId });
 
@@ -174,95 +168,6 @@ export function LlmCanvas({ projectId }: Props) {
   // Avoid lint about an unused export until we wire an edge-remove affordance.
   void edgeMut.remove;
 
-  const handleCanvasDrop = useCallback(
-    (dt: DataTransfer, worldPoint: { worldX: number; worldY: number }) => {
-      const file = dt.files?.[0];
-      if (!file) return;
-      setDropError(null);
-      void file
-        .text()
-        .then(async (text) => {
-          let parsed;
-          try {
-            parsed = parseConversationsFile(file.name, text);
-          } catch (err) {
-            if (err instanceof ImportError) setDropError(err.message);
-            else
-              setDropError(
-                err instanceof Error ? err.message : 'Failed to parse file.',
-              );
-            return;
-          }
-          if (parsed.examples.length === 0) {
-            setDropError('No conversations found in file.');
-            return;
-          }
-
-          const baseName = file.name.replace(/\.[^.]+$/, '') || 'Imported step';
-          const x = worldPoint.worldX;
-          const y = worldPoint.worldY - STEP_NODE_HEIGHT / 2;
-
-          let created: NodeRecord;
-          try {
-            created = await createNode({
-              project: projectId,
-              kind: 'step',
-              name: baseName,
-              x,
-              y,
-            });
-          } catch (err) {
-            setDropError(err instanceof Error ? err.message : 'Failed to create node.');
-            return;
-          }
-
-          try {
-            created = await updateNode(created.id, {
-              examples: parsed.examples,
-            });
-          } catch (err) {
-            setDropError(
-              err instanceof Error ? err.message : 'Failed to attach examples.',
-            );
-            void deleteNode(created.id).catch(() => {});
-            return;
-          }
-
-          setNodes((prev) => [...prev, created]);
-          setSelectedId(created.id);
-
-          const snap = created;
-          const apply = () => {
-            setNodes((prev) =>
-              prev.some((n) => n.id === snap.id) ? prev : [...prev, snap],
-            );
-            void createNode({
-              id: snap.id,
-              project: snap.project,
-              kind: 'step',
-              name: snap.name,
-              x: snap.x,
-              y: snap.y,
-            })
-              .then(() => updateNode(snap.id, { examples: snap.examples }))
-              .catch(() => {});
-          };
-          const revert = () => {
-            setNodes((prev) => prev.filter((n) => n.id !== snap.id));
-            void deleteNode(snap.id).catch(() => {});
-          };
-          history.push(
-            { do: apply, undo: revert, label: `Import "${baseName}"` },
-            { alreadyApplied: true },
-          );
-        })
-        .catch((err: unknown) => {
-          setDropError(err instanceof Error ? err.message : 'Failed to read file.');
-        });
-    },
-    [projectId, setNodes, history],
-  );
-
   const selectedNode =
     selectedId
       ? nodes.find((n) => n.id === selectedId && n.kind !== 'start') ?? null
@@ -296,7 +201,7 @@ export function LlmCanvas({ projectId }: Props) {
         onChange={handleChange}
         onPointerWorld={handlePointerWorld}
         onBackgroundPointerDown={handleBackgroundPointerDown}
-        onDataTransferDrop={handleCanvasDrop}
+        onDataTransferDrop={handleDrop}
         zoomSensitivity={settings.zoomSensitivity}
         panSpeed={settings.panSpeed}
       >
@@ -426,7 +331,7 @@ export function LlmCanvas({ projectId }: Props) {
         />
       )}
 
-      <DropErrorToast message={dropError} onDismiss={() => setDropError(null)} />
+      <DropErrorToast message={dropError} onDismiss={dismissDropError} />
 
       <StepSearchPalette
         open={searchOpen}
