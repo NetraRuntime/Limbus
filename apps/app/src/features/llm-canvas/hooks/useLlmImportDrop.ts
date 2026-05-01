@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import type { UseHistoryReturn } from '../../../lib/history';
 import { createNode, deleteNode, updateNode } from '../api/nodes';
 import {
@@ -8,12 +8,11 @@ import {
 import { STEP_NODE_HEIGHT } from '../lib/constants';
 import type { NodeRecord } from '../types/canvas';
 
-const TOAST_DURATION_MS = 5000;
-
 type Args = {
   projectId: string;
   history: UseHistoryReturn;
   setNodes: React.Dispatch<React.SetStateAction<NodeRecord[]>>;
+  onError: (message: string) => void;
   onCreated?: (id: string) => void;
 };
 
@@ -22,29 +21,19 @@ export type LlmImportDrop = {
     dt: DataTransfer,
     worldPoint: { worldX: number; worldY: number },
   ) => void;
-  dropError: string | null;
-  dismissDropError: () => void;
 };
 
 export function useLlmImportDrop({
   projectId,
   history,
   setNodes,
+  onError,
   onCreated,
 }: Args): LlmImportDrop {
-  const [dropError, setDropError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!dropError) return;
-    const t = window.setTimeout(() => setDropError(null), TOAST_DURATION_MS);
-    return () => window.clearTimeout(t);
-  }, [dropError]);
-
   const handleDrop = useCallback(
     (dt: DataTransfer, worldPoint: { worldX: number; worldY: number }) => {
       const file = dt.files?.[0];
       if (!file) return;
-      setDropError(null);
       void file
         .text()
         .then(async (text) => {
@@ -52,15 +41,15 @@ export function useLlmImportDrop({
           try {
             parsed = parseConversationsFile(file.name, text);
           } catch (err) {
-            if (err instanceof ImportError) setDropError(err.message);
+            if (err instanceof ImportError) onError(err.message);
             else
-              setDropError(
+              onError(
                 err instanceof Error ? err.message : 'Failed to parse file.',
               );
             return;
           }
           if (parsed.examples.length === 0) {
-            setDropError('No conversations found in file.');
+            onError('No conversations found in file.');
             return;
           }
 
@@ -78,7 +67,7 @@ export function useLlmImportDrop({
               y,
             });
           } catch (err) {
-            setDropError(err instanceof Error ? err.message : 'Failed to create node.');
+            onError(err instanceof Error ? err.message : 'Failed to create node.');
             return;
           }
 
@@ -87,7 +76,7 @@ export function useLlmImportDrop({
               examples: parsed.examples,
             });
           } catch (err) {
-            setDropError(
+            onError(
               err instanceof Error ? err.message : 'Failed to attach examples.',
             );
             void deleteNode(created.id).catch(() => {});
@@ -123,13 +112,11 @@ export function useLlmImportDrop({
           );
         })
         .catch((err: unknown) => {
-          setDropError(err instanceof Error ? err.message : 'Failed to read file.');
+          onError(err instanceof Error ? err.message : 'Failed to read file.');
         });
     },
-    [projectId, setNodes, history, onCreated],
+    [projectId, setNodes, history, onError, onCreated],
   );
 
-  const dismissDropError = useCallback(() => setDropError(null), []);
-
-  return { handleDrop, dropError, dismissDropError };
+  return { handleDrop };
 }

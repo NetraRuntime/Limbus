@@ -43,7 +43,6 @@ type Props = {
   project: ProjectRecord | null;
   panSpeed: number;
   zoomSensitivity: number;
-  getFitBounds: () => WorldRect | null;
   fitFocusOpts?: FitFocusOpts;
   searchAriaLabel?: string;
   searchTitle?: string;
@@ -81,7 +80,6 @@ export function CanvasShell({
   project,
   panSpeed,
   zoomSensitivity,
-  getFitBounds,
   fitFocusOpts,
   searchAriaLabel,
   searchTitle,
@@ -96,6 +94,9 @@ export function CanvasShell({
   const [dropError, setDropError] = useState<string | null>(null);
   const [dropHandler, setDropHandler] = useState<
     ((dt: DataTransfer, p: WorldPoint) => void) | null
+  >(null);
+  const [fitBoundsGetter, setFitBoundsGetter] = useState<
+    (() => WorldRect | null) | null
   >(null);
 
   const glass = useCanvasGlass();
@@ -142,6 +143,7 @@ export function CanvasShell({
       setSearchOpen,
       setDropError,
       setDropHandler,
+      setFitBoundsGetter,
     }),
     [projectId, view, cursor, searchOpen],
   );
@@ -183,7 +185,7 @@ export function CanvasShell({
         view={view}
         cursor={cursor}
         canvasRef={canvasRef}
-        getFitBounds={getFitBounds}
+        getFitBounds={fitBoundsGetter ?? (() => null)}
         fitFocusOpts={fitFocusOpts}
         searchAriaLabel={searchAriaLabel}
         searchTitle={searchTitle}

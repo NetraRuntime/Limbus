@@ -1,5 +1,10 @@
 import { createContext, useContext, type RefObject } from 'react';
-import type { InfiniteCanvasHandle, View, WorldPoint } from '../InfiniteCanvas';
+import type {
+  InfiniteCanvasHandle,
+  View,
+  WorldPoint,
+  WorldRect,
+} from '../InfiniteCanvas';
 
 export type CanvasShellValue = {
   projectId: string;
@@ -12,6 +17,7 @@ export type CanvasShellValue = {
   setDropHandler: (
     fn: ((dt: DataTransfer, p: WorldPoint) => void) | null,
   ) => void;
+  setFitBoundsGetter: (fn: (() => WorldRect | null) | null) => void;
 };
 
 const CanvasShellContextRef = createContext<CanvasShellValue | null>(null);

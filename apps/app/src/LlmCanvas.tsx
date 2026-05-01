@@ -1,24 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CanvasTitlebar,
-  CanvasAppControlsHud,
-  CanvasBottomHud,
-  CanvasTopHud,
-  DropErrorToast,
-  InfiniteCanvas,
-  getInitialView,
-  useCanvasGlass,
+  CanvasShell,
+  useCanvasShell,
   useCanvasTitle,
   useFitBounds,
-  useViewPersist,
   type InfiniteCanvasHandle,
-  type View,
-  type WorldPoint,
 } from './features/canvas-core';
-import {
-  DeletedBanner,
-  useProject,
-} from './features/projects';
+import { DeletedBanner, useProject } from './features/projects';
 import {
   EdgeOverlay,
   LLM_VIEW_STORAGE_KEY,
@@ -43,33 +31,75 @@ import { useAppliedTheme } from './hooks/useAppliedTheme';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import './App.css';
 
-type Props = {
-  projectId: string;
-};
+type Props = { projectId: string };
 
 export function LlmCanvas({ projectId }: Props) {
   const projectState = useProject(projectId);
+  const project = projectState.status === 'ready' ? projectState.project : null;
+  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
+  useAppliedTheme(settings.theme);
+  useCanvasTitle(projectId, projectState);
 
-  const canvasRef = useRef<InfiniteCanvasHandle>(null);
-  const [view, setView] = useState<View>(() => getInitialView(LLM_VIEW_STORAGE_KEY));
-  const [cursor, setCursor] = useState<{ worldX: number; worldY: number } | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const history = useHistory();
+  useHistoryShortcuts(history);
+
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+
+  if (projectState.status === 'deleted') return <DeletedBanner />;
+
+  return (
+    <CanvasShell
+      projectId={projectId}
+      viewKey={LLM_VIEW_STORAGE_KEY}
+      project={project}
+      panSpeed={settings.panSpeed}
+      zoomSensitivity={settings.zoomSensitivity}
+      searchAriaLabel="Search steps (⌘K / Ctrl+K)"
+      searchTitle="Search steps (⌘K)"
+      onOpenSettings={() => setSettingsOpen(true)}
+    >
+      <LlmCanvasBody projectId={projectId} history={history} />
+
+      <CanvasShell.Modals>
+        <LlmCanvasModals
+          settingsOpen={settingsOpen}
+          setSettingsOpen={setSettingsOpen}
+          settings={settings}
+          updateSetting={updateSetting}
+          resetSettings={resetSettings}
+          project={project ?? undefined}
+          deleteProjectOpen={deleteProjectOpen}
+          setDeleteProjectOpen={setDeleteProjectOpen}
+        />
+      </CanvasShell.Modals>
+    </CanvasShell>
+  );
+}
+
+type BodyProps = {
+  projectId: string;
+  history: ReturnType<typeof useHistory>;
+};
+
+function LlmCanvasBody({ projectId, history }: BodyProps) {
+  const shell = useCanvasShell();
+  const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
+  const {
+    view,
+    searchOpen,
+    setSearchOpen,
+    setDropError,
+    setDropHandler,
+    setFitBoundsGetter,
+  } = shell;
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedExample, setFocusedExample] = useState<{
     nodeId: string;
     idx: number;
     token: number;
   } | null>(null);
-
-  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
-  useAppliedTheme(settings.theme);
-  useCanvasTitle(projectId, projectState);
-  const glass = useCanvasGlass();
-
-  const history = useHistory();
-  useHistoryShortcuts(history);
 
   const { nodes, edges, setNodes, setEdges } = useLlmHydration(projectId);
   const nodesRef = useRef(nodes);
@@ -79,11 +109,6 @@ export function LlmCanvas({ projectId }: Props) {
 
   const { sizes: nodeSizes, handleMeasure } = useNodeSizes();
 
-  const getFitBounds = useFitBounds(
-    nodes,
-    useCallback((n) => nodeSizes[n.id] ?? null, [nodeSizes]),
-  );
-
   const nodeMut = useNodeMutations({
     history,
     nodesRef,
@@ -92,6 +117,7 @@ export function LlmCanvas({ projectId }: Props) {
     setEdges,
   });
   const edgeMut = useEdgeMutations({ history, edgesRef, setEdges });
+  void edgeMut.remove;
 
   const {
     connecting,
@@ -108,7 +134,6 @@ export function LlmCanvas({ projectId }: Props) {
     setEdges,
     cancel: cancelConnect,
   });
-
   const { rerouting, start: startReroute } = useEdgeRerouteGesture({
     canvasRef,
     nodesRef,
@@ -116,60 +141,39 @@ export function LlmCanvas({ projectId }: Props) {
     onCommit: edgeMut.reroute,
   });
 
-  const { handleDrop, dropError, dismissDropError } = useLlmImportDrop({
+  useSelectedNodeFocus({ canvasRef, nodesRef, nodeSizes, selectedId });
+  useLlmCanvasKeyboardShortcuts({ setSelectedId });
+
+  const { handleDrop } = useLlmImportDrop({
     projectId,
     history,
     setNodes,
+    onError: setDropError,
     onCreated: setSelectedId,
   });
 
-  useViewPersist(LLM_VIEW_STORAGE_KEY, view);
-  useSelectedNodeFocus({ canvasRef, nodesRef, nodeSizes, selectedId });
-  useLlmCanvasKeyboardShortcuts({ setSearchOpen, setSelectedId });
+  useEffect(() => {
+    setDropHandler(handleDrop);
+    return () => setDropHandler(null);
+  }, [setDropHandler, handleDrop]);
 
-  const handleBackgroundPointerDown = useCallback(() => {
-    setSelectedId(null);
-  }, []);
+  const getFitBounds = useFitBounds(nodes, (n) => nodeSizes[n.id] ?? null);
+  useEffect(() => {
+    setFitBoundsGetter(getFitBounds);
+    return () => setFitBoundsGetter(null);
+  }, [setFitBoundsGetter, getFitBounds]);
 
-  const handleNodeSelect = useCallback((id: string) => {
-    setSelectedId((cur) => (cur === id ? cur : id));
-    setFocusedExample(null);
-  }, []);
+  const stepNodes = nodes.filter((n) => n.kind === 'step');
+  const selectedNode = selectedId
+    ? nodes.find((n) => n.id === selectedId && n.kind !== 'start') ?? null
+    : null;
 
-  const handleChange = useCallback((next: View) => setView(next), []);
-  const handlePointerWorld = useCallback(
-    (p: (WorldPoint & { screenX: number; screenY: number }) | null) => {
-      if (!p) {
-        setCursor(null);
-        return;
-      }
-      setCursor({ worldX: p.worldX, worldY: p.worldY });
-    },
-    [],
-  );
-
-  // Avoid lint about an unused export until we wire an edge-remove affordance.
-  void edgeMut.remove;
-
-  const selectedNode =
-    selectedId
-      ? nodes.find((n) => n.id === selectedId && n.kind !== 'start') ?? null
-      : null;
-
-  // Memoised so unrelated re-renders (e.g. cursor updates from canvas
-  // pointer-move) don't churn the prop reference, which would otherwise
-  // re-fire the inspector's "scroll focused row into view" effect.
   const sidebarFocusedExample = useMemo(() => {
     if (!focusedExample || !selectedNode) return null;
     if (focusedExample.nodeId !== selectedNode.id) return null;
     return { idx: focusedExample.idx, token: focusedExample.token };
   }, [focusedExample, selectedNode]);
 
-  if (projectState.status === 'deleted') return <DeletedBanner />;
-
-  const stepNodes = nodes.filter((n) => n.kind === 'step');
-
-  // World → screen helper for the StepNameInput overlay (lives in screen space).
   const worldToScreen = (wx: number, wy: number) => ({
     x: wx * view.scale + view.x,
     y: wy * view.scale + view.y,
@@ -177,17 +181,7 @@ export function LlmCanvas({ projectId }: Props) {
 
   return (
     <>
-      <CanvasTitlebar />
-      <InfiniteCanvas
-        ref={canvasRef}
-        initial={getInitialView(LLM_VIEW_STORAGE_KEY)}
-        onChange={handleChange}
-        onPointerWorld={handlePointerWorld}
-        onBackgroundPointerDown={handleBackgroundPointerDown}
-        onDataTransferDrop={handleDrop}
-        zoomSensitivity={settings.zoomSensitivity}
-        panSpeed={settings.panSpeed}
-      >
+      <CanvasShell.Canvas>
         {nodes
           .filter((n) => n.kind === 'start')
           .map((n) => (
@@ -225,7 +219,7 @@ export function LlmCanvas({ projectId }: Props) {
             onDelete={nodeMut.remove}
             onConnectStart={(p) => startConnect(n.id, p)}
             onMeasure={handleMeasure}
-            onSelect={handleNodeSelect}
+            onSelect={(id) => setSelectedId((cur) => (cur === id ? cur : id))}
           />
         ))}
         <EdgeOverlay
@@ -237,81 +231,52 @@ export function LlmCanvas({ projectId }: Props) {
           rerouting={rerouting}
           onEdgeEndDragStart={startReroute}
         />
-      </InfiniteCanvas>
+      </CanvasShell.Canvas>
 
-      {naming && (() => {
-        const p = worldToScreen(naming.x, naming.y);
-        return (
-          <StepNameInput
-            anchorScreenX={p.x}
-            anchorScreenY={p.y}
-            onSubmit={commitStep}
-            onCancel={cancelConnect}
+      <CanvasShell.Overlays>
+        {naming &&
+          (() => {
+            const p = worldToScreen(naming.x, naming.y);
+            return (
+              <StepNameInput
+                anchorScreenX={p.x}
+                anchorScreenY={p.y}
+                onSubmit={commitStep}
+                onCancel={cancelConnect}
+              />
+            );
+          })()}
+      </CanvasShell.Overlays>
+
+      <CanvasShell.Sidebar>
+        {selectedNode && (
+          <NodeInspectorSidebar
+            node={selectedNode}
+            onClose={() => setSelectedId(null)}
+            onPatch={nodeMut.patch}
+            focusedExample={sidebarFocusedExample}
           />
-        );
-      })()}
+        )}
+      </CanvasShell.Sidebar>
 
-      {selectedNode && (
-        <NodeInspectorSidebar
-          node={selectedNode}
-          onClose={() => setSelectedId(null)}
-          onPatch={nodeMut.patch}
-          focusedExample={sidebarFocusedExample}
+      <CanvasShell.SearchPalette>
+        <StepSearchPalette
+          open={searchOpen}
+          steps={stepNodes}
+          onSelect={(step, exampleIdx) => {
+            setSearchOpen(false);
+            setSelectedId(step.id);
+            if (exampleIdx !== undefined) {
+              setFocusedExample({
+                nodeId: step.id,
+                idx: exampleIdx,
+                token: Date.now(),
+              });
+            }
+          }}
+          onClose={() => setSearchOpen(false)}
         />
-      )}
-
-      <CanvasTopHud
-        glass={glass.wordmarkGlass}
-        project={projectState.status === 'ready' ? projectState.project : null}
-      />
-
-      <CanvasBottomHud
-        searchPillGlass={glass.searchPillGlass}
-        statusPillGlass={glass.statusPillGlass}
-        controlsPillGlass={glass.controlsPillGlass}
-        view={view}
-        cursor={cursor as WorldPoint | null}
-        canvasRef={canvasRef}
-        getFitBounds={getFitBounds}
-        searchAriaLabel="Search steps (⌘K / Ctrl+K)"
-        searchTitle="Search steps (⌘K)"
-        onSearchOpen={() => setSearchOpen(true)}
-      />
-
-      <CanvasAppControlsHud
-        glass={glass.settingsPillGlass}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
-      <LlmCanvasModals
-        settingsOpen={settingsOpen}
-        setSettingsOpen={setSettingsOpen}
-        settings={settings}
-        updateSetting={updateSetting}
-        resetSettings={resetSettings}
-        project={projectState.status === 'ready' ? projectState.project : undefined}
-        deleteProjectOpen={deleteProjectOpen}
-        setDeleteProjectOpen={setDeleteProjectOpen}
-      />
-
-      <DropErrorToast message={dropError} onDismiss={dismissDropError} />
-
-      <StepSearchPalette
-        open={searchOpen}
-        steps={stepNodes}
-        onSelect={(step, exampleIdx) => {
-          setSearchOpen(false);
-          setSelectedId(step.id);
-          if (exampleIdx !== undefined) {
-            setFocusedExample({
-              nodeId: step.id,
-              idx: exampleIdx,
-              token: Date.now(),
-            });
-          }
-        }}
-        onClose={() => setSearchOpen(false)}
-      />
+      </CanvasShell.SearchPalette>
     </>
   );
 }
