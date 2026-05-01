@@ -9,6 +9,9 @@ export type CanvasShellValue = {
   searchOpen: boolean;
   setSearchOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   setDropError: (message: string | null) => void;
+  setDropHandler: (
+    fn: ((dt: DataTransfer, p: WorldPoint) => void) | null,
+  ) => void;
 };
 
 const CanvasShellContextRef = createContext<CanvasShellValue | null>(null);

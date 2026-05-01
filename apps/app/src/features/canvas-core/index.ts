@@ -29,3 +29,6 @@ export { CanvasTopHud } from './components/CanvasTopHud';
 export { CanvasBottomHud } from './components/CanvasBottomHud';
 export { CanvasAppControlsHud } from './components/CanvasAppControlsHud';
 export { DropErrorToast } from './components/DropErrorToast';
+export { CanvasShell } from './components/CanvasShell';
+export { useCanvasShell } from './components/CanvasShellContext';
+export type { CanvasShellValue } from './components/CanvasShellContext';
