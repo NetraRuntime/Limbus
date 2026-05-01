@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   CanvasTitlebar,
   CanvasAppControlsHud,
@@ -32,6 +32,7 @@ import {
   useConnectGesture,
   useEdgeMutations,
   useEdgeRerouteGesture,
+  useLlmCanvasKeyboardShortcuts,
   useLlmHydration,
   useLlmImportDrop,
   useNodeMutations,
@@ -127,22 +128,7 @@ export function LlmCanvas({ projectId }: Props) {
 
   useViewPersist(LLM_VIEW_STORAGE_KEY, view);
   useSelectedNodeFocus({ canvasRef, nodesRef, nodeSizes, selectedId });
-
-  // Cmd+K / Ctrl+K opens the step search palette.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      if (isMod && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setSearchOpen((o) => !o);
-      } else if (e.key === 'Escape') {
-        setSearchOpen(false);
-        setSelectedId(null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  useLlmCanvasKeyboardShortcuts({ setSearchOpen, setSelectedId });
 
   const handleBackgroundPointerDown = useCallback(() => {
     setSelectedId(null);

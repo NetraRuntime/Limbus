@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
-import type {
-  InfiniteCanvasHandle,
+import {
+  useWindowKeydown,
+  type InfiniteCanvasHandle,
 } from '../../canvas-core';
 import { isTypingContext } from '../../../lib/dom/isTypingContext';
 import {
@@ -12,7 +13,6 @@ import {
   type CanvasMedia,
   type SegmentState,
 } from '../lib';
-import { useWindowKeydown } from './useWindowKeydown';
 
 type Args = {
   canvasRef: RefObject<InfiniteCanvasHandle>;
