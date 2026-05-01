@@ -32,3 +32,5 @@ export { DropErrorToast } from './components/DropErrorToast';
 export { CanvasShell } from './components/CanvasShell';
 export { useCanvasShell } from './components/CanvasShellContext';
 export type { CanvasShellValue } from './components/CanvasShellContext';
+export { CanvasPage, type CanvasPageModalsCtx } from './components/CanvasPage';
+export { useCanvasPage, type CanvasPageValue } from './components/CanvasPageContext';
