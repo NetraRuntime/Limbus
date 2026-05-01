@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  CanvasPage,
   CanvasShell,
+  useCanvasPage,
   useCanvasShell,
-  useCanvasTitle,
   useFitBounds,
   type InfiniteCanvasHandle,
 } from '../canvas-core';
-import { DeletedBanner, useProject } from '../projects';
 import {
   EdgeOverlay,
   LLM_VIEW_STORAGE_KEY,
@@ -26,63 +26,26 @@ import {
   useNodeSizes,
   useSelectedNodeFocus,
 } from './';
-import { useSettings } from '../../hooks/useSettings';
-import { useAppliedTheme } from '../../hooks/useAppliedTheme';
-import { useHistory, useHistoryShortcuts } from '../../lib/history';
 import '../../App.css';
 
 type LlmCanvasPageProps = { projectId: string };
 
 export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
-  const projectState = useProject(projectId);
-  const project = projectState.status === 'ready' ? projectState.project : null;
-  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
-  useAppliedTheme(settings.theme);
-  useCanvasTitle(projectId, projectState);
-
-  const history = useHistory();
-  useHistoryShortcuts(history);
-
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
-
-  if (projectState.status === 'deleted') return <DeletedBanner />;
-
   return (
-    <CanvasShell
+    <CanvasPage
       projectId={projectId}
       viewKey={LLM_VIEW_STORAGE_KEY}
-      project={project}
-      panSpeed={settings.panSpeed}
-      zoomSensitivity={settings.zoomSensitivity}
       searchAriaLabel="Search steps (⌘K / Ctrl+K)"
       searchTitle="Search steps (⌘K)"
-      onOpenSettings={() => setSettingsOpen(true)}
+      modals={(m) => <LlmCanvasModals {...m} />}
     >
-      <LlmCanvasBody projectId={projectId} history={history} />
-
-      <CanvasShell.Modals>
-        <LlmCanvasModals
-          settingsOpen={settingsOpen}
-          setSettingsOpen={setSettingsOpen}
-          settings={settings}
-          updateSetting={updateSetting}
-          resetSettings={resetSettings}
-          project={project ?? undefined}
-          deleteProjectOpen={deleteProjectOpen}
-          setDeleteProjectOpen={setDeleteProjectOpen}
-        />
-      </CanvasShell.Modals>
-    </CanvasShell>
+      <LlmCanvasBody />
+    </CanvasPage>
   );
 }
 
-type BodyProps = {
-  projectId: string;
-  history: ReturnType<typeof useHistory>;
-};
-
-function LlmCanvasBody({ projectId, history }: BodyProps) {
+function LlmCanvasBody() {
+  const { projectId, history } = useCanvasPage();
   const shell = useCanvasShell();
   const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
   const {

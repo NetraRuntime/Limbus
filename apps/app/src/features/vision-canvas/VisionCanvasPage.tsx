@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  CanvasPage,
   CanvasShell,
+  useCanvasPage,
   useCanvasShell,
-  useCanvasTitle,
   useFitBounds,
   useViewport,
   type InfiniteCanvasHandle,
@@ -61,12 +62,8 @@ import {
 import { FloatingSidebar } from '../../components/FloatingSidebar';
 import { BootCard } from '../../components/BootCard';
 import { useSettings } from '../../hooks/useSettings';
-import { useAppliedTheme } from '../../hooks/useAppliedTheme';
 import { useImportPreview } from '../../hooks/useImportPreview';
-import { useHistory, useHistoryShortcuts } from '../../lib/history';
-import { type CanvasActionMeta } from '../../lib/canvasHistory';
 import { focusHome } from '../../lib/windows';
-import { DeletedBanner, useProject } from '../projects';
 import { HIGHLIGHT_BOTTOM_INSET_PX, VISION_VIEW_STORAGE_KEY } from './lib';
 import { useSam3Boot } from './hooks/useSam3Boot';
 import '../../App.css';
@@ -76,34 +73,8 @@ type VisionCanvasPageProps = {
 };
 
 export function VisionCanvasPage({ projectId }: VisionCanvasPageProps) {
-  const projectState = useProject(projectId);
-  const project = projectState.status === 'ready' ? projectState.project : null;
-  const { settings, update: updateSetting, reset: resetSettings } = useSettings();
-  useAppliedTheme(settings.theme);
-  useCanvasTitle(projectId, projectState);
-
+  const { settings } = useSettings();
   const boot = useSam3Boot(settings.activeModel);
-  const sam3Error = boot.status === 'error' ? boot.message : null;
-
-  const history = useHistory<CanvasActionMeta>({
-    limit: 100,
-    onError: (err, phase) => console.warn(`[history] ${phase} failed`, err),
-  });
-  useHistoryShortcuts(history);
-
-  const [conn, setConn] = useState<ConnState>('connecting');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
-
-  // Lifted so the import-preview modal lives in the page-level Modals slot
-  // while the body owns the drop handler that drives it.
-  const preview = useImportPreview();
-  // The body owns `onConfirmImport` (it closes over body-only state). Bridge
-  // it to the page-level modal via a ref the body keeps updated.
-  const confirmImportRef = useRef<() => void>(() => {});
-  const handleConfirmImport = useCallback(() => {
-    confirmImportRef.current();
-  }, []);
 
   if (boot.status === 'loading') {
     return (
@@ -132,48 +103,46 @@ export function VisionCanvasPage({ projectId }: VisionCanvasPageProps) {
       />
     );
   }
+  const sam3Error = boot.status === 'error' ? boot.message : null;
 
-  if (projectState.status === 'deleted') return <DeletedBanner />;
+  return <VisionCanvasPageInner projectId={projectId} sam3Error={sam3Error} />;
+}
+
+type InnerProps = { projectId: string; sam3Error: string | null };
+
+function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
+  const [conn, setConn] = useState<ConnState>('connecting');
+  const preview = useImportPreview();
+  const confirmImportRef = useRef<() => void>(() => {});
+  const handleConfirmImport = useCallback(() => {
+    confirmImportRef.current();
+  }, []);
 
   return (
-    <CanvasShell
+    <CanvasPage
       projectId={projectId}
       viewKey={VISION_VIEW_STORAGE_KEY}
-      project={project}
-      panSpeed={settings.panSpeed}
-      zoomSensitivity={settings.zoomSensitivity}
       searchAriaLabel="Search media (⌘K / Ctrl+K)"
       searchTitle="Search media (⌘K)"
       fitFocusOpts={{ bottomInset: HIGHLIGHT_BOTTOM_INSET_PX }}
       topHudExtra={<TopHudExtra conn={conn} sam3Error={sam3Error} />}
       appControlsLeading={<SavedTagsPopover projectId={projectId} />}
-      onOpenSettings={() => setSettingsOpen(true)}
+      modals={(m) => (
+        <VisionCanvasModals
+          {...m}
+          preview={preview}
+          onConfirmImport={handleConfirmImport}
+        />
+      )}
     >
       <CanvasBody
-        projectId={projectId}
         sam3Error={sam3Error}
-        history={history}
         conn={conn}
         setConn={setConn}
         preview={preview}
         confirmImportRef={confirmImportRef}
       />
-
-      <CanvasShell.Modals>
-        <VisionCanvasModals
-          settingsOpen={settingsOpen}
-          setSettingsOpen={setSettingsOpen}
-          settings={settings}
-          updateSetting={updateSetting}
-          resetSettings={resetSettings}
-          project={project ?? undefined}
-          deleteProjectOpen={deleteProjectOpen}
-          setDeleteProjectOpen={setDeleteProjectOpen}
-          preview={preview}
-          onConfirmImport={handleConfirmImport}
-        />
-      </CanvasShell.Modals>
-    </CanvasShell>
+    </CanvasPage>
   );
 }
 
@@ -208,9 +177,7 @@ function TopHudExtra({ conn, sam3Error }: TopHudExtraProps) {
 }
 
 type BodyProps = {
-  projectId: string;
   sam3Error: string | null;
-  history: ReturnType<typeof useHistory<CanvasActionMeta>>;
   conn: ConnState;
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   preview: ReturnType<typeof useImportPreview>;
@@ -218,14 +185,13 @@ type BodyProps = {
 };
 
 function CanvasBody({
-  projectId,
   sam3Error,
-  history,
   conn,
   setConn,
   preview,
   confirmImportRef,
 }: BodyProps) {
+  const { projectId, history } = useCanvasPage();
   const sam3Available = !sam3Error;
   const shell = useCanvasShell();
   const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
