@@ -16,7 +16,7 @@ import type {
   WorldPoint,
 } from '../../canvas-core';
 import type { ImageRecord, VideoRecord } from '../../../lib/pb';
-import { useImportPreview } from '../../../hooks/useImportPreview';
+import type { useImportPreview } from '../../../hooks/useImportPreview';
 import {
   HIGHLIGHT_BOTTOM_INSET_PX,
   applyAnnotationPlanToCanvas,
@@ -27,6 +27,8 @@ import {
   type SegmentState,
   type UploadPlan,
 } from '../lib';
+
+type ImportPreview = ReturnType<typeof useImportPreview>;
 
 type Args = {
   projectId: string;
@@ -40,10 +42,10 @@ type Args = {
     ) => void,
   ) => Promise<void>;
   setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
+  preview: ImportPreview;
 };
 
 export type DropHandler = {
-  preview: ReturnType<typeof useImportPreview>;
   handleDrop: (dt: DataTransfer, point: WorldPoint) => void;
   onConfirmImport: () => void;
 };
@@ -54,8 +56,8 @@ export function useDropHandler({
   mediaRef,
   runUploadPlan,
   setSegments,
+  preview,
 }: Args): DropHandler {
-  const preview = useImportPreview();
 
   const importDescriptors = useCallback(
     async (
@@ -184,5 +186,5 @@ export function useDropHandler({
     });
   }, [canvasRef, preview]);
 
-  return { preview, handleDrop, onConfirmImport };
+  return { handleDrop, onConfirmImport };
 }

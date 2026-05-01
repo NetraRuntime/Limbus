@@ -24,6 +24,14 @@ export { NodeInspectorSidebar } from './components/NodeInspectorSidebar';
 export { StepNameInput } from './components/StepNameInput';
 export { StepSearchPalette } from './components/StepSearchPalette';
 export { EdgeOverlay } from './components/EdgeOverlay';
+export { LlmCanvasModals } from './components/LlmCanvasModals';
+export { LlmCanvasModalsConnected } from './components/LlmCanvasModalsConnected';
+export { LlmStartNodes } from './components/LlmStartNodes';
+export { LlmStepNodes } from './components/LlmStepNodes';
+export { LlmEdgeOverlay } from './components/LlmEdgeOverlay';
+export { LlmStepNameOverlay } from './components/LlmStepNameOverlay';
+export { LlmInspectorSidebar } from './components/LlmInspectorSidebar';
+export { LlmStepSearch } from './components/LlmStepSearch';
 
 export { LLM_VIEW_STORAGE_KEY, STEP_NODE_HEIGHT } from './lib/constants';
 
@@ -42,3 +50,14 @@ export { useNodeMutations } from './hooks/useNodeMutations';
 export { useEdgeMutations } from './hooks/useEdgeMutations';
 export { useSelectedNodeFocus } from './hooks/useSelectedNodeFocus';
 export { useCommitStep } from './hooks/useCommitStep';
+export { useLlmImportDrop } from './hooks/useLlmImportDrop';
+export type { LlmImportDrop } from './hooks/useLlmImportDrop';
+export { useLlmCanvasKeyboardShortcuts } from './hooks/useLlmCanvasKeyboardShortcuts';
+
+export { LlmCanvasPage } from './LlmCanvasPage';
+
+export { LlmCanvasProvider } from './context/LlmCanvasProvider';
+export { useLlmCanvas, type LlmCanvasValue } from './context/LlmCanvasContext';
+export { useLlmNodes } from './context/slices/useLlmNodes';
+export { useLlmMutations } from './context/slices/useLlmMutations';
+export { useLlmConnect } from './context/slices/useLlmConnect';

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from 'react';
+import { useCallback, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import type {
   BackgroundPointerDown,
   View,
@@ -28,7 +28,7 @@ type Args = {
 
 export type MarqueeGesture = {
   marqueeRect: MarqueeRect;
-  marqueeRef: RefObject<MarqueeState | null>;
+  marqueeRef: MutableRefObject<MarqueeState | null>;
   handleBackgroundPointerDown: (p: BackgroundPointerDown) => void;
 };
 

@@ -8,6 +8,7 @@ export { MediaToolbar } from './components/MediaToolbar';
 export { MediaSearchPalette, type SearchItem } from './components/MediaSearchPalette';
 export { MediaTagList } from './components/MediaTagList';
 export { Sam3VersionBadge } from './components/Sam3VersionBadge';
+export { TopHudExtra } from './components/TopHudExtra';
 export {
   HighlightInput,
   HIGHLIGHT_INPUT_GAP,
@@ -41,4 +42,18 @@ export { useTrashSweep } from './hooks/useTrashSweep';
 export { useUploadPipeline } from './hooks/useUploadPipeline';
 export type { UploadPipeline } from './hooks/useUploadPipeline';
 export { useVisibleMedia } from './hooks/useVisibleMedia';
-export { useWindowKeydown } from './hooks/useWindowKeydown';
+export { useSam3Boot, type Sam3BootState } from './hooks/useSam3Boot';
+
+export { VisionCanvasProvider } from './context/VisionCanvasProvider';
+export {
+  useVisionCanvas,
+  type VisionCanvasValue,
+} from './context/VisionCanvasContext';
+export { useVisionMedia } from './context/slices/useVisionMedia';
+export { useVisionConn } from './context/slices/useVisionConn';
+export { useVisionSelection } from './context/slices/useVisionSelection';
+export { useVisionSegmentation } from './context/slices/useVisionSegmentation';
+export { useVisionTools } from './context/slices/useVisionTools';
+export { useVisionImport } from './context/slices/useVisionImport';
+
+export { VisionCanvasPage } from './VisionCanvasPage';

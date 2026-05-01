@@ -21,8 +21,16 @@ export { useCanvasGlass, type CanvasGlass } from './hooks/useCanvasGlass';
 export { useCanvasTitle } from './hooks/useCanvasTitle';
 export { useViewport, type Viewport } from './hooks/useViewport';
 export { useViewPersist } from './hooks/useViewPersist';
+export { useFitBounds } from './hooks/useFitBounds';
+export { useWindowKeydown } from './hooks/useWindowKeydown';
 
 export { CanvasTitlebar } from './components/CanvasTitlebar';
 export { CanvasTopHud } from './components/CanvasTopHud';
 export { CanvasBottomHud } from './components/CanvasBottomHud';
 export { CanvasAppControlsHud } from './components/CanvasAppControlsHud';
+export { DropErrorToast } from './components/DropErrorToast';
+export { CanvasShell } from './components/CanvasShell';
+export { useCanvasShell } from './components/CanvasShellContext';
+export type { CanvasShellValue } from './components/CanvasShellContext';
+export { CanvasPage, type CanvasPageModalsCtx } from './components/CanvasPage';
+export { useCanvasPage, type CanvasPageValue } from './components/CanvasPageContext';
