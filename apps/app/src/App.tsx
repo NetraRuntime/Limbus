@@ -101,13 +101,7 @@ function VisionApp({ projectId, settingsModel }: VisionAppProps) {
 
   if (boot.status === 'loading') return <BootScreen />;
   if (boot.status === 'no-model') return <NoModelScreen />;
-  return (
-    <Canvas
-      projectId={projectId}
-      kind="vision"
-      sam3Error={boot.status === 'error' ? boot.message : null}
-    />
-  );
+  return <Canvas projectId={projectId} kind="vision" />;
 }
 
 function BootScreen() {

@@ -59,27 +59,31 @@ import {
   type UserBox,
 } from './';
 import { FloatingSidebar } from '../../components/FloatingSidebar';
+import { BootCard } from '../../components/BootCard';
 import { useSettings } from '../../hooks/useSettings';
 import { useAppliedTheme } from '../../hooks/useAppliedTheme';
 import { useImportPreview } from '../../hooks/useImportPreview';
 import { useHistory, useHistoryShortcuts } from '../../lib/history';
 import { type CanvasActionMeta } from '../../lib/canvasHistory';
+import { focusHome } from '../../lib/windows';
 import { DeletedBanner, useProject } from '../projects';
 import { HIGHLIGHT_BOTTOM_INSET_PX, VISION_VIEW_STORAGE_KEY } from './lib';
+import { useSam3Boot } from './hooks/useSam3Boot';
 import '../../App.css';
 
 type VisionCanvasPageProps = {
   projectId: string;
-  /** When set, SAM3 failed to load; encode/segment calls are skipped. */
-  sam3Error?: string | null;
 };
 
-export function VisionCanvasPage({ projectId, sam3Error = null }: VisionCanvasPageProps) {
+export function VisionCanvasPage({ projectId }: VisionCanvasPageProps) {
   const projectState = useProject(projectId);
   const project = projectState.status === 'ready' ? projectState.project : null;
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();
   useAppliedTheme(settings.theme);
   useCanvasTitle(projectId, projectState);
+
+  const boot = useSam3Boot(settings.activeModel);
+  const sam3Error = boot.status === 'error' ? boot.message : null;
 
   const history = useHistory<CanvasActionMeta>({
     limit: 100,
@@ -100,6 +104,34 @@ export function VisionCanvasPage({ projectId, sam3Error = null }: VisionCanvasPa
   const handleConfirmImport = useCallback(() => {
     confirmImportRef.current();
   }, []);
+
+  if (boot.status === 'loading') {
+    return (
+      <BootCard
+        spinner
+        title="Loading SAM3 model…"
+        subtitle="First launch loads the image encoder onto the GPU. This takes a few seconds."
+      />
+    );
+  }
+  if (boot.status === 'no-model') {
+    return (
+      <BootCard
+        role="alert"
+        title="No model active"
+        subtitle="Install one from Home → Models."
+        action={
+          <button
+            type="button"
+            className="btn btn-md btn-primary"
+            onClick={() => void focusHome()}
+          >
+            Open Home
+          </button>
+        }
+      />
+    );
+  }
 
   if (projectState.status === 'deleted') return <DeletedBanner />;
 
