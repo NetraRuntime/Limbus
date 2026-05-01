@@ -57,7 +57,10 @@ export function CanvasPage({
   useAppliedTheme(settings.theme);
   useCanvasTitle(projectId, projectState);
 
-  const history = useHistory();
+  const history = useHistory({
+    limit: 100,
+    onError: (err, phase) => console.warn(`[history] ${phase} failed`, err),
+  });
   useHistoryShortcuts(history);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
