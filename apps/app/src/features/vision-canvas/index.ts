@@ -50,5 +50,6 @@ export {
 } from './context/VisionCanvasContext';
 export { useVisionMedia } from './context/slices/useVisionMedia';
 export { useVisionConn } from './context/slices/useVisionConn';
+export { useVisionSelection } from './context/slices/useVisionSelection';
 
 export { VisionCanvasPage } from './VisionCanvasPage';

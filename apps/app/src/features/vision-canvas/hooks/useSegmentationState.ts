@@ -39,6 +39,12 @@ type Args = {
   /** Controlled segments state (lifted to the provider for hydration). */
   segments: Record<string, SegmentState>;
   setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
+  /** Controlled selectedMask state (lifted to the page so the provider can clear it). */
+  selectedMask: MaskIdentity | null;
+  setSelectedMask: React.Dispatch<React.SetStateAction<MaskIdentity | null>>;
+  /** Controlled soloTag state (lifted to the page so the provider can clear it). */
+  soloTag: string | null;
+  setSoloTag: React.Dispatch<React.SetStateAction<string | null>>;
 };
 
 export type SegmentationState = {
@@ -81,10 +87,12 @@ export function useSegmentationState({
   rememberSavedTag,
   segments,
   setSegments,
+  selectedMask,
+  setSelectedMask,
+  soloTag,
+  setSoloTag,
 }: Args): SegmentationState {
-  const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
   const [hoveredMask, setHoveredMask] = useState<MaskIdentity | null>(null);
-  const [soloTag, setSoloTag] = useState<string | null>(null);
   const segmentSeqRef = useRef<Record<string, number>>({});
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
@@ -93,6 +101,8 @@ export function useSegmentationState({
   // exclusive selection modes.
   useEffect(() => {
     if (selectedIds.size > 0) setSelectedMask(null);
+    // setSelectedMask identity is stable (lifted from useState).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds]);
 
   const handleMaskSelect = useCallback(
@@ -101,7 +111,7 @@ export function useSegmentationState({
       setLastSelectedId(null);
       setSelectedMask(id);
     },
-    [setLastSelectedId, setSelectedIds],
+    [setLastSelectedId, setSelectedIds, setSelectedMask],
   );
 
   const handleMaskHover = useCallback((id: MaskIdentity | null) => {

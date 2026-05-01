@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from 'react';
+import { useCallback, type MutableRefObject, type RefObject } from 'react';
 import type {
   BackgroundPointerDown,
   View,
@@ -24,11 +24,11 @@ type Args = {
   setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setLastSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
   clearSelectionRef: RefObject<() => void>;
+  marqueeRef: MutableRefObject<MarqueeState | null>;
+  setMarqueeRect: React.Dispatch<React.SetStateAction<MarqueeRect>>;
 };
 
 export type MarqueeGesture = {
-  marqueeRect: MarqueeRect;
-  marqueeRef: RefObject<MarqueeState | null>;
   handleBackgroundPointerDown: (p: BackgroundPointerDown) => void;
 };
 
@@ -39,9 +39,9 @@ export function useMarqueeGesture({
   setSelectedIds,
   setLastSelectedId,
   clearSelectionRef,
+  marqueeRef,
+  setMarqueeRect,
 }: Args): MarqueeGesture {
-  const [marqueeRect, setMarqueeRect] = useState<MarqueeRect>(null);
-  const marqueeRef = useRef<MarqueeState | null>(null);
 
   const handleBackgroundPointerDown = useCallback(
     (p: BackgroundPointerDown) => {
@@ -127,13 +127,15 @@ export function useMarqueeGesture({
     },
     [
       clearSelectionRef,
+      marqueeRef,
       mediaRef,
       selectedIdsRef,
       setLastSelectedId,
+      setMarqueeRect,
       setSelectedIds,
       viewRef,
     ],
   );
 
-  return { marqueeRect, marqueeRef, handleBackgroundPointerDown };
+  return { handleBackgroundPointerDown };
 }

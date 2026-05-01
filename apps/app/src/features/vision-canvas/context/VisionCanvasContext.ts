@@ -10,6 +10,8 @@ import type { useUploadPipeline } from '../hooks/useUploadPipeline';
 import type { useLodSetup } from '../hooks/useLodSetup';
 import type { useVisibleMedia } from '../hooks/useVisibleMedia';
 import type { useStackOrder } from '../hooks/useStackOrder';
+import type { SelectionDerived } from '../hooks/useSelectionDerived';
+import type { SelectionActions } from '../hooks/useSelectionActions';
 
 export type VisionCanvasValue = {
   // C1: connection + sam3
@@ -35,6 +37,25 @@ export type VisionCanvasValue = {
   dropAsset: ReturnType<typeof useLodSetup>['dropAsset'];
   stackOrder: ReturnType<typeof useStackOrder>['stackOrder'];
   bringToFront: ReturnType<typeof useStackOrder>['bringToFront'];
+
+  // C3: selection state + derived + actions
+  selectedIds: Set<string>;
+  setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
+  selectedIdsRef: MutableRefObject<Set<string>>;
+  lastSelectedId: string | null;
+  setLastSelectedId: Dispatch<SetStateAction<string | null>>;
+  lastSelectedIdRef: MutableRefObject<string | null>;
+  activeSet: SelectionDerived['activeSet'];
+  activeId: SelectionDerived['activeId'];
+  activeMedia: SelectionDerived['activeMedia'];
+  selectionBBox: SelectionDerived['selectionBBox'];
+  multiSelectKey: SelectionDerived['multiSelectKey'];
+  clearSelection: () => void;
+  clearSelectionRef: MutableRefObject<() => void>;
+  selectAll: SelectionActions['selectAll'];
+  duplicateSelection: SelectionActions['duplicateSelection'];
+  deleteMediaById: SelectionActions['deleteMediaById'];
+  deleteSelection: SelectionActions['deleteSelection'];
 };
 
 const Ctx = createContext<VisionCanvasValue | null>(null);
