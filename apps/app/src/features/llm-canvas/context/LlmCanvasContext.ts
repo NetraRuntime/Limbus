@@ -33,6 +33,10 @@ export type LlmCanvasValue = {
   commitStep: ReturnType<typeof useCommitStep>;
   rerouting: ReturnType<typeof useEdgeRerouteGesture>['rerouting'];
   startReroute: ReturnType<typeof useEdgeRerouteGesture>['start'];
+  focusedExample: { nodeId: string; idx: number; token: number } | null;
+  setFocusedExample: Dispatch<
+    SetStateAction<{ nodeId: string; idx: number; token: number } | null>
+  >;
 };
 
 const Ctx = createContext<LlmCanvasValue | null>(null);

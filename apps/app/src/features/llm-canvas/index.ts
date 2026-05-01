@@ -25,6 +25,12 @@ export { StepNameInput } from './components/StepNameInput';
 export { StepSearchPalette } from './components/StepSearchPalette';
 export { EdgeOverlay } from './components/EdgeOverlay';
 export { LlmCanvasModals } from './components/LlmCanvasModals';
+export { LlmStartNodes } from './components/LlmStartNodes';
+export { LlmStepNodes } from './components/LlmStepNodes';
+export { LlmEdgeOverlay } from './components/LlmEdgeOverlay';
+export { LlmStepNameOverlay } from './components/LlmStepNameOverlay';
+export { LlmInspectorSidebar } from './components/LlmInspectorSidebar';
+export { LlmStepSearch } from './components/LlmStepSearch';
 
 export { LLM_VIEW_STORAGE_KEY, STEP_NODE_HEIGHT } from './lib/constants';
 

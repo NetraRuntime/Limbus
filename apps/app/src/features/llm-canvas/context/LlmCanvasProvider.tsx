@@ -31,6 +31,9 @@ export function LlmCanvasProvider({ children }: Props) {
   const { sizes: nodeSizes, handleMeasure } = useNodeSizes();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusedExample, setFocusedExample] = useState<
+    { nodeId: string; idx: number; token: number } | null
+  >(null);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -121,6 +124,8 @@ export function LlmCanvasProvider({ children }: Props) {
     commitStep,
     rerouting,
     startReroute,
+    focusedExample,
+    setFocusedExample,
   };
 
   return (
