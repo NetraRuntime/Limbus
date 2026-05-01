@@ -5,8 +5,8 @@ import {
   useCanvasTitle,
   useFitBounds,
   type InfiniteCanvasHandle,
-} from './features/canvas-core';
-import { DeletedBanner, useProject } from './features/projects';
+} from '../canvas-core';
+import { DeletedBanner, useProject } from '../projects';
 import {
   EdgeOverlay,
   LLM_VIEW_STORAGE_KEY,
@@ -25,15 +25,15 @@ import {
   useNodeMutations,
   useNodeSizes,
   useSelectedNodeFocus,
-} from './features/llm-canvas';
-import { useSettings } from './hooks/useSettings';
-import { useAppliedTheme } from './hooks/useAppliedTheme';
-import { useHistory, useHistoryShortcuts } from './lib/history';
-import './App.css';
+} from './';
+import { useSettings } from '../../hooks/useSettings';
+import { useAppliedTheme } from '../../hooks/useAppliedTheme';
+import { useHistory, useHistoryShortcuts } from '../../lib/history';
+import '../../App.css';
 
-type Props = { projectId: string };
+type LlmCanvasPageProps = { projectId: string };
 
-export function LlmCanvas({ projectId }: Props) {
+export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
   const projectState = useProject(projectId);
   const project = projectState.status === 'ready' ? projectState.project : null;
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Canvas } from './Canvas';
-import { LlmCanvas } from './LlmCanvas';
+import { VisionCanvasPage } from './features/vision-canvas';
+import { LlmCanvasPage } from './features/llm-canvas';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
 import { focusHome } from './lib/windows';
@@ -56,7 +56,7 @@ export function App({ projectId }: AppProps) {
     return <ErrorScreen message={kindState.message} />;
   }
   if (kindState.kind === 'llm') {
-    return <LlmCanvas projectId={projectId} />;
+    return <LlmCanvasPage projectId={projectId} />;
   }
   return <VisionApp projectId={projectId} settingsModel={settings.activeModel} />;
 }
@@ -103,7 +103,7 @@ function VisionApp({ projectId, settingsModel }: VisionAppProps) {
   if (boot.status === 'loading') return <BootScreen />;
   if (boot.status === 'no-model') return <NoModelScreen />;
   return (
-    <Canvas
+    <VisionCanvasPage
       projectId={projectId}
       sam3Error={boot.status === 'error' ? boot.message : null}
     />

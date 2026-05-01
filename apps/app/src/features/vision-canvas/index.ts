@@ -41,3 +41,5 @@ export { useTrashSweep } from './hooks/useTrashSweep';
 export { useUploadPipeline } from './hooks/useUploadPipeline';
 export type { UploadPipeline } from './hooks/useUploadPipeline';
 export { useVisibleMedia } from './hooks/useVisibleMedia';
+
+export { VisionCanvasPage } from './VisionCanvasPage';

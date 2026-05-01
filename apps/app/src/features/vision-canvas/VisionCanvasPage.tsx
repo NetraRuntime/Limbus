@@ -8,7 +8,7 @@ import {
   type InfiniteCanvasHandle,
   type View,
   readStoredView,
-} from './features/canvas-core';
+} from '../canvas-core';
 import {
   ActiveTagListLayer,
   BakeForImage,
@@ -57,24 +57,24 @@ import {
   type PendingBoxLabel,
   type SearchItem,
   type UserBox,
-} from './features/vision-canvas';
-import { FloatingSidebar } from './components/FloatingSidebar';
-import { useSettings } from './hooks/useSettings';
-import { useAppliedTheme } from './hooks/useAppliedTheme';
-import { useImportPreview } from './hooks/useImportPreview';
-import { useHistory, useHistoryShortcuts } from './lib/history';
-import { type CanvasActionMeta } from './lib/canvasHistory';
-import { DeletedBanner, useProject } from './features/projects';
-import { HIGHLIGHT_BOTTOM_INSET_PX, VISION_VIEW_STORAGE_KEY } from './features/vision-canvas/lib';
-import './App.css';
+} from './';
+import { FloatingSidebar } from '../../components/FloatingSidebar';
+import { useSettings } from '../../hooks/useSettings';
+import { useAppliedTheme } from '../../hooks/useAppliedTheme';
+import { useImportPreview } from '../../hooks/useImportPreview';
+import { useHistory, useHistoryShortcuts } from '../../lib/history';
+import { type CanvasActionMeta } from '../../lib/canvasHistory';
+import { DeletedBanner, useProject } from '../projects';
+import { HIGHLIGHT_BOTTOM_INSET_PX, VISION_VIEW_STORAGE_KEY } from './lib';
+import '../../App.css';
 
-type CanvasProps = {
+type VisionCanvasPageProps = {
   projectId: string;
   /** When set, SAM3 failed to load; encode/segment calls are skipped. */
   sam3Error?: string | null;
 };
 
-export function Canvas({ projectId, sam3Error = null }: CanvasProps) {
+export function VisionCanvasPage({ projectId, sam3Error = null }: VisionCanvasPageProps) {
   const projectState = useProject(projectId);
   const project = projectState.status === 'ready' ? projectState.project : null;
   const { settings, update: updateSetting, reset: resetSettings } = useSettings();

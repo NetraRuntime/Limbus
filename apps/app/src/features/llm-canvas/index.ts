@@ -46,3 +46,5 @@ export { useCommitStep } from './hooks/useCommitStep';
 export { useLlmImportDrop } from './hooks/useLlmImportDrop';
 export type { LlmImportDrop } from './hooks/useLlmImportDrop';
 export { useLlmCanvasKeyboardShortcuts } from './hooks/useLlmCanvasKeyboardShortcuts';
+
+export { LlmCanvasPage } from './LlmCanvasPage';
