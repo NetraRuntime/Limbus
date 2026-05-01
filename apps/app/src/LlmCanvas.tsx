@@ -17,13 +17,12 @@ import {
 } from './features/canvas-core';
 import {
   DeletedBanner,
-  DeleteProjectModal,
   useProject,
-  updateProject,
 } from './features/projects';
 import {
   EdgeOverlay,
   LLM_VIEW_STORAGE_KEY,
+  LlmCanvasModals,
   Node as CanvasNode,
   NodeInspectorSidebar,
   StepNameInput,
@@ -39,10 +38,8 @@ import {
   useNodeSizes,
   useSelectedNodeFocus,
 } from './features/llm-canvas';
-import { SettingsModal } from './components/SettingsModal';
 import { useSettings } from './hooks/useSettings';
 import { useAppliedTheme } from './hooks/useAppliedTheme';
-import { closeCurrentCanvas } from './lib/windows';
 import { useHistory, useHistoryShortcuts } from './lib/history';
 import './App.css';
 
@@ -286,36 +283,16 @@ export function LlmCanvas({ projectId }: Props) {
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
-      <SettingsModal
-        open={settingsOpen}
+      <LlmCanvasModals
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
         settings={settings}
-        onChange={updateSetting}
-        onReset={resetSettings}
-        onClose={() => setSettingsOpen(false)}
+        updateSetting={updateSetting}
+        resetSettings={resetSettings}
         project={projectState.status === 'ready' ? projectState.project : undefined}
-        onRenameProject={
-          projectState.status === 'ready'
-            ? async (name) => {
-                await updateProject(projectState.project.id, { name });
-              }
-            : undefined
-        }
-        onDeleteProject={() => {
-          setSettingsOpen(false);
-          setDeleteProjectOpen(true);
-        }}
+        deleteProjectOpen={deleteProjectOpen}
+        setDeleteProjectOpen={setDeleteProjectOpen}
       />
-
-      {deleteProjectOpen && projectState.status === 'ready' && (
-        <DeleteProjectModal
-          project={projectState.project}
-          onClose={() => {
-            setDeleteProjectOpen(false);
-            setSettingsOpen(true);
-          }}
-          onDeleted={() => void closeCurrentCanvas()}
-        />
-      )}
 
       <DropErrorToast message={dropError} onDismiss={dismissDropError} />
 

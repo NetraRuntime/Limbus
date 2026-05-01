@@ -24,6 +24,7 @@ export { NodeInspectorSidebar } from './components/NodeInspectorSidebar';
 export { StepNameInput } from './components/StepNameInput';
 export { StepSearchPalette } from './components/StepSearchPalette';
 export { EdgeOverlay } from './components/EdgeOverlay';
+export { LlmCanvasModals } from './components/LlmCanvasModals';
 
 export { LLM_VIEW_STORAGE_KEY, STEP_NODE_HEIGHT } from './lib/constants';
 
