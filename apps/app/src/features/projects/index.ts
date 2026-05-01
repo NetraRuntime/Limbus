@@ -5,5 +5,6 @@ export { EditProjectModal } from './components/EditProjectModal';
 export { DeleteProjectModal } from './components/DeleteProjectModal';
 export { useProject } from './api/useProject';
 export { useProjectThumbnail } from './hooks/useProjectThumbnail';
+export { useProjectKind, type ProjectKindState } from './hooks/useProjectKind';
 export { updateProject } from './api/projects';
 export type { ProjectRecord } from './types/project';
