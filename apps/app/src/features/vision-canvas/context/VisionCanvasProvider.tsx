@@ -60,7 +60,7 @@ export function VisionCanvasProvider({
   );
   const initialMediaLoadedRef = useRef<boolean>(false);
 
-  const { stackOrder } = useStackOrder({
+  const { stackOrder, bringToFront } = useStackOrder({
     media,
     selectedIds,
     initialMediaLoadedRef,
@@ -121,6 +121,8 @@ export function VisionCanvasProvider({
     lodSources,
     setPriorityIds,
     dropAsset,
+    stackOrder,
+    bringToFront,
   };
 
   return (

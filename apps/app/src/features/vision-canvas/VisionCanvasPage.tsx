@@ -8,7 +8,6 @@ import {
   useViewport,
   type InfiniteCanvasHandle,
   type View,
-  readStoredView,
 } from '../canvas-core';
 import {
   ActiveTagListLayer,
@@ -33,13 +32,12 @@ import {
   TagInputLayer,
   UserBoxesLayer,
   VisionCanvasModals,
+  VisionCanvasProvider,
   useBboxResizeGesture,
-  useCanvasHydration,
   useCanvasKeyboardShortcuts,
   useDrawBoxGesture,
   useDropHandler,
   useHoverState,
-  useLodSetup,
   useMarqueeGesture,
   useMediaDragGesture,
   useMediaHandlers,
@@ -47,16 +45,15 @@ import {
   useSegmentationState,
   useSelectionActions,
   useSelectionDerived,
-  useStackOrder,
   useToolMode,
   useTrashSweep,
-  useUploadPipeline,
-  useVisibleMedia,
+  useVisionMedia,
   type CanvasMedia,
   type ConnState,
   type DragState,
   type PendingBoxLabel,
   type SearchItem,
+  type SegmentState,
   type UserBox,
 } from './';
 import { FloatingSidebar } from '../../components/FloatingSidebar';
@@ -112,6 +109,17 @@ type InnerProps = { projectId: string; sam3Error: string | null };
 
 function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
   const [conn, setConn] = useState<ConnState>('connecting');
+
+  // State lifted here temporarily so the provider can consume it AND the
+  // body still owns the gestures/selection that read it. Subsequent
+  // tasks (C3-C5) absorb each piece into the provider in turn.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+  const [segments, setSegments] = useState<Record<string, SegmentState>>({});
+  const dragRef = useRef<DragState | null>(null);
+  const hoverState = useHoverState();
+  const { hoverId } = hoverState;
+
   const preview = useImportPreview();
   const confirmImportRef = useRef<() => void>(() => {});
   const handleConfirmImport = useCallback(() => {
@@ -135,13 +143,31 @@ function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
         />
       )}
     >
-      <CanvasBody
-        sam3Error={sam3Error}
+      <VisionCanvasProvider
         conn={conn}
         setConn={setConn}
-        preview={preview}
-        confirmImportRef={confirmImportRef}
-      />
+        sam3Error={sam3Error}
+        setSegments={setSegments}
+        dragRef={dragRef}
+        selectedIds={selectedIds}
+        hoverId={hoverId}
+      >
+        <CanvasBody
+          sam3Error={sam3Error}
+          conn={conn}
+          setConn={setConn}
+          preview={preview}
+          confirmImportRef={confirmImportRef}
+          selectedIds={selectedIds}
+          setSelectedIds={setSelectedIds}
+          lastSelectedId={lastSelectedId}
+          setLastSelectedId={setLastSelectedId}
+          hoverState={hoverState}
+          segments={segments}
+          setSegments={setSegments}
+          dragRef={dragRef}
+        />
+      </VisionCanvasProvider>
     </CanvasPage>
   );
 }
@@ -182,6 +208,14 @@ type BodyProps = {
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   preview: ReturnType<typeof useImportPreview>;
   confirmImportRef: React.MutableRefObject<() => void>;
+  selectedIds: Set<string>;
+  setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  lastSelectedId: string | null;
+  setLastSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
+  hoverState: ReturnType<typeof useHoverState>;
+  segments: Record<string, SegmentState>;
+  setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
+  dragRef: React.MutableRefObject<DragState | null>;
 };
 
 function CanvasBody({
@@ -190,6 +224,14 @@ function CanvasBody({
   setConn,
   preview,
   confirmImportRef,
+  selectedIds,
+  setSelectedIds,
+  lastSelectedId,
+  setLastSelectedId,
+  hoverState,
+  segments,
+  setSegments,
+  dragRef,
 }: BodyProps) {
   const { projectId, history } = useCanvasPage();
   const sam3Available = !sam3Error;
@@ -205,10 +247,27 @@ function CanvasBody({
     setFitBoundsGetter,
   } = shell;
 
-  // ─── Plain state ────────────────────────────────────────────────────────
-  const [media, setMedia] = useState<CanvasMedia[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+  // ─── Media + upload + lod come from the provider ────────────────────────
+  const {
+    media,
+    setMedia,
+    mediaRef,
+    paintMedia,
+    visibleMedia,
+    labelPlacements,
+    uploadStatus,
+    encodingIds,
+    runUploadPlan,
+    abortUpload,
+    lodCache,
+    lodSources,
+    setPriorityIds,
+    dropAsset,
+    bringToFront,
+  } = useVisionMedia();
+  void setPriorityIds; // owned by provider; unused here for now
+
+  // ─── Plain state still owned by the body ────────────────────────────────
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
   const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
   const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
@@ -218,26 +277,18 @@ function CanvasBody({
   >(null);
 
   // ─── Refs (live mirrors + gesture state) ────────────────────────────────
-  const initialHadStoredView = useRef<boolean>(
-    readStoredView(VISION_VIEW_STORAGE_KEY) !== null,
-  );
-  // Guards the media→stackOrder sync from wiping the hydrated order before PB resolves.
-  const initialMediaLoadedRef = useRef<boolean>(false);
-  const dragRef = useRef<DragState | null>(null);
   const viewRef = useRef<View>(view);
-  const mediaRef = useRef<CanvasMedia[]>(media);
   const selectedIdsRef = useRef(selectedIds);
   const lastSelectedIdRef = useRef(lastSelectedId);
   const clearSelectionRef = useRef<() => void>(() => {});
   viewRef.current = view;
-  mediaRef.current = media;
   selectedIdsRef.current = selectedIds;
   lastSelectedIdRef.current = lastSelectedId;
 
   // ─── External one-line hooks ────────────────────────────────────────────
   const { remember: rememberSavedTag } = useSavedTags(projectId);
   const viewport = useViewport();
-  const { hoverId, setHoverId, clearHideTimer, scheduleHide } = useHoverState();
+  const { hoverId, setHoverId, clearHideTimer, scheduleHide } = hoverState;
   const { tool, setTool, toolRef } = useToolMode();
   useTrashSweep({ projectId, conn });
 
@@ -251,38 +302,7 @@ function CanvasBody({
     clearSelectionRef,
   });
 
-  // ─── Stack order, visible/paint media, LOD ──────────────────────────────
-  const { stackOrder, setStackOrder, bringToFront } = useStackOrder({
-    media,
-    selectedIds,
-    initialMediaLoadedRef,
-  });
-  const { visibleMedia, paintMedia, labelPlacements } = useVisibleMedia({
-    media,
-    stackOrder,
-    view,
-    viewport,
-    selectedIds,
-    hoverId,
-    getDraggingIds: () => dragRef.current?.orig.keys() ?? null,
-  });
-  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const { lodCache, lodSources, setPriorityIds, dropAsset } = useLodSetup({
-    paintMedia,
-    media,
-    viewScale: view.scale,
-    dpr,
-  });
-
-  // ─── Upload + segmentation state ────────────────────────────────────────
-  const { uploadStatus, encodingIds, runUploadPlan, abortUpload } = useUploadPipeline({
-    projectId,
-    sam3Available,
-    setMedia,
-    setPriorityIds,
-    setConn,
-    history,
-  });
+  // ─── Segmentation state ────────────────────────────────────────────────
   const segmentation = useSegmentationState({
     projectId,
     sam3Available,
@@ -296,10 +316,10 @@ function CanvasBody({
     setLastSelectedId,
     setUserBoxes,
     rememberSavedTag,
-  });
-  const {
     segments,
     setSegments,
+  });
+  const {
     segmentsRef,
     selectedMask,
     setSelectedMask,
@@ -316,9 +336,8 @@ function CanvasBody({
     confirmPendingBoxLabel,
     cancelPendingBoxLabel,
   } = segmentation;
-  void setStackOrder; // currently only mutated inside useStackOrder
 
-  // ─── Selection-derived view state + hydration ──────────────────────────
+  // ─── Selection-derived view state ──────────────────────────────────────
   const { activeSet, activeId, activeMedia, selectionBBox, multiSelectKey } =
     useSelectionDerived({
       media,
@@ -330,15 +349,6 @@ function CanvasBody({
       setSoloTag,
       setMultiHighlightInput,
     });
-  useCanvasHydration({
-    projectId,
-    canvasRef,
-    initialHadStoredView,
-    initialMediaLoadedRef,
-    setMedia,
-    setSegments,
-    setConn,
-  });
 
   // ─── Pointer gestures ───────────────────────────────────────────────────
   const { drawBoxPreview, beginDraw } = useDrawBoxGesture({
@@ -386,7 +396,7 @@ function CanvasBody({
     setLastSelectedId(null);
     setSelectedMask(null);
     setSoloTag(null);
-  }, [setSelectedMask, setSoloTag]);
+  }, [setSelectedIds, setLastSelectedId, setSelectedMask, setSoloTag]);
   clearSelectionRef.current = clearSelection;
 
   const { selectAll, duplicateSelection, deleteMediaById, deleteSelection } =
@@ -705,4 +715,3 @@ function CanvasBody({
     </>
   );
 }
-

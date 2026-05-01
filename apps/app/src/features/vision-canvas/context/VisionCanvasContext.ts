@@ -9,6 +9,7 @@ import type { CanvasMedia, ConnState } from '../lib';
 import type { useUploadPipeline } from '../hooks/useUploadPipeline';
 import type { useLodSetup } from '../hooks/useLodSetup';
 import type { useVisibleMedia } from '../hooks/useVisibleMedia';
+import type { useStackOrder } from '../hooks/useStackOrder';
 
 export type VisionCanvasValue = {
   // C1: connection + sam3
@@ -32,6 +33,8 @@ export type VisionCanvasValue = {
   lodSources: ReturnType<typeof useLodSetup>['lodSources'];
   setPriorityIds: ReturnType<typeof useLodSetup>['setPriorityIds'];
   dropAsset: ReturnType<typeof useLodSetup>['dropAsset'];
+  stackOrder: ReturnType<typeof useStackOrder>['stackOrder'];
+  bringToFront: ReturnType<typeof useStackOrder>['bringToFront'];
 };
 
 const Ctx = createContext<VisionCanvasValue | null>(null);

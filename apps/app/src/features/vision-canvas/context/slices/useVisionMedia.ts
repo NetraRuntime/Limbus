@@ -16,6 +16,8 @@ export function useVisionMedia() {
     lodSources,
     setPriorityIds,
     dropAsset,
+    stackOrder,
+    bringToFront,
   } = useVisionCanvas();
   return {
     media,
@@ -32,5 +34,7 @@ export function useVisionMedia() {
     lodSources,
     setPriorityIds,
     dropAsset,
+    stackOrder,
+    bringToFront,
   };
 }

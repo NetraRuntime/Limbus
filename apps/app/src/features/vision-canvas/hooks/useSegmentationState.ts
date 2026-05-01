@@ -36,6 +36,9 @@ type Args = {
   setLastSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
   setUserBoxes: React.Dispatch<React.SetStateAction<Record<string, UserBox[]>>>;
   rememberSavedTag: (tag: string) => Promise<unknown>;
+  /** Controlled segments state (lifted to the provider for hydration). */
+  segments: Record<string, SegmentState>;
+  setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
 };
 
 export type SegmentationState = {
@@ -76,8 +79,9 @@ export function useSegmentationState({
   setLastSelectedId,
   setUserBoxes,
   rememberSavedTag,
+  segments,
+  setSegments,
 }: Args): SegmentationState {
-  const [segments, setSegments] = useState<Record<string, SegmentState>>({});
   const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
   const [hoveredMask, setHoveredMask] = useState<MaskIdentity | null>(null);
   const [soloTag, setSoloTag] = useState<string | null>(null);
