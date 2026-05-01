@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CanvasPage,
   CanvasShell,
@@ -11,6 +11,7 @@ import {
   EdgeOverlay,
   LLM_VIEW_STORAGE_KEY,
   LlmCanvasModals,
+  LlmCanvasProvider,
   Node as CanvasNode,
   NodeInspectorSidebar,
   StepNameInput,
@@ -19,11 +20,11 @@ import {
   useConnectGesture,
   useEdgeMutations,
   useEdgeRerouteGesture,
+  useLlmCanvas,
   useLlmCanvasKeyboardShortcuts,
-  useLlmHydration,
   useLlmImportDrop,
+  useLlmNodes,
   useNodeMutations,
-  useNodeSizes,
   useSelectedNodeFocus,
 } from './';
 import '../../App.css';
@@ -39,7 +40,9 @@ export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
       searchTitle="Search steps (⌘K)"
       modals={(m) => <LlmCanvasModals {...m} />}
     >
-      <LlmCanvasBody />
+      <LlmCanvasProvider>
+        <LlmCanvasBody />
+      </LlmCanvasProvider>
     </CanvasPage>
   );
 }
@@ -58,20 +61,22 @@ function LlmCanvasBody() {
     setBackgroundPointerDown,
   } = shell;
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const {
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    nodesRef,
+    edgesRef,
+    nodeSizes,
+    handleMeasure,
+  } = useLlmNodes();
+  const { selectedId, setSelectedId } = useLlmCanvas();
   const [focusedExample, setFocusedExample] = useState<{
     nodeId: string;
     idx: number;
     token: number;
   } | null>(null);
-
-  const { nodes, edges, setNodes, setEdges } = useLlmHydration(projectId);
-  const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
-  const edgesRef = useRef(edges);
-  edgesRef.current = edges;
-
-  const { sizes: nodeSizes, handleMeasure } = useNodeSizes();
 
   const nodeMut = useNodeMutations({
     history,
