@@ -28,6 +28,7 @@ import type { DrawBoxGesture } from '../hooks/useDrawBoxGesture';
 import type { BboxResizeGesture } from '../hooks/useBboxResizeGesture';
 import type { MediaDragGesture } from '../hooks/useMediaDragGesture';
 import type { useImportPreview } from '../../../hooks/useImportPreview';
+import type { MediaHandlers } from '../hooks/useMediaHandlers';
 
 export type VisionCanvasValue = {
   // C1: connection + sam3
@@ -133,6 +134,19 @@ export type VisionCanvasValue = {
   // C6: import preview + drop
   preview: ReturnType<typeof useImportPreview>;
   onConfirmImport: () => void;
+
+  // C7: context menu + media interaction handlers
+  contextMenu: { id: string; x: number; y: number } | null;
+  setContextMenu: Dispatch<
+    SetStateAction<{ id: string; x: number; y: number } | null>
+  >;
+  handleMediaEnter: MediaHandlers['handleMediaEnter'];
+  handleMediaLeave: MediaHandlers['handleMediaLeave'];
+  handleMediaClick: MediaHandlers['handleMediaClick'];
+  handleMediaDoubleClick: MediaHandlers['handleMediaDoubleClick'];
+  handleMediaContextMenu: MediaHandlers['handleMediaContextMenu'];
+  handleSidebarSelect: MediaHandlers['handleSidebarSelect'];
+  handleMediaPointerDown: MediaHandlers['handleMediaPointerDown'];
 };
 
 const Ctx = createContext<VisionCanvasValue | null>(null);

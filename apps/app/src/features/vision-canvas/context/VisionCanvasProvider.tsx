@@ -25,6 +25,9 @@ import { useDrawBoxGesture } from '../hooks/useDrawBoxGesture';
 import { useBboxResizeGesture } from '../hooks/useBboxResizeGesture';
 import { useMediaDragGesture } from '../hooks/useMediaDragGesture';
 import { useDropHandler } from '../hooks/useDropHandler';
+import { useMediaHandlers } from '../hooks/useMediaHandlers';
+import { useCanvasKeyboardShortcuts } from '../hooks/useCanvasKeyboardShortcuts';
+import { useTrashSweep } from '../hooks/useTrashSweep';
 import { useSavedTags } from '../components/savedTags';
 import {
   VISION_VIEW_STORAGE_KEY,
@@ -86,6 +89,10 @@ export function VisionCanvasProvider({
   const [highlightInputs, setHighlightInputs] = useState<
     Record<string, string[]>
   >({});
+
+  const [contextMenu, setContextMenu] = useState<
+    { id: string; x: number; y: number } | null
+  >(null);
 
   const { remember: rememberSavedTag } = useSavedTags(projectId);
 
@@ -301,6 +308,58 @@ export function VisionCanvasProvider({
     return () => shell.setFitBoundsGetter(null);
   }, [shell, getFitBounds]);
 
+  // Trash sweep: hard-delete records soft-deleted more than an hour ago.
+  useTrashSweep({ projectId, conn });
+
+  // Media interaction handlers (consumed by MediaItem and BakeForImage).
+  const {
+    handleMediaEnter,
+    handleMediaLeave,
+    handleMediaClick,
+    handleMediaDoubleClick,
+    handleMediaContextMenu,
+    handleSidebarSelect,
+    handleMediaPointerDown,
+  } = useMediaHandlers({
+    canvasRef,
+    mediaRef,
+    dragRef,
+    shiftToggledRef,
+    toolRef,
+    setSelectedIds,
+    setLastSelectedId,
+    setHoverId,
+    setContextMenu,
+    clearHideTimer,
+    scheduleHide,
+    beginDrag,
+    beginDraw,
+  });
+
+  // Canvas-wide keyboard shortcuts (Escape, Tab, Cmd-A, Cmd-D, Delete, V/B, etc.).
+  useCanvasKeyboardShortcuts({
+    canvasRef,
+    mediaRef,
+    selectedIdsRef,
+    lastSelectedIdRef,
+    segmentsRef,
+    activeMedia,
+    selectedMask,
+    soloTag,
+    setSelectedIds,
+    setLastSelectedId,
+    setHoverId,
+    setSoloTag,
+    setTool,
+    clearHideTimer,
+    clearSelection,
+    selectAll,
+    duplicateSelection,
+    deleteSelection,
+    deleteMask,
+    deleteAllMasksForTag,
+  });
+
   const value: VisionCanvasValue = {
     conn,
     setConn,
@@ -388,6 +447,15 @@ export function VisionCanvasProvider({
     setHighlightInputs,
     preview,
     onConfirmImport,
+    contextMenu,
+    setContextMenu,
+    handleMediaEnter,
+    handleMediaLeave,
+    handleMediaClick,
+    handleMediaDoubleClick,
+    handleMediaContextMenu,
+    handleSidebarSelect,
+    handleMediaPointerDown,
   };
 
   return (

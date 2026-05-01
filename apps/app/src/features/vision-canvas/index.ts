@@ -8,6 +8,7 @@ export { MediaToolbar } from './components/MediaToolbar';
 export { MediaSearchPalette, type SearchItem } from './components/MediaSearchPalette';
 export { MediaTagList } from './components/MediaTagList';
 export { Sam3VersionBadge } from './components/Sam3VersionBadge';
+export { TopHudExtra } from './components/TopHudExtra';
 export {
   HighlightInput,
   HIGHLIGHT_INPUT_GAP,

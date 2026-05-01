@@ -27,6 +27,15 @@ export function useVisionTools() {
     setMultiHighlightInput,
     highlightInputs,
     setHighlightInputs,
+    contextMenu,
+    setContextMenu,
+    handleMediaEnter,
+    handleMediaLeave,
+    handleMediaClick,
+    handleMediaDoubleClick,
+    handleMediaContextMenu,
+    handleSidebarSelect,
+    handleMediaPointerDown,
   } = useVisionCanvas();
   return {
     tool,
@@ -54,5 +63,14 @@ export function useVisionTools() {
     setMultiHighlightInput,
     highlightInputs,
     setHighlightInputs,
+    contextMenu,
+    setContextMenu,
+    handleMediaEnter,
+    handleMediaLeave,
+    handleMediaClick,
+    handleMediaDoubleClick,
+    handleMediaContextMenu,
+    handleSidebarSelect,
+    handleMediaPointerDown,
   };
 }

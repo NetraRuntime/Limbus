@@ -15,3 +15,7 @@ export { EmptyState } from './EmptyState';
 export { TagInputLayer } from './TagInputLayer';
 export { BoxCrosshair } from './BoxCrosshair';
 export { ActiveTagListLayer } from './ActiveTagListLayer';
+export { MediaRenderLayer } from './MediaRenderLayer';
+export { VisionOverlays } from './VisionOverlays';
+export { MediaListSidebar } from './MediaListSidebar';
+export { VisionSearchPaletteConnected } from './VisionSearchPaletteConnected';
