@@ -5,13 +5,21 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react';
-import type { CanvasMedia, ConnState } from '../lib';
+import type { MaskIdentity } from '../../segmentation';
+import type {
+  CanvasMedia,
+  ConnState,
+  PendingBoxLabel,
+  SegmentState,
+  UserBox,
+} from '../lib';
 import type { useUploadPipeline } from '../hooks/useUploadPipeline';
 import type { useLodSetup } from '../hooks/useLodSetup';
 import type { useVisibleMedia } from '../hooks/useVisibleMedia';
 import type { useStackOrder } from '../hooks/useStackOrder';
 import type { SelectionDerived } from '../hooks/useSelectionDerived';
 import type { SelectionActions } from '../hooks/useSelectionActions';
+import type { SegmentationState } from '../hooks/useSegmentationState';
 
 export type VisionCanvasValue = {
   // C1: connection + sam3
@@ -56,6 +64,30 @@ export type VisionCanvasValue = {
   duplicateSelection: SelectionActions['duplicateSelection'];
   deleteMediaById: SelectionActions['deleteMediaById'];
   deleteSelection: SelectionActions['deleteSelection'];
+
+  // C4: segmentation state + derived + actions
+  segments: Record<string, SegmentState>;
+  setSegments: Dispatch<SetStateAction<Record<string, SegmentState>>>;
+  segmentsRef: SegmentationState['segmentsRef'];
+  selectedMask: MaskIdentity | null;
+  setSelectedMask: Dispatch<SetStateAction<MaskIdentity | null>>;
+  hoveredMask: MaskIdentity | null;
+  soloTag: string | null;
+  setSoloTag: Dispatch<SetStateAction<string | null>>;
+  pendingBoxLabel: PendingBoxLabel | null;
+  setPendingBoxLabel: Dispatch<SetStateAction<PendingBoxLabel | null>>;
+  userBoxes: Record<string, UserBox[]>;
+  setUserBoxes: Dispatch<SetStateAction<Record<string, UserBox[]>>>;
+  handleMaskSelect: SegmentationState['handleMaskSelect'];
+  handleMaskHover: SegmentationState['handleMaskHover'];
+  clearSegment: SegmentationState['clearSegment'];
+  replaceReadyTag: SegmentationState['replaceReadyTag'];
+  deleteMask: SegmentationState['deleteMask'];
+  deleteAllMasksForTag: SegmentationState['deleteAllMasksForTag'];
+  removeSegmentTag: SegmentationState['removeSegmentTag'];
+  submitSegment: SegmentationState['submitSegment'];
+  confirmPendingBoxLabel: SegmentationState['confirmPendingBoxLabel'];
+  cancelPendingBoxLabel: SegmentationState['cancelPendingBoxLabel'];
 };
 
 const Ctx = createContext<VisionCanvasValue | null>(null);

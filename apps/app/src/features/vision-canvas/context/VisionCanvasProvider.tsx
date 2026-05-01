@@ -14,6 +14,8 @@ import { useUploadPipeline } from '../hooks/useUploadPipeline';
 import { useCanvasHydration } from '../hooks/useCanvasHydration';
 import { useSelectionDerived } from '../hooks/useSelectionDerived';
 import { useSelectionActions } from '../hooks/useSelectionActions';
+import { useSegmentationState } from '../hooks/useSegmentationState';
+import { useSavedTags } from '../components/savedTags';
 import type { MarqueeRect } from '../hooks/useMarqueeGesture';
 import {
   VISION_VIEW_STORAGE_KEY,
@@ -21,7 +23,9 @@ import {
   type ConnState,
   type DragState,
   type MarqueeState,
+  type PendingBoxLabel,
   type SegmentState,
+  type UserBox,
 } from '../lib';
 import {
   VisionCanvasContextProvider,
@@ -32,15 +36,11 @@ type Props = {
   conn: ConnState;
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   sam3Error: string | null;
-  setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
   dragRef: React.MutableRefObject<DragState | null>;
   hoverId: string | null;
   setHoverId: React.Dispatch<React.SetStateAction<string | null>>;
   marqueeRect: MarqueeRect;
   marqueeRef: React.MutableRefObject<MarqueeState | null>;
-  setSelectedMask: React.Dispatch<React.SetStateAction<MaskIdentity | null>>;
-  setSoloTag: React.Dispatch<React.SetStateAction<string | null>>;
-  clearSegment: (id: string) => void;
   setMultiHighlightInput: React.Dispatch<React.SetStateAction<string[]>>;
   children: ReactNode;
 };
@@ -49,15 +49,11 @@ export function VisionCanvasProvider({
   conn,
   setConn,
   sam3Error,
-  setSegments,
   dragRef,
   hoverId,
   setHoverId,
   marqueeRect,
   marqueeRef,
-  setSelectedMask,
-  setSoloTag,
-  clearSegment,
   setMultiHighlightInput,
   children,
 }: Props) {
@@ -78,6 +74,15 @@ export function VisionCanvasProvider({
   selectedIdsRef.current = selectedIds;
   const lastSelectedIdRef = useRef(lastSelectedId);
   lastSelectedIdRef.current = lastSelectedId;
+
+  const [segments, setSegments] = useState<Record<string, SegmentState>>({});
+  const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
+  const [soloTag, setSoloTag] = useState<string | null>(null);
+  const [pendingBoxLabel, setPendingBoxLabel] =
+    useState<PendingBoxLabel | null>(null);
+  const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
+
+  const { remember: rememberSavedTag } = useSavedTags(projectId);
 
   const initialHadStoredView = useRef<boolean>(
     readStoredView(VISION_VIEW_STORAGE_KEY) !== null,
@@ -144,8 +149,43 @@ export function VisionCanvasProvider({
     setLastSelectedId(null);
     setSelectedMask(null);
     setSoloTag(null);
-  }, [setSelectedMask, setSoloTag]);
+  }, []);
   clearSelectionRef.current = clearSelection;
+
+  const segmentation = useSegmentationState({
+    projectId,
+    sam3Available,
+    mediaRef,
+    history,
+    setConn,
+    pendingBoxLabel,
+    setPendingBoxLabel,
+    selectedIds,
+    setSelectedIds,
+    setLastSelectedId,
+    setUserBoxes,
+    rememberSavedTag,
+    segments,
+    setSegments,
+    selectedMask,
+    setSelectedMask,
+    soloTag,
+    setSoloTag,
+  });
+  const {
+    segmentsRef,
+    hoveredMask,
+    handleMaskSelect,
+    handleMaskHover,
+    clearSegment,
+    replaceReadyTag,
+    deleteMask,
+    deleteAllMasksForTag,
+    removeSegmentTag,
+    submitSegment,
+    confirmPendingBoxLabel,
+    cancelPendingBoxLabel,
+  } = segmentation;
 
   const { selectAll, duplicateSelection, deleteMediaById, deleteSelection } =
     useSelectionActions({
@@ -202,6 +242,28 @@ export function VisionCanvasProvider({
     duplicateSelection,
     deleteMediaById,
     deleteSelection,
+    segments,
+    setSegments,
+    segmentsRef,
+    selectedMask,
+    setSelectedMask,
+    hoveredMask,
+    soloTag,
+    setSoloTag,
+    pendingBoxLabel,
+    setPendingBoxLabel,
+    userBoxes,
+    setUserBoxes,
+    handleMaskSelect,
+    handleMaskHover,
+    clearSegment,
+    replaceReadyTag,
+    deleteMask,
+    deleteAllMasksForTag,
+    removeSegmentTag,
+    submitSegment,
+    confirmPendingBoxLabel,
+    cancelPendingBoxLabel,
   };
 
   return (

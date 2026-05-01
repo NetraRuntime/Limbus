@@ -9,7 +9,6 @@ import {
   type InfiniteCanvasHandle,
   type View,
 } from '../canvas-core';
-import type { MaskIdentity } from '../segmentation';
 import {
   ActiveTagListLayer,
   BakeForImage,
@@ -42,20 +41,16 @@ import {
   useMarqueeGesture,
   useMediaDragGesture,
   useMediaHandlers,
-  useSavedTags,
-  useSegmentationState,
   useToolMode,
   useTrashSweep,
   useVisionMedia,
+  useVisionSegmentation,
   useVisionSelection,
   type CanvasMedia,
   type ConnState,
   type DragState,
   type MarqueeState,
-  type PendingBoxLabel,
   type SearchItem,
-  type SegmentState,
-  type UserBox,
 } from './';
 import type { MarqueeRect as MarqueeRectType } from './hooks/useMarqueeGesture';
 import { FloatingSidebar } from '../../components/FloatingSidebar';
@@ -113,25 +108,14 @@ function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
   const [conn, setConn] = useState<ConnState>('connecting');
 
   // State lifted here temporarily so the provider can consume it AND the
-  // body still owns the gestures/segmentation that read it. Subsequent
-  // tasks (C4-C5) absorb each piece into the provider in turn.
-  const [segments, setSegments] = useState<Record<string, SegmentState>>({});
-  const [selectedMask, setSelectedMask] = useState<MaskIdentity | null>(null);
-  const [soloTag, setSoloTag] = useState<string | null>(null);
+  // body still owns the gestures that read it. Subsequent tasks (C5) absorb
+  // each piece into the provider in turn.
   const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
   const [marqueeRect, setMarqueeRect] = useState<MarqueeRectType>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const hoverState = useHoverState();
   const { hoverId, setHoverId } = hoverState;
-
-  // The body fills this ref after `useSegmentationState` runs; the provider
-  // calls it via the wrapper below. C4 will absorb segmentation into the
-  // provider and let us delete this ref.
-  const clearSegmentRef = useRef<(id: string) => void>(() => {});
-  const clearSegment = useCallback((id: string) => {
-    clearSegmentRef.current(id);
-  }, []);
 
   const preview = useImportPreview();
   const confirmImportRef = useRef<() => void>(() => {});
@@ -160,36 +144,24 @@ function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
         conn={conn}
         setConn={setConn}
         sam3Error={sam3Error}
-        setSegments={setSegments}
         dragRef={dragRef}
         hoverId={hoverId}
         setHoverId={setHoverId}
         marqueeRect={marqueeRect}
         marqueeRef={marqueeRef}
-        setSelectedMask={setSelectedMask}
-        setSoloTag={setSoloTag}
-        clearSegment={clearSegment}
         setMultiHighlightInput={setMultiHighlightInput}
       >
         <CanvasBody
-          sam3Error={sam3Error}
           conn={conn}
           setConn={setConn}
           preview={preview}
           confirmImportRef={confirmImportRef}
           hoverState={hoverState}
-          segments={segments}
-          setSegments={setSegments}
-          selectedMask={selectedMask}
-          setSelectedMask={setSelectedMask}
-          soloTag={soloTag}
-          setSoloTag={setSoloTag}
           multiHighlightInput={multiHighlightInput}
           setMultiHighlightInput={setMultiHighlightInput}
           marqueeRect={marqueeRect}
           setMarqueeRect={setMarqueeRect}
           marqueeRef={marqueeRef}
-          clearSegmentRef={clearSegmentRef}
           dragRef={dragRef}
         />
       </VisionCanvasProvider>
@@ -228,50 +200,33 @@ function TopHudExtra({ conn, sam3Error }: TopHudExtraProps) {
 }
 
 type BodyProps = {
-  sam3Error: string | null;
   conn: ConnState;
   setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   preview: ReturnType<typeof useImportPreview>;
   confirmImportRef: React.MutableRefObject<() => void>;
   hoverState: ReturnType<typeof useHoverState>;
-  segments: Record<string, SegmentState>;
-  setSegments: React.Dispatch<React.SetStateAction<Record<string, SegmentState>>>;
-  selectedMask: MaskIdentity | null;
-  setSelectedMask: React.Dispatch<React.SetStateAction<MaskIdentity | null>>;
-  soloTag: string | null;
-  setSoloTag: React.Dispatch<React.SetStateAction<string | null>>;
   multiHighlightInput: string[];
   setMultiHighlightInput: React.Dispatch<React.SetStateAction<string[]>>;
   marqueeRect: MarqueeRectType;
   setMarqueeRect: React.Dispatch<React.SetStateAction<MarqueeRectType>>;
   marqueeRef: React.MutableRefObject<MarqueeState | null>;
-  clearSegmentRef: React.MutableRefObject<(id: string) => void>;
   dragRef: React.MutableRefObject<DragState | null>;
 };
 
 function CanvasBody({
-  sam3Error,
   conn,
   setConn,
   preview,
   confirmImportRef,
   hoverState,
-  segments,
-  setSegments,
-  selectedMask,
-  setSelectedMask,
-  soloTag,
-  setSoloTag,
   multiHighlightInput,
   setMultiHighlightInput,
   marqueeRect,
   setMarqueeRect,
   marqueeRef,
-  clearSegmentRef,
   dragRef,
 }: BodyProps) {
   const { projectId, history } = useCanvasPage();
-  const sam3Available = !sam3Error;
   const shell = useCanvasShell();
   const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
   const {
@@ -322,10 +277,30 @@ function CanvasBody({
     deleteSelection,
   } = useVisionSelection();
 
+  // ─── Segmentation comes from the provider ───────────────────────────────
+  const {
+    segments,
+    setSegments,
+    segmentsRef,
+    selectedMask,
+    hoveredMask,
+    soloTag,
+    setSoloTag,
+    pendingBoxLabel,
+    setPendingBoxLabel,
+    userBoxes,
+    handleMaskSelect,
+    handleMaskHover,
+    replaceReadyTag,
+    deleteMask,
+    deleteAllMasksForTag,
+    submitSegment,
+    confirmPendingBoxLabel,
+    cancelPendingBoxLabel,
+  } = useVisionSegmentation();
+
   // ─── Plain state still owned by the body ────────────────────────────────
   const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
-  const [userBoxes, setUserBoxes] = useState<Record<string, UserBox[]>>({});
-  const [pendingBoxLabel, setPendingBoxLabel] = useState<PendingBoxLabel | null>(null);
   const [contextMenu, setContextMenu] = useState<
     { id: string; x: number; y: number } | null
   >(null);
@@ -335,7 +310,6 @@ function CanvasBody({
   viewRef.current = view;
 
   // ─── External one-line hooks ────────────────────────────────────────────
-  const { remember: rememberSavedTag } = useSavedTags(projectId);
   const viewport = useViewport();
   const { setHoverId, clearHideTimer, scheduleHide } = hoverState;
   const { tool, setTool, toolRef } = useToolMode();
@@ -352,43 +326,6 @@ function CanvasBody({
     marqueeRef,
     setMarqueeRect,
   });
-
-  // ─── Segmentation state ────────────────────────────────────────────────
-  const segmentation = useSegmentationState({
-    projectId,
-    sam3Available,
-    mediaRef,
-    history,
-    setConn,
-    pendingBoxLabel,
-    setPendingBoxLabel,
-    selectedIds,
-    setSelectedIds,
-    setLastSelectedId,
-    setUserBoxes,
-    rememberSavedTag,
-    segments,
-    setSegments,
-    selectedMask,
-    setSelectedMask,
-    soloTag,
-    setSoloTag,
-  });
-  const {
-    segmentsRef,
-    hoveredMask,
-    handleMaskSelect,
-    handleMaskHover,
-    clearSegment,
-    replaceReadyTag,
-    deleteMask,
-    deleteAllMasksForTag,
-    submitSegment,
-    confirmPendingBoxLabel,
-    cancelPendingBoxLabel,
-  } = segmentation;
-  // Publish clearSegment so the provider's selection actions can call it.
-  clearSegmentRef.current = clearSegment;
 
   // ─── Pointer gestures ───────────────────────────────────────────────────
   const { drawBoxPreview, beginDraw } = useDrawBoxGesture({
