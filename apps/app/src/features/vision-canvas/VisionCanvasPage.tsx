@@ -7,7 +7,6 @@ import {
   useFitBounds,
   useViewport,
   type InfiniteCanvasHandle,
-  type View,
 } from '../canvas-core';
 import {
   ActiveTagListLayer,
@@ -33,26 +32,18 @@ import {
   UserBoxesLayer,
   VisionCanvasModals,
   VisionCanvasProvider,
-  useBboxResizeGesture,
   useCanvasKeyboardShortcuts,
-  useDrawBoxGesture,
   useDropHandler,
-  useHoverState,
-  useMarqueeGesture,
-  useMediaDragGesture,
   useMediaHandlers,
-  useToolMode,
   useTrashSweep,
   useVisionMedia,
   useVisionSegmentation,
   useVisionSelection,
+  useVisionTools,
   type CanvasMedia,
   type ConnState,
-  type DragState,
-  type MarqueeState,
   type SearchItem,
 } from './';
-import type { MarqueeRect as MarqueeRectType } from './hooks/useMarqueeGesture';
 import { FloatingSidebar } from '../../components/FloatingSidebar';
 import { BootCard } from '../../components/BootCard';
 import { useSettings } from '../../hooks/useSettings';
@@ -107,16 +98,6 @@ type InnerProps = { projectId: string; sam3Error: string | null };
 function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
   const [conn, setConn] = useState<ConnState>('connecting');
 
-  // State lifted here temporarily so the provider can consume it AND the
-  // body still owns the gestures that read it. Subsequent tasks (C5) absorb
-  // each piece into the provider in turn.
-  const [multiHighlightInput, setMultiHighlightInput] = useState<string[]>([]);
-  const [marqueeRect, setMarqueeRect] = useState<MarqueeRectType>(null);
-  const marqueeRef = useRef<MarqueeState | null>(null);
-  const dragRef = useRef<DragState | null>(null);
-  const hoverState = useHoverState();
-  const { hoverId, setHoverId } = hoverState;
-
   const preview = useImportPreview();
   const confirmImportRef = useRef<() => void>(() => {});
   const handleConfirmImport = useCallback(() => {
@@ -144,25 +125,11 @@ function VisionCanvasPageInner({ projectId, sam3Error }: InnerProps) {
         conn={conn}
         setConn={setConn}
         sam3Error={sam3Error}
-        dragRef={dragRef}
-        hoverId={hoverId}
-        setHoverId={setHoverId}
-        marqueeRect={marqueeRect}
-        marqueeRef={marqueeRef}
-        setMultiHighlightInput={setMultiHighlightInput}
       >
         <CanvasBody
           conn={conn}
-          setConn={setConn}
           preview={preview}
           confirmImportRef={confirmImportRef}
-          hoverState={hoverState}
-          multiHighlightInput={multiHighlightInput}
-          setMultiHighlightInput={setMultiHighlightInput}
-          marqueeRect={marqueeRect}
-          setMarqueeRect={setMarqueeRect}
-          marqueeRef={marqueeRef}
-          dragRef={dragRef}
         />
       </VisionCanvasProvider>
     </CanvasPage>
@@ -201,32 +168,16 @@ function TopHudExtra({ conn, sam3Error }: TopHudExtraProps) {
 
 type BodyProps = {
   conn: ConnState;
-  setConn: React.Dispatch<React.SetStateAction<ConnState>>;
   preview: ReturnType<typeof useImportPreview>;
   confirmImportRef: React.MutableRefObject<() => void>;
-  hoverState: ReturnType<typeof useHoverState>;
-  multiHighlightInput: string[];
-  setMultiHighlightInput: React.Dispatch<React.SetStateAction<string[]>>;
-  marqueeRect: MarqueeRectType;
-  setMarqueeRect: React.Dispatch<React.SetStateAction<MarqueeRectType>>;
-  marqueeRef: React.MutableRefObject<MarqueeState | null>;
-  dragRef: React.MutableRefObject<DragState | null>;
 };
 
 function CanvasBody({
   conn,
-  setConn,
   preview,
   confirmImportRef,
-  hoverState,
-  multiHighlightInput,
-  setMultiHighlightInput,
-  marqueeRect,
-  setMarqueeRect,
-  marqueeRef,
-  dragRef,
 }: BodyProps) {
-  const { projectId, history } = useCanvasPage();
+  const { projectId } = useCanvasPage();
   const shell = useCanvasShell();
   const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
   const {
@@ -250,10 +201,8 @@ function CanvasBody({
     uploadStatus,
     encodingIds,
     runUploadPlan,
-    abortUpload,
     lodSources,
     setPriorityIds,
-    bringToFront,
   } = useVisionMedia();
   void setPriorityIds; // owned by provider; unused here for now
 
@@ -270,7 +219,6 @@ function CanvasBody({
     selectionBBox,
     multiSelectKey,
     clearSelection,
-    clearSelectionRef,
     selectAll,
     duplicateSelection,
     deleteMediaById,
@@ -287,11 +235,9 @@ function CanvasBody({
     soloTag,
     setSoloTag,
     pendingBoxLabel,
-    setPendingBoxLabel,
     userBoxes,
     handleMaskSelect,
     handleMaskHover,
-    replaceReadyTag,
     deleteMask,
     deleteAllMasksForTag,
     submitSegment,
@@ -299,73 +245,41 @@ function CanvasBody({
     cancelPendingBoxLabel,
   } = useVisionSegmentation();
 
+  // ─── Tools + gestures + hover + highlight inputs come from the provider ──
+  const {
+    tool,
+    setTool,
+    toolRef,
+    setHoverId,
+    clearHideTimer,
+    scheduleHide,
+    marqueeRect,
+    handleBackgroundPointerDown,
+    drawBoxPreview,
+    beginDraw,
+    activeResize,
+    handleBboxResizePointerDown,
+    handleBboxResizePointerMove,
+    handleBboxResizePointerUp,
+    dragRef,
+    shiftToggledRef,
+    beginDrag,
+    handleMediaPointerMove,
+    handleMediaPointerUp,
+    multiHighlightInput,
+    setMultiHighlightInput,
+    highlightInputs,
+    setHighlightInputs,
+  } = useVisionTools();
+
   // ─── Plain state still owned by the body ────────────────────────────────
-  const [highlightInputs, setHighlightInputs] = useState<Record<string, string[]>>({});
   const [contextMenu, setContextMenu] = useState<
     { id: string; x: number; y: number } | null
   >(null);
 
-  // ─── Refs (live mirrors + gesture state) ────────────────────────────────
-  const viewRef = useRef<View>(view);
-  viewRef.current = view;
-
   // ─── External one-line hooks ────────────────────────────────────────────
   const viewport = useViewport();
-  const { setHoverId, clearHideTimer, scheduleHide } = hoverState;
-  const { tool, setTool, toolRef } = useToolMode();
   useTrashSweep({ projectId, conn });
-
-  // ─── Marquee gesture (must run before useVisibleMedia consumes marqueeRect)
-  const { handleBackgroundPointerDown } = useMarqueeGesture({
-    viewRef,
-    mediaRef,
-    selectedIdsRef,
-    setSelectedIds,
-    setLastSelectedId,
-    clearSelectionRef,
-    marqueeRef,
-    setMarqueeRect,
-  });
-
-  // ─── Pointer gestures ───────────────────────────────────────────────────
-  const { drawBoxPreview, beginDraw } = useDrawBoxGesture({
-    viewRef,
-    selectedIdsRef,
-    setSelectedIds,
-    setLastSelectedId,
-    setPendingBoxLabel,
-  });
-  const {
-    shiftToggledRef,
-    beginDrag,
-    handlePointerMove: handleMediaPointerMove,
-    handlePointerUp: handleMediaPointerUp,
-  } = useMediaDragGesture({
-    viewRef,
-    mediaRef,
-    selectedIdsRef,
-    dragRef,
-    setMedia,
-    setConn,
-    history,
-    bringToFront,
-  });
-
-  const {
-    activeResize,
-    handlePointerDown: handleBboxResizePointerDown,
-    handlePointerMove: handleBboxResizePointerMove,
-    handlePointerUp: handleBboxResizePointerUp,
-  } = useBboxResizeGesture({
-    projectId,
-    viewRef,
-    mediaRef,
-    segmentsRef,
-    setSegments,
-    setConn,
-    history,
-    replaceReadyTag,
-  });
 
   useCanvasKeyboardShortcuts({
     canvasRef,

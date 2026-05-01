@@ -52,5 +52,6 @@ export { useVisionMedia } from './context/slices/useVisionMedia';
 export { useVisionConn } from './context/slices/useVisionConn';
 export { useVisionSelection } from './context/slices/useVisionSelection';
 export { useVisionSegmentation } from './context/slices/useVisionSegmentation';
+export { useVisionTools } from './context/slices/useVisionTools';
 
 export { VisionCanvasPage } from './VisionCanvasPage';

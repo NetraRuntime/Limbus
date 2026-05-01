@@ -5,10 +5,12 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react';
+import type { BackgroundPointerDown } from '../../canvas-core';
 import type { MaskIdentity } from '../../segmentation';
 import type {
   CanvasMedia,
   ConnState,
+  DragState,
   PendingBoxLabel,
   SegmentState,
   UserBox,
@@ -20,6 +22,11 @@ import type { useStackOrder } from '../hooks/useStackOrder';
 import type { SelectionDerived } from '../hooks/useSelectionDerived';
 import type { SelectionActions } from '../hooks/useSelectionActions';
 import type { SegmentationState } from '../hooks/useSegmentationState';
+import type { useToolMode } from '../hooks/useToolMode';
+import type { MarqueeGesture } from '../hooks/useMarqueeGesture';
+import type { DrawBoxGesture } from '../hooks/useDrawBoxGesture';
+import type { BboxResizeGesture } from '../hooks/useBboxResizeGesture';
+import type { MediaDragGesture } from '../hooks/useMediaDragGesture';
 
 export type VisionCanvasValue = {
   // C1: connection + sam3
@@ -88,6 +95,39 @@ export type VisionCanvasValue = {
   submitSegment: SegmentationState['submitSegment'];
   confirmPendingBoxLabel: SegmentationState['confirmPendingBoxLabel'];
   cancelPendingBoxLabel: SegmentationState['cancelPendingBoxLabel'];
+
+  // C5: tools + gestures + hover + highlight inputs
+  tool: ReturnType<typeof useToolMode>['tool'];
+  setTool: ReturnType<typeof useToolMode>['setTool'];
+  toolRef: ReturnType<typeof useToolMode>['toolRef'];
+
+  hoverId: string | null;
+  setHoverId: Dispatch<SetStateAction<string | null>>;
+  clearHideTimer: () => void;
+  scheduleHide: () => void;
+
+  marqueeRect: MarqueeGesture['marqueeRect'];
+  marqueeRef: MarqueeGesture['marqueeRef'];
+  handleBackgroundPointerDown: (e: BackgroundPointerDown) => void;
+
+  drawBoxPreview: DrawBoxGesture['drawBoxPreview'];
+  beginDraw: DrawBoxGesture['beginDraw'];
+
+  activeResize: BboxResizeGesture['activeResize'];
+  handleBboxResizePointerDown: BboxResizeGesture['handlePointerDown'];
+  handleBboxResizePointerMove: BboxResizeGesture['handlePointerMove'];
+  handleBboxResizePointerUp: BboxResizeGesture['handlePointerUp'];
+
+  dragRef: MutableRefObject<DragState | null>;
+  shiftToggledRef: MediaDragGesture['shiftToggledRef'];
+  beginDrag: MediaDragGesture['beginDrag'];
+  handleMediaPointerMove: MediaDragGesture['handlePointerMove'];
+  handleMediaPointerUp: MediaDragGesture['handlePointerUp'];
+
+  multiHighlightInput: string[];
+  setMultiHighlightInput: Dispatch<SetStateAction<string[]>>;
+  highlightInputs: Record<string, string[]>;
+  setHighlightInputs: Dispatch<SetStateAction<Record<string, string[]>>>;
 };
 
 const Ctx = createContext<VisionCanvasValue | null>(null);
