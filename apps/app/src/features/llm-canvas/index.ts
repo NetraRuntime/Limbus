@@ -52,3 +52,5 @@ export { LlmCanvasPage } from './LlmCanvasPage';
 export { LlmCanvasProvider } from './context/LlmCanvasProvider';
 export { useLlmCanvas, type LlmCanvasValue } from './context/LlmCanvasContext';
 export { useLlmNodes } from './context/slices/useLlmNodes';
+export { useLlmMutations } from './context/slices/useLlmMutations';
+export { useLlmConnect } from './context/slices/useLlmConnect';

@@ -5,7 +5,6 @@ import {
   useCanvasPage,
   useCanvasShell,
   useFitBounds,
-  type InfiniteCanvasHandle,
 } from '../canvas-core';
 import {
   EdgeOverlay,
@@ -16,16 +15,11 @@ import {
   NodeInspectorSidebar,
   StepNameInput,
   StepSearchPalette,
-  useCommitStep,
-  useConnectGesture,
-  useEdgeMutations,
-  useEdgeRerouteGesture,
   useLlmCanvas,
-  useLlmCanvasKeyboardShortcuts,
+  useLlmConnect,
   useLlmImportDrop,
+  useLlmMutations,
   useLlmNodes,
-  useNodeMutations,
-  useSelectedNodeFocus,
 } from './';
 import '../../App.css';
 
@@ -50,7 +44,6 @@ export function LlmCanvasPage({ projectId }: LlmCanvasPageProps) {
 function LlmCanvasBody() {
   const { projectId, history } = useCanvasPage();
   const shell = useCanvasShell();
-  const canvasRef = shell.canvasRef as React.RefObject<InfiniteCanvasHandle>;
   const {
     view,
     searchOpen,
@@ -61,16 +54,7 @@ function LlmCanvasBody() {
     setBackgroundPointerDown,
   } = shell;
 
-  const {
-    nodes,
-    edges,
-    setNodes,
-    setEdges,
-    nodesRef,
-    edgesRef,
-    nodeSizes,
-    handleMeasure,
-  } = useLlmNodes();
+  const { nodes, edges, setNodes, nodeSizes, handleMeasure } = useLlmNodes();
   const { selectedId, setSelectedId } = useLlmCanvas();
   const [focusedExample, setFocusedExample] = useState<{
     nodeId: string;
@@ -78,40 +62,17 @@ function LlmCanvasBody() {
     token: number;
   } | null>(null);
 
-  const nodeMut = useNodeMutations({
-    history,
-    nodesRef,
-    edgesRef,
-    setNodes,
-    setEdges,
-  });
-  const edgeMut = useEdgeMutations({ history, edgesRef, setEdges });
+  const { nodeMut, edgeMut } = useLlmMutations();
   void edgeMut.remove;
-
   const {
     connecting,
     naming,
-    start: startConnect,
-    cancel: cancelConnect,
-  } = useConnectGesture({ canvasRef });
-  const commitStep = useCommitStep({
-    projectId,
-    history,
-    connecting,
-    naming,
-    setNodes,
-    setEdges,
-    cancel: cancelConnect,
-  });
-  const { rerouting, start: startReroute } = useEdgeRerouteGesture({
-    canvasRef,
-    nodesRef,
-    nodeSizes,
-    onCommit: edgeMut.reroute,
-  });
-
-  useSelectedNodeFocus({ canvasRef, nodesRef, nodeSizes, selectedId });
-  useLlmCanvasKeyboardShortcuts({ setSelectedId });
+    startConnect,
+    cancelConnect,
+    commitStep,
+    rerouting,
+    startReroute,
+  } = useLlmConnect();
 
   const { handleDrop } = useLlmImportDrop({
     projectId,
