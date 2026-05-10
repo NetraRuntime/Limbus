@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { pb } from '../../../lib/pb';
+import { pb, safeRealtimeUnsubscribe, type RealtimeUnsubscribe } from '../../../lib/pb';
 import { getProject } from './projects';
 import { ProjectRecordSchema, type ProjectRecord } from '../types/project';
 
@@ -28,7 +28,7 @@ export function useProject(id: string): State {
         }
       });
 
-    let unsub: (() => void) | null = null;
+    let unsub: RealtimeUnsubscribe | null = null;
     pb.collection('projects')
       .subscribe(id, (e) => {
         if (cancelled) return;
@@ -40,13 +40,14 @@ export function useProject(id: string): State {
         if (parsed.success) setState({ status: 'ready', project: parsed.data });
       })
       .then((u) => {
-        unsub = u as unknown as () => void;
-        if (cancelled) unsub?.();
-      });
+        unsub = u as RealtimeUnsubscribe;
+        if (cancelled) safeRealtimeUnsubscribe(unsub, 'useProject');
+      })
+      .catch((err) => console.warn('[useProject] subscribe failed', err));
 
     return () => {
       cancelled = true;
-      unsub?.();
+      safeRealtimeUnsubscribe(unsub, 'useProject');
     };
   }, [id]);
 

@@ -1,6 +1,4 @@
 import {
-  Children,
-  isValidElement,
   useCallback,
   useEffect,
   useMemo,
@@ -8,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { CanvasTitlebar } from './CanvasTitlebar';
 import { CanvasTopHud } from './CanvasTopHud';
 import { CanvasBottomHud } from './CanvasBottomHud';
@@ -27,6 +26,8 @@ import {
 import { getInitialView } from '../lib/canvasView';
 import {
   CanvasShellProvider,
+  useCanvasShell,
+  type CanvasShellSlotName,
   type CanvasShellValue,
 } from './CanvasShellContext';
 import type { ProjectRecord } from '../../projects';
@@ -53,23 +54,13 @@ type Props = {
   children: ReactNode;
 };
 
-type SlotName = 'canvas' | 'overlays' | 'sidebar' | 'searchPalette' | 'modals';
-
-function pickSlot(children: ReactNode, name: SlotName): ReactNode {
-  let found: ReactNode = null;
-  Children.forEach(children, (child) => {
-    if (!isValidElement(child)) return;
-    const tag = (child.type as { __slot?: SlotName }).__slot;
-    if (tag === name) {
-      found = (child.props as { children?: ReactNode }).children ?? null;
-    }
-  });
-  return found;
-}
-
-function makeSlot(name: SlotName) {
-  const Slot = ({ children }: { children?: ReactNode }) => <>{children}</>;
-  (Slot as { __slot?: SlotName }).__slot = name;
+function makeSlot(name: CanvasShellSlotName) {
+  const Slot = ({ children }: { children?: ReactNode }) => {
+    const { slotTargets } = useCanvasShell();
+    const target = slotTargets[name];
+    return target ? createPortal(children, target) : null;
+  };
+  (Slot as { __slot?: CanvasShellSlotName }).__slot = name;
   Slot.displayName = `CanvasShell.${name[0]!.toUpperCase()}${name.slice(1)}`;
   return Slot;
 }
@@ -104,6 +95,11 @@ export function CanvasShell({
   const [backgroundPointerDown, setBackgroundPointerDown] = useState<
     ((e: BackgroundPointerDown) => void) | null
   >(null);
+  const [canvasSlotTarget, setCanvasSlotTarget] = useState<HTMLDivElement | null>(null);
+  const [overlaysSlotTarget, setOverlaysSlotTarget] = useState<HTMLDivElement | null>(null);
+  const [sidebarSlotTarget, setSidebarSlotTarget] = useState<HTMLDivElement | null>(null);
+  const [searchPaletteSlotTarget, setSearchPaletteSlotTarget] = useState<HTMLDivElement | null>(null);
+  const [modalsSlotTarget, setModalsSlotTarget] = useState<HTMLDivElement | null>(null);
 
   const glass = useCanvasGlass();
   useViewPersist(viewKey, view);
@@ -139,6 +135,44 @@ export function CanvasShell({
     [],
   );
 
+  const setDropHandlerValue = useCallback(
+    (fn: ((dt: DataTransfer, p: WorldPoint) => void) | null) => {
+      setDropHandler(() => fn);
+    },
+    [],
+  );
+
+  const setFitBoundsGetterValue = useCallback(
+    (fn: (() => WorldRect | null) | null) => {
+      setFitBoundsGetter(() => fn);
+    },
+    [],
+  );
+
+  const setBackgroundPointerDownValue = useCallback(
+    (fn: ((e: BackgroundPointerDown) => void) | null) => {
+      setBackgroundPointerDown(() => fn);
+    },
+    [],
+  );
+
+  const slotTargets = useMemo(
+    () => ({
+      canvas: canvasSlotTarget,
+      overlays: overlaysSlotTarget,
+      sidebar: sidebarSlotTarget,
+      searchPalette: searchPaletteSlotTarget,
+      modals: modalsSlotTarget,
+    }),
+    [
+      canvasSlotTarget,
+      overlaysSlotTarget,
+      sidebarSlotTarget,
+      searchPaletteSlotTarget,
+      modalsSlotTarget,
+    ],
+  );
+
   const value = useMemo<CanvasShellValue>(
     () => ({
       projectId,
@@ -148,18 +182,22 @@ export function CanvasShell({
       searchOpen,
       setSearchOpen,
       setDropError,
-      setDropHandler,
-      setFitBoundsGetter,
-      setBackgroundPointerDown,
+      setDropHandler: setDropHandlerValue,
+      setFitBoundsGetter: setFitBoundsGetterValue,
+      setBackgroundPointerDown: setBackgroundPointerDownValue,
+      slotTargets,
     }),
-    [projectId, view, cursor, searchOpen],
+    [
+      projectId,
+      view,
+      cursor,
+      searchOpen,
+      setDropHandlerValue,
+      setFitBoundsGetterValue,
+      setBackgroundPointerDownValue,
+      slotTargets,
+    ],
   );
-
-  const canvasSlot = pickSlot(children, 'canvas');
-  const overlaysSlot = pickSlot(children, 'overlays');
-  const sidebarSlot = pickSlot(children, 'sidebar');
-  const paletteSlot = pickSlot(children, 'searchPalette');
-  const modalsSlot = pickSlot(children, 'modals');
 
   return (
     <CanvasShellProvider value={value}>
@@ -174,11 +212,11 @@ export function CanvasShell({
         zoomSensitivity={zoomSensitivity}
         panSpeed={panSpeed}
       >
-        {canvasSlot}
+        <div ref={setCanvasSlotTarget} style={{ display: 'contents' }} />
       </InfiniteCanvas>
 
-      {overlaysSlot}
-      {sidebarSlot}
+      <div ref={setOverlaysSlotTarget} style={{ display: 'contents' }} />
+      <div ref={setSidebarSlotTarget} style={{ display: 'contents' }} />
 
       <CanvasTopHud
         glass={glass.wordmarkGlass}
@@ -208,8 +246,9 @@ export function CanvasShell({
 
       <DropErrorToast message={dropError} onDismiss={() => setDropError(null)} />
 
-      {paletteSlot}
-      {modalsSlot}
+      <div ref={setSearchPaletteSlotTarget} style={{ display: 'contents' }} />
+      <div ref={setModalsSlotTarget} style={{ display: 'contents' }} />
+      {children}
     </CanvasShellProvider>
   );
 }

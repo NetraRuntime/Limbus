@@ -22,7 +22,17 @@ export type CanvasShellValue = {
   setBackgroundPointerDown: (
     fn: ((e: BackgroundPointerDown) => void) | null,
   ) => void;
+  slotTargets: CanvasShellSlotTargets;
 };
+
+export type CanvasShellSlotName =
+  | 'canvas'
+  | 'overlays'
+  | 'sidebar'
+  | 'searchPalette'
+  | 'modals';
+
+export type CanvasShellSlotTargets = Record<CanvasShellSlotName, HTMLElement | null>;
 
 const CanvasShellContextRef = createContext<CanvasShellValue | null>(null);
 CanvasShellContextRef.displayName = 'CanvasShellContext';

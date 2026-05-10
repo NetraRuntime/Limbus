@@ -6,7 +6,7 @@ import { ProjectGrid } from './ProjectGrid';
 import { NewProjectModal } from './NewProjectModal';
 import { SortMenu, type SortKey } from './SortMenu';
 import { LabelFilterRow } from './LabelFilterRow';
-import { pb } from '../../../lib/pb';
+import { pb, safeRealtimeUnsubscribe, type RealtimeUnsubscribe } from '../../../lib/pb';
 import { TagRecordSchema, type TagRecord } from '../api/tags';
 import { useAutoLiquidGlassFilter } from '../../../components/LiquidGlass';
 import { SettingsModal } from '../../../components/SettingsModal';
@@ -54,7 +54,7 @@ function useProjectTags(): Record<string, TagRecord[]> {
 
     reload();
 
-    let unsub: (() => void) | null = null;
+    let unsub: RealtimeUnsubscribe | null = null;
     pb.collection('tags')
       .subscribe('*', (e) => {
         if (cancelled) return;
@@ -78,8 +78,8 @@ function useProjectTags(): Record<string, TagRecord[]> {
         });
       })
       .then((u) => {
-        unsub = u as unknown as () => void;
-        if (cancelled) unsub?.();
+        unsub = u as RealtimeUnsubscribe;
+        if (cancelled) safeRealtimeUnsubscribe(unsub, 'home tags');
       })
       .catch((err) => console.warn('[home] tags subscribe failed', err));
 
@@ -88,7 +88,7 @@ function useProjectTags(): Record<string, TagRecord[]> {
 
     return () => {
       cancelled = true;
-      unsub?.();
+      safeRealtimeUnsubscribe(unsub, 'home tags');
       window.removeEventListener('focus', onFocus);
     };
   }, []);

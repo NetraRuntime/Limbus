@@ -8,7 +8,7 @@ import {
   type TagRecord,
 } from '../../projects/api/tags';
 import { migrateLegacySavedTags } from '../../projects/lib/legacyTagsMigration';
-import { pb } from '../../../lib/pb';
+import { pb, safeRealtimeUnsubscribe, type RealtimeUnsubscribe } from '../../../lib/pb';
 
 export const sanitizeTag = (tag: string) => tag.trim().replace(/\s+/g, ' ');
 
@@ -75,7 +75,7 @@ export function useSavedTags(projectId: string): SavedTagsApi {
 
   useEffect(() => {
     let cancelled = false;
-    let unsub: (() => void) | null = null;
+    let unsub: RealtimeUnsubscribe | null = null;
     pb.collection('tags')
       .subscribe('*', (e) => {
         if (cancelled) return;
@@ -94,13 +94,13 @@ export function useSavedTags(projectId: string): SavedTagsApi {
         });
       })
       .then((u) => {
-        unsub = u as unknown as () => void;
-        if (cancelled) unsub?.();
+        unsub = u as RealtimeUnsubscribe;
+        if (cancelled) safeRealtimeUnsubscribe(unsub, 'savedTags');
       })
       .catch((err) => console.warn('[savedTags] subscribe failed', err));
     return () => {
       cancelled = true;
-      unsub?.();
+      safeRealtimeUnsubscribe(unsub, 'savedTags');
     };
   }, [projectId]);
 

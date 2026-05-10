@@ -18,6 +18,28 @@ export const pb = new PocketBase(PB_URL || '/');
 
 pb.autoCancellation(false);
 
+export type RealtimeUnsubscribe = () => void | Promise<void>;
+
+const isMissingRealtimeClientId = (err: unknown): boolean => {
+  const maybe = err as { status?: unknown; message?: unknown };
+  const status = typeof maybe?.status === 'number' ? maybe.status : undefined;
+  const message = err instanceof Error ? err.message : String(maybe?.message ?? err);
+  return status === 404 && /missing or invalid client id/i.test(message);
+};
+
+export function safeRealtimeUnsubscribe(
+  unsubscribe: RealtimeUnsubscribe | null | undefined,
+  source: string,
+): void {
+  if (!unsubscribe) return;
+  void Promise.resolve()
+    .then(() => unsubscribe())
+    .catch((err) => {
+      if (isMissingRealtimeClientId(err)) return;
+      console.warn(`[${source}] realtime unsubscribe failed`, err);
+    });
+}
+
 // Bookkeeping fields (`collectionName`, `created`, `updated`) are excluded
 // from the schema — validating them on every row in bulk hydration burns
 // ~200–500 ms at 10k without the app ever reading them. `collectionId` is
