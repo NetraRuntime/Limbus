@@ -60,7 +60,19 @@ const configureArgs = [
   '-DSAM3_SHARED=ON',
   '-DCMAKE_BUILD_TYPE=Release',
   '-DSAM3_TESTS=OFF',
-  ...(isWin ? ['-DSAM3_VIDEO=ON', '-DSAM3_BLAS=ON'] : []),
+  ...(isWin ? [
+    '-DSAM3_VIDEO=ON',
+    '-DSAM3_BLAS=ON',
+    // Belt-and-suspenders: also pass /arch:AVX2 + Release opts explicitly.
+    // vendor/sam3.c/CMakeLists.txt sets these too on MSVC x64, but
+    // overriding the cache values here guards against future refactors
+    // that might drop them.
+    // NB: deliberately omitting /GL — combined with SAM3_SHARED=ON it crashes
+    // CMake's auto-export step (`cmake -E __create_def`) when reading LTCG
+    // .obj files. AVX2 alone is the dominant speedup.
+    '-DCMAKE_C_FLAGS_RELEASE=/O2 /Oi /Ot /arch:AVX2 /fp:fast /DNDEBUG',
+    '-DCMAKE_CXX_FLAGS_RELEASE=/O2 /Oi /Ot /arch:AVX2 /fp:fast /DNDEBUG',
+  ] : []),
   // Metal backend (MLX-C) for GPU acceleration. The CMake option() at the
   // top of vendor/sam3.c/CMakeLists.txt defaults to OFF and defeats the
   // "auto-enable on APPLE" fallback below it, so we set it explicitly.

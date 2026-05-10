@@ -240,6 +240,16 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
     // Reset on Ctx drop (model swap) so a fresh Ctx starts empty.
     let mut in_memory_loaded: std::collections::HashSet<String> =
         std::collections::HashSet::new();
+    // Source dims (post-resize) keyed by id; populated whenever an image is
+    // encoded or loaded into the current Ctx. Lets segment-on-hot-image
+    // skip decode + precache + set_image_rgb (which would re-run the
+    // ~2.3s encoder on Hiera-L). Cleared in lockstep with in_memory_loaded.
+    let mut loaded_dims: std::collections::HashMap<String, (u32, u32)> =
+        std::collections::HashMap::new();
+    // Id whose pixels are currently bound to the Ctx via set_image_rgb.
+    // When this matches the segment target we can skip rebinding entirely
+    // (true hot path: zero decode, zero ffi, just segment()).
+    let mut current_bound: Option<String> = None;
     while let Ok(job) = rx.recv() {
         match job {
             Job::EncodeImage { id, src_path, reply } => {
@@ -252,6 +262,10 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
             }
             Job::DeleteCache { id, reply } => {
                 in_memory_loaded.remove(&id);
+                loaded_dims.remove(&id);
+                if current_bound.as_deref() == Some(id.as_str()) {
+                    current_bound = None;
+                }
                 let _ = reply.send(delete_cache(&cfg.cache_dir, &id));
             }
             Job::CacheStatus { id, reply } => {
@@ -279,6 +293,8 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                             ctx = None;
                             loaded_path = None;
                             in_memory_loaded.clear();
+                            loaded_dims.clear();
+                            current_bound = None;
                         }
                     }
                 }
@@ -299,6 +315,8 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                             &src_path,
                             &text,
                             &mut in_memory_loaded,
+                            &mut loaded_dims,
+                            &mut current_bound,
                         )
                     });
                 let _ = reply.send(res);
@@ -318,6 +336,8 @@ fn run(rx: Receiver<Job>, cfg: ModelConfig) {
                             &src_path,
                             bbox,
                             &mut in_memory_loaded,
+                            &mut loaded_dims,
+                            &mut current_bound,
                         )
                     });
                 let _ = reply.send(res);
@@ -337,7 +357,18 @@ fn ensure_image_loaded(
     id: &str,
     src_path: &Path,
     in_memory_loaded: &mut std::collections::HashSet<String>,
+    loaded_dims: &mut std::collections::HashMap<String, (u32, u32)>,
+    current_bound: &mut Option<String>,
 ) -> Result<(u32, u32), String> {
+    // Fully hot path: this id is already encoded AND currently bound to
+    // the Ctx. Skip everything; segment() can run immediately. Saves the
+    // ~2.3s Hiera-L encode pass plus the PNG decode + resize.
+    if current_bound.as_deref() == Some(id) {
+        if let Some(&dims) = loaded_dims.get(id) {
+            return Ok(dims);
+        }
+    }
+
     let target = match ctx.image_size() {
         0 => DEFAULT_MODEL_IMAGE_SIZE,
         n => n,
@@ -345,35 +376,52 @@ fn ensure_image_loaded(
     let dst = cache_path(cache_dir, id);
     let (pixels, width, height) = decode_and_resize(src_path, target)?;
 
-    // Re-running cache_load_image claims a fresh slot, which can LRU-evict another image.
+    // Try disk cache when the encoder cache for this id isn't in memory.
+    // cache_load_image populates the precache slot from a saved file,
+    // skipping the heavy encoder pass.
+    let mut loaded_from_disk = false;
     if dst.exists() && !in_memory_loaded.contains(id) {
         match ctx.cache_load_image(&dst) {
             Ok(()) => {
                 in_memory_loaded.insert(id.to_string());
+                loaded_dims.insert(id.to_string(), (width, height));
+                loaded_from_disk = true;
             }
             Err(e) => {
                 eprintln!(
-                    "[sam3] cache_load_image {} failed ({e}) — re-encoding",
+                    "[sam3] cache_load_image {} failed ({e}) -- re-encoding",
                     dst.display()
                 );
             }
         }
     }
 
-    ctx.precache_image(&pixels, width, height)
-        .map_err(|e| format!("precache_image: {e}"))?;
-    in_memory_loaded.insert(id.to_string());
+    // Only call precache_image (= run encoder) on a true cache miss.
+    if !in_memory_loaded.contains(id) {
+        ctx.precache_image(&pixels, width, height)
+            .map_err(|e| format!("precache_image: {e}"))?;
+        in_memory_loaded.insert(id.to_string());
+        loaded_dims.insert(id.to_string(), (width, height));
 
-    if !dst.exists() {
-        let tmp = dst.with_extension("sam3cache.tmp");
-        ctx.cache_save_image(&pixels, width, height, &tmp)
-            .map_err(|e| format!("cache_save_image: {e}"))?;
-        fs::rename(&tmp, &dst)
-            .map_err(|e| format!("rename {} -> {}: {e}", tmp.display(), dst.display()))?;
+        if !dst.exists() {
+            let tmp = dst.with_extension("sam3cache.tmp");
+            ctx.cache_save_image(&pixels, width, height, &tmp)
+                .map_err(|e| format!("cache_save_image: {e}"))?;
+            fs::rename(&tmp, &dst)
+                .map_err(|e| format!("rename {} -> {}: {e}", tmp.display(), dst.display()))?;
+        }
+    } else {
+        // In memory but not freshly loaded: ensure dims map is populated
+        // (may be missing if Ctx outlived the map e.g. across a panic-recovery).
+        loaded_dims.entry(id.to_string()).or_insert((width, height));
+        let _ = loaded_from_disk; // suppress unused on cache-hit path
     }
 
+    // Bind this id as the active image. Hits the precache populated above
+    // (or by cache_load_image), so it should NOT re-run the encoder.
     ctx.set_image_rgb(&pixels, width, height)
         .map_err(|e| format!("set_image_rgb: {e}"))?;
+    *current_bound = Some(id.to_string());
 
     Ok((width, height))
 }
@@ -385,9 +433,18 @@ fn segment_text(
     src_path: &Path,
     text: &str,
     in_memory_loaded: &mut std::collections::HashSet<String>,
+    loaded_dims: &mut std::collections::HashMap<String, (u32, u32)>,
+    current_bound: &mut Option<String>,
 ) -> Result<SegmentResponse, String> {
-    let (src_w, src_h) =
-        ensure_image_loaded(ctx, cache_dir, id, src_path, in_memory_loaded)?;
+    let (src_w, src_h) = ensure_image_loaded(
+        ctx,
+        cache_dir,
+        id,
+        src_path,
+        in_memory_loaded,
+        loaded_dims,
+        current_bound,
+    )?;
     let result = ctx
         .segment(&[Prompt::Text(text)])
         .map_err(|e| format!("segment: {e}"))?;
@@ -405,9 +462,18 @@ fn segment_box(
     src_path: &Path,
     bbox: [f32; 4],
     in_memory_loaded: &mut std::collections::HashSet<String>,
+    loaded_dims: &mut std::collections::HashMap<String, (u32, u32)>,
+    current_bound: &mut Option<String>,
 ) -> Result<SegmentResponse, String> {
-    let (src_w, src_h) =
-        ensure_image_loaded(ctx, cache_dir, id, src_path, in_memory_loaded)?;
+    let (src_w, src_h) = ensure_image_loaded(
+        ctx,
+        cache_dir,
+        id,
+        src_path,
+        in_memory_loaded,
+        loaded_dims,
+        current_bound,
+    )?;
     let w = src_w as f32;
     let h = src_h as f32;
     let box_prompt = Sam3Box {
