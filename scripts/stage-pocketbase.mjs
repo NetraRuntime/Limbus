@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -10,12 +10,20 @@ const isWindowsHost = platform() === 'win32';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDir, '..');
 
+const normalizeTriple = (triple) => {
+  if (isWindowsHost && triple === 'x86_64-pc-windows-gnu') return 'x86_64-pc-windows-msvc';
+  return triple;
+};
+
 const resolveTriple = () => {
-  if (process.env.TAURI_ENV_TARGET_TRIPLE) return process.env.TAURI_ENV_TARGET_TRIPLE;
+  if (process.env.TAURI_ENV_TARGET_TRIPLE) {
+    return normalizeTriple(process.env.TAURI_ENV_TARGET_TRIPLE);
+  }
+  if (isWindowsHost) return 'x86_64-pc-windows-msvc';
   try {
     const out = execSync('rustc -vV', { encoding: 'utf8' });
     const match = out.match(/host:\s*(\S+)/);
-    if (match) return match[1];
+    if (match) return normalizeTriple(match[1]);
   } catch (err) {
     // fall through to the explicit error below
   }
@@ -43,12 +51,18 @@ if (existsSync(destPath)) {
 
 if (!existsSync(sourcePath)) {
   console.error(`[stage-pocketbase] missing source binary: ${sourcePath}`);
-  console.error(
-    '[stage-pocketbase] download the matching PocketBase release and place it at pb/pocketbase',
-  );
-  console.error('[stage-pocketbase] (or in CI, run scripts/release/fetch-pocketbase.mjs first)');
-  console.error('[stage-pocketbase] https://github.com/pocketbase/pocketbase/releases');
-  process.exit(1);
+  console.error('[stage-pocketbase] fetching pinned PocketBase release');
+  try {
+    execFileSync(process.execPath, [resolve(projectRoot, 'scripts', 'release', 'fetch-pocketbase.mjs')], {
+      stdio: 'inherit',
+      env: { ...process.env, TAURI_ENV_TARGET_TRIPLE: triple },
+    });
+    process.exit(0);
+  } catch (err) {
+    console.error('[stage-pocketbase] failed to fetch pinned PocketBase release');
+    console.error('[stage-pocketbase] https://github.com/pocketbase/pocketbase/releases');
+    process.exit(1);
+  }
 }
 
 mkdirSync(destDir, { recursive: true });

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /*
- * Signs libsam3.dll BEFORE `tauri build` so the installer's signature
- * covers a signed DLL. Tauri's NSIS bundler signs the .exe and the
- * installer itself; this fills the gap for our shipped DLL.
+ * Signs staged SAM3 runtime DLLs BEFORE `tauri build` so the installer's
+ * signature covers signed native dependencies. Tauri's NSIS bundler signs
+ * the .exe and installer itself; this fills the gap for our shipped DLLs.
  *
  * Required env:
  *   WINDOWS_CERTIFICATE          base64-encoded .pfx
@@ -10,7 +10,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { existsSync, writeFileSync, mkdtempSync, readdirSync } from 'node:fs';
 import { platform, tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,15 +30,23 @@ if (!certB64 || !certPw) {
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDir, '..', '..');
 
-const dllSources = [
-  resolve(projectRoot, 'vendor/sam3.c/build/Release/sam3.dll'),
-  resolve(projectRoot, 'vendor/sam3.c/build/sam3.dll'),
-];
+const runtimeDir = resolve(
+  projectRoot,
+  'apps/app/src-tauri/binaries/sam3-runtime',
+);
 
-const dllPath = dllSources.find((p) => existsSync(p));
-if (!dllPath) {
-  console.error('[sign-windows] sam3.dll not found in any of:');
-  for (const p of dllSources) console.error(`  ${p}`);
+if (!existsSync(runtimeDir)) {
+  console.error(`[sign-windows] SAM3 runtime directory not found: ${runtimeDir}`);
+  process.exit(1);
+}
+
+const dllPaths = readdirSync(runtimeDir)
+  .filter((name) => name.toLowerCase().endsWith('.dll'))
+  .sort((a, b) => a.localeCompare(b))
+  .map((name) => resolve(runtimeDir, name));
+
+if (dllPaths.length === 0) {
+  console.error(`[sign-windows] no DLLs found in: ${runtimeDir}`);
   process.exit(1);
 }
 
@@ -48,20 +56,24 @@ writeFileSync(pfxPath, Buffer.from(certB64, 'base64'));
 
 const signtool = process.env.SIGNTOOL_PATH || 'signtool.exe';
 
-execFileSync(
-  signtool,
-  [
-    'sign',
-    '/f', pfxPath,
-    '/p', certPw,
-    '/tr', 'http://timestamp.digicert.com',
-    '/td', 'sha256',
-    '/fd', 'sha256',
-    dllPath,
-  ],
-  { stdio: 'inherit' },
-);
-console.log(`[sign-windows] signed: ${dllPath}`);
+for (const dllPath of dllPaths) {
+  execFileSync(
+    signtool,
+    [
+      'sign',
+      '/f', pfxPath,
+      '/p', certPw,
+      '/tr', 'http://timestamp.digicert.com',
+      '/td', 'sha256',
+      '/fd', 'sha256',
+      dllPath,
+    ],
+    { stdio: 'inherit' },
+  );
+  console.log(`[sign-windows] signed: ${dllPath}`);
+}
 
-execFileSync(signtool, ['verify', '/pa', dllPath], { stdio: 'inherit' });
-console.log(`[sign-windows] verified ok`);
+for (const dllPath of dllPaths) {
+  execFileSync(signtool, ['verify', '/pa', dllPath], { stdio: 'inherit' });
+  console.log(`[sign-windows] verified: ${dllPath}`);
+}

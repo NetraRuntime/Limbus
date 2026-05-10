@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, existsSync, createWriteStream } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { open as yauzlOpen } from 'yauzl';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -28,13 +28,19 @@ if (!version.startsWith('v')) {
   process.exit(1);
 }
 
+const normalizeTriple = (triple) => {
+  if (platform() === 'win32' && triple === 'x86_64-pc-windows-gnu') return 'x86_64-pc-windows-msvc';
+  return triple;
+};
+
 const triple =
-  process.env.TAURI_ENV_TARGET_TRIPLE ||
+  (process.env.TAURI_ENV_TARGET_TRIPLE && normalizeTriple(process.env.TAURI_ENV_TARGET_TRIPLE)) ||
   (() => {
+    if (platform() === 'win32') return 'x86_64-pc-windows-msvc';
     const out = execSync('rustc -vV', { encoding: 'utf8' });
     const m = out.match(/host:\s*(\S+)/);
     if (!m) throw new Error('Cannot determine target triple from rustc');
-    return m[1];
+    return normalizeTriple(m[1]);
   })();
 
 const checksums = readFileSync(checksumFile, 'utf8')

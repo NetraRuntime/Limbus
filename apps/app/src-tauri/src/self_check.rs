@@ -52,10 +52,9 @@ pub fn run() -> ! {
 }
 
 fn locate_pocketbase(exe_dir: &std::path::Path) -> Option<PathBuf> {
-    // In a bundled app, the sidecar is named after the build triple and
-    // sits next to the main executable. We search for any file matching
-    // `pocketbase-*` (or `pocketbase-*.exe` on Windows) instead of
-    // hardcoding the triple.
+    // Tauri stages externalBin as `pocketbase(.exe)` next to the main
+    // executable; source trees and older bundles may still use the
+    // target-suffixed `pocketbase-*` form.
     let entries = std::fs::read_dir(exe_dir).ok()?;
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -65,7 +64,8 @@ fn locate_pocketbase(exe_dir: &std::path::Path) -> Option<PathBuf> {
         } else {
             ("pocketbase-", "")
         };
-        if name_str.starts_with(prefix) && name_str.ends_with(suffix) {
+        let exact_name = if cfg!(windows) { "pocketbase.exe" } else { "pocketbase" };
+        if name_str == exact_name || (name_str.starts_with(prefix) && name_str.ends_with(suffix)) {
             return Some(entry.path());
         }
     }

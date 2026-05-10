@@ -17,6 +17,7 @@
     "typecheck": "pnpm -r typecheck",
     "tauri:dev": "pnpm --filter @netrart/app tauri:dev",
     "tauri:build": "pnpm --filter @netrart/app tauri:build",
+    "sam3:build": "node scripts/build-sam3.mjs",
     "release:prepare": "node scripts/release/bump-version.mjs",
     "stage:pb": "node scripts/stage-pocketbase.mjs",
     "db:start": "node scripts/dev-pocketbase.mjs",

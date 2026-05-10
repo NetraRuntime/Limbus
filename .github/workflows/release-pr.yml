@@ -214,7 +214,7 @@ jobs:
               ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
               ;;
             x86_64-pc-windows-msvc)
-              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/NetraRT.exe --self-check
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart.exe --self-check
               ;;
             x86_64-unknown-linux-gnu)
               ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
