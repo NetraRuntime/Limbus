@@ -8,7 +8,7 @@ NetraRT is the user-facing surface of that platform. It's an infinite-canvas des
 
 The platform is informed by our work on [**SAM3.c**](https://github.com/rifkybujana/sam3.c) (a pure C port of Segment Anything 3) and [**Kolosal AI**](https://kolosal.ai) (an open-source C++ LLM platform that runs on any GPU). The same obsession with performance and accessibility shows up here: the canvas is local-first, your data stays on your machine, and we care about latency budgets that real teams actually have.
 
-This monorepo hosts the canvas app (Tauri desktop and a web debug build) along with shared design-system and tooling packages. The marketing site lives in its own repo: [netrart.com](https://github.com/rifkybujana/netrart.com).
+This monorepo hosts the canvas app (Tauri desktop and a web debug build) along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com).
 
 ## What's in the canvas
 
