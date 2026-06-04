@@ -1,6 +1,4 @@
 import {
-  Children,
-  isValidElement,
   useCallback,
   useEffect,
   useMemo,
@@ -8,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { CanvasTitlebar } from './CanvasTitlebar';
 import { CanvasTopHud } from './CanvasTopHud';
 import { CanvasBottomHud } from './CanvasBottomHud';
@@ -27,7 +26,9 @@ import {
 import { getInitialView } from '../lib/canvasView';
 import {
   CanvasShellProvider,
+  useCanvasShell,
   type CanvasShellValue,
+  type SlotName,
 } from './CanvasShellContext';
 import type { ProjectRecord } from '../../projects';
 
@@ -53,28 +54,25 @@ type Props = {
   children: ReactNode;
 };
 
-type SlotName = 'canvas' | 'overlays' | 'sidebar' | 'searchPalette' | 'modals';
-
-function pickSlot(children: ReactNode, name: SlotName): ReactNode {
-  let found: ReactNode = null;
-  Children.forEach(children, (child) => {
-    if (!isValidElement(child)) return;
-    const tag = (child.type as { __slot?: SlotName }).__slot;
-    if (tag === name) {
-      found = (child.props as { children?: ReactNode }).children ?? null;
-    }
-  });
-  return found;
-}
-
 function makeSlot(name: SlotName) {
-  const Slot = ({ children }: { children?: ReactNode }) => <>{children}</>;
-  (Slot as { __slot?: SlotName }).__slot = name;
+  const Slot = ({ children }: { children?: ReactNode }) => {
+    const { slotTargets } = useCanvasShell();
+    const target = slotTargets[name];
+    // Portal keeps `children` in the React tree (so provider context above
+    // the slot still reaches it) while rendering it into the shell region.
+    // `target` is null on the first render, before the region ref attaches;
+    // the ref callback then updates context and this re-renders.
+    return target ? createPortal(children, target) : null;
+  };
   Slot.displayName = `CanvasShell.${name[0]!.toUpperCase()}${name.slice(1)}`;
   return Slot;
 }
 
 const TOAST_DURATION_MS = 5000;
+
+// Portal-target wrappers must not affect layout: `display: contents` makes
+// the wrapper generate no box, so portaled content sits where the wrapper is.
+const DISPLAY_CONTENTS = { display: 'contents' } as const;
 
 export function CanvasShell({
   projectId,
@@ -95,15 +93,50 @@ export function CanvasShell({
   const [cursor, setCursor] = useState<WorldPoint | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
-  const [dropHandler, setDropHandler] = useState<
+  const [dropHandler, setDropHandlerState] = useState<
     ((dt: DataTransfer, p: WorldPoint) => void) | null
   >(null);
-  const [fitBoundsGetter, setFitBoundsGetter] = useState<
+  const [fitBoundsGetter, setFitBoundsGetterState] = useState<
     (() => WorldRect | null) | null
   >(null);
-  const [backgroundPointerDown, setBackgroundPointerDown] = useState<
+  const [backgroundPointerDown, setBackgroundPointerDownState] = useState<
     ((e: BackgroundPointerDown) => void) | null
   >(null);
+  const [slotTargets, setSlotTargets] = useState<
+    Partial<Record<SlotName, HTMLElement | null>>
+  >({});
+
+  // These store callbacks. A raw setState would treat a function argument as
+  // an updater and *call* it, so wrap to store the function value itself.
+  const setDropHandler = useCallback(
+    (fn: ((dt: DataTransfer, p: WorldPoint) => void) | null) =>
+      setDropHandlerState(() => fn),
+    [],
+  );
+  const setFitBoundsGetter = useCallback(
+    (fn: (() => WorldRect | null) | null) => setFitBoundsGetterState(() => fn),
+    [],
+  );
+  const setBackgroundPointerDown = useCallback(
+    (fn: ((e: BackgroundPointerDown) => void) | null) =>
+      setBackgroundPointerDownState(() => fn),
+    [],
+  );
+
+  const setSlotTarget = useCallback((name: SlotName, el: HTMLElement | null) => {
+    setSlotTargets((prev) => (prev[name] === el ? prev : { ...prev, [name]: el }));
+  }, []);
+  const slotRefs = useMemo(
+    () => ({
+      canvas: (el: HTMLElement | null) => setSlotTarget('canvas', el),
+      overlays: (el: HTMLElement | null) => setSlotTarget('overlays', el),
+      sidebar: (el: HTMLElement | null) => setSlotTarget('sidebar', el),
+      searchPalette: (el: HTMLElement | null) =>
+        setSlotTarget('searchPalette', el),
+      modals: (el: HTMLElement | null) => setSlotTarget('modals', el),
+    }),
+    [setSlotTarget],
+  );
 
   const glass = useCanvasGlass();
   useViewPersist(viewKey, view);
@@ -151,15 +184,10 @@ export function CanvasShell({
       setDropHandler,
       setFitBoundsGetter,
       setBackgroundPointerDown,
+      slotTargets,
     }),
-    [projectId, view, cursor, searchOpen],
+    [projectId, view, cursor, searchOpen, slotTargets],
   );
-
-  const canvasSlot = pickSlot(children, 'canvas');
-  const overlaysSlot = pickSlot(children, 'overlays');
-  const sidebarSlot = pickSlot(children, 'sidebar');
-  const paletteSlot = pickSlot(children, 'searchPalette');
-  const modalsSlot = pickSlot(children, 'modals');
 
   return (
     <CanvasShellProvider value={value}>
@@ -174,11 +202,11 @@ export function CanvasShell({
         zoomSensitivity={zoomSensitivity}
         panSpeed={panSpeed}
       >
-        {canvasSlot}
+        <div ref={slotRefs.canvas} style={DISPLAY_CONTENTS} />
       </InfiniteCanvas>
 
-      {overlaysSlot}
-      {sidebarSlot}
+      <div ref={slotRefs.overlays} style={DISPLAY_CONTENTS} />
+      <div ref={slotRefs.sidebar} style={DISPLAY_CONTENTS} />
 
       <CanvasTopHud
         glass={glass.wordmarkGlass}
@@ -208,8 +236,15 @@ export function CanvasShell({
 
       <DropErrorToast message={dropError} onDismiss={() => setDropError(null)} />
 
-      {paletteSlot}
-      {modalsSlot}
+      <div ref={slotRefs.searchPalette} style={DISPLAY_CONTENTS} />
+      <div ref={slotRefs.modals} style={DISPLAY_CONTENTS} />
+
+      {/*
+        Mount the slot-bearing children (which include the feature providers).
+        The providers' hooks run here; each slot portals its content into the
+        region nodes above. Without this, the providers would never mount.
+      */}
+      {children}
     </CanvasShellProvider>
   );
 }
