@@ -1,0 +1,43 @@
+NetraRT
+Copyright 2026 Kolosal AI Inc.
+
+This product is licensed under the Apache License, Version 2.0 (the "License").
+You may obtain a copy of the License in the LICENSE file at the root of this
+repository or at http://www.apache.org/licenses/LICENSE-2.0
+
+------------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------------
+
+This product bundles or depends on the following third-party software. Each is
+distributed under its own license; the relevant terms are reproduced or linked
+below.
+
+SAM3.c
+  A pure C port of Segment Anything 3.
+  https://github.com/rifkybujana/sam3.c
+  License: MIT
+
+Fonts (bundled in the build output via packages/design-system)
+  Caveat — Copyright 2014 The Caveat Project Authors
+    https://github.com/googlefonts/caveat
+  Space Mono — Copyright 2016 The Space Mono Project Authors
+    https://github.com/googlefonts/spacemono
+  License: SIL Open Font License 1.1
+  Full text: packages/design-system/fonts/OFL.txt
+
+Remixicon
+  https://github.com/Remix-Design/RemixIcon
+  License: Apache License 2.0
+
+Tauri
+  https://github.com/tauri-apps/tauri
+  License: Apache License 2.0 / MIT
+
+React
+  https://github.com/facebook/react
+  License: MIT
+
+Other dependencies are declared in package.json / pnpm-lock.yaml and are
+distributed under their respective permissive (MIT / Apache-2.0 / ISC / BSD)
+licenses.
