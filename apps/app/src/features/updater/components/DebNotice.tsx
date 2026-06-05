@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useUpdater } from '../hooks/useUpdater';
 import './DebNotice.css';
 
-const STORAGE_KEY = 'netrart.updater.deb-notice-dismissed';
+const STORAGE_KEY = 'netra-limbus.updater.deb-notice-dismissed';
 
 const DEB_NOTICE_ENABLED = true;
 

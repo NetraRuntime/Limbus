@@ -26,7 +26,7 @@ export async function detectInstallKind(platform: string): Promise<InstallKind> 
   if (platform === 'linux') {
     // AppImage mounts under /tmp/.mount_<random> at runtime.
     if (dir.startsWith('/tmp/.mount_')) return 'appimage';
-    // .deb places resources under /usr/lib/netrart.
+    // .deb places resources under /usr/lib/netra-limbus.
     if (dir.startsWith('/usr/lib/') || dir.startsWith('/usr/share/')) return 'deb';
     return 'unknown';
   }

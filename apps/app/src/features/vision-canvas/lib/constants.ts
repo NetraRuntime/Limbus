@@ -15,10 +15,10 @@ export const EMPTY_TAGS: readonly string[] = Object.freeze([]);
 export const HIGHLIGHT_BOTTOM_INSET_PX =
   HIGHLIGHT_INPUT_GAP + HIGHLIGHT_INPUT_HEIGHT + 16;
 
-export const STACK_ORDER_STORAGE_KEY = 'netrart:canvas:stack-order:v1';
+export const STACK_ORDER_STORAGE_KEY = 'netra-limbus:canvas:stack-order:v1';
 export const STACK_ORDER_PERSIST_DEBOUNCE_MS = 200;
 
-export const VISION_VIEW_STORAGE_KEY = 'netrart:canvas:view:v1';
+export const VISION_VIEW_STORAGE_KEY = 'netra-limbus:canvas:view:v1';
 
 export const DEFAULT_UPLOAD_LONGEST_SIDE = 640;
 

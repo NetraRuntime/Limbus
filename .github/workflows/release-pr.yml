@@ -152,7 +152,7 @@ jobs:
           APPLE_CERTIFICATE_B64: ${{ secrets.APPLE_CERTIFICATE }}
         run: |
           set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/netrart-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/netra-limbus-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           CERT_PATH="$RUNNER_TEMP/cert.p12"
 
@@ -196,10 +196,10 @@ jobs:
         run: node scripts/release/sign-windows.mjs
 
       - name: Build app
-        run: pnpm --filter @netrart/app build
+        run: pnpm --filter @netra-limbus/app build
 
       - name: Tauri build
-        run: pnpm --filter @netrart/app tauri build --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
+        run: pnpm --filter @netra-limbus/app tauri build --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
 
       - name: Verify mac binary @rpath
         if: runner.os == 'macOS'
@@ -214,13 +214,13 @@ jobs:
         run: |
           case "${{ matrix.triple }}" in
             aarch64-apple-darwin|x86_64-apple-darwin)
-              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netra-limbus --self-check
               ;;
             x86_64-pc-windows-msvc)
-              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/NetraRT.exe --self-check
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netra-limbus.exe --self-check
               ;;
             x86_64-unknown-linux-gnu)
-              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netrart --self-check
+              ./apps/app/src-tauri/target/${{ matrix.triple }}/release/netra-limbus --self-check
               ;;
           esac
 

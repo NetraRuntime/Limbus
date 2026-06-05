@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Walks a built NetraRT.app and re-signs every nested executable / dylib
+ * Walks a built NetraLimbus.app and re-signs every nested executable / dylib
  * with hardened runtime + entitlements. Tauri's default signing covers
  * the main binary; this catches the externalBin sidecar and the framework
  * dylib that need explicit treatment for notarization to succeed.
@@ -42,7 +42,7 @@ const appPath = resolve(
   projectRoot,
   'apps/app/src-tauri/target',
   triple,
-  'release/bundle/macos/NetraRT.app',
+  'release/bundle/macos/NetraLimbus.app',
 );
 if (!existsSync(appPath)) {
   console.error(`[sign-mac] .app not found for triple ${triple}: ${appPath}`);

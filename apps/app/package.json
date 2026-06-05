@@ -1,5 +1,5 @@
 {
-  "name": "@netrart/app",
+  "name": "@netra-limbus/app",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.6",
-    "@netrart/design-system": "workspace:*",
+    "@netra-limbus/design-system": "workspace:*",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
@@ -32,7 +32,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@netrart/tsconfig": "workspace:*",
+    "@netra-limbus/tsconfig": "workspace:*",
     "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

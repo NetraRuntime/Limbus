@@ -1,4 +1,4 @@
-# CLAUDE.md — NetraRT
+# CLAUDE.md — Netra Limbus
 
 ## About Netra
 
@@ -12,9 +12,9 @@ The goal is simple: anyone, anywhere, on any device, should be able to run state
 
 Optimized for the edge from day one, so your camera, your drone, your robot, your phone, and your Raspberry Pi all become places where vision AI just works.
 
-## About NetraRT
+## About Netra Limbus
 
-NetraRT is the user-facing surface of Netra: an infinite-canvas desktop app (Tauri). This monorepo hosts the desktop app along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com). See `README.md` for layout, prerequisites, and run scripts.
+Netra Limbus is the user-facing surface of Netra: an infinite-canvas desktop app (Tauri). This monorepo hosts the desktop app along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com). See `README.md` for layout, prerequisites, and run scripts.
 
 ---
 

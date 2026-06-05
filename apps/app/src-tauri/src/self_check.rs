@@ -1,7 +1,7 @@
 //! Headless smoke test: verifies the staged PocketBase sidecar is the
 //! correct architecture and the sam3 dylib loads, then exits.
 //!
-//! Invoked by `NetraRT --self-check` (or `NetraRT.exe --self-check`).
+//! Invoked by `netra-limbus --self-check` (or `netra-limbus.exe --self-check`).
 //! Used by CI install-rehearsal jobs across all platforms.
 
 use std::path::PathBuf;

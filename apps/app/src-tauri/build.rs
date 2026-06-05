@@ -1,4 +1,4 @@
-//! NetraRT Tauri build script.
+//! Netra Limbus Tauri build script.
 //!
 //! Runs the standard `tauri_build::build()` and emits an extra macOS
 //! rpath of `@executable_path/../Frameworks` so both dev (`target/`

@@ -71,7 +71,7 @@ export async function focusHome(): Promise<void> {
   }
   const win = new WebviewWindow(HOME_LABEL, {
     url: 'index.html',
-    title: 'NetraRT',
+    title: 'Netra Limbus',
     width: 1280,
     height: 820,
     minWidth: 900,

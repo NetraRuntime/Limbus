@@ -38,7 +38,7 @@ type Props = {
   children?: ReactNode;
 };
 
-const STORAGE_KEY = 'netrart:llm-canvas:inspector-width:v1';
+const STORAGE_KEY = 'netra-limbus:llm-canvas:inspector-width:v1';
 const MIN_WIDTH = 280;
 const SIDE_MARGIN = 12;
 const MIN_LEFT_GAP = 64;

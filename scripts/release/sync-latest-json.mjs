@@ -10,10 +10,10 @@
  *          --out ./latest.json
  *
  * Expected artifact layout:
- *   artifacts/macos-aarch64/NetraRT.app.tar.gz(.sig)
- *   artifacts/macos-x86_64/NetraRT.app.tar.gz(.sig)
- *   artifacts/windows-x64/NetraRT_<v>_x64-setup.nsis.zip(.sig)
- *   artifacts/linux-x64/NetraRT_<v>_amd64.AppImage.tar.gz(.sig)
+ *   artifacts/macos-aarch64/NetraLimbus.app.tar.gz(.sig)
+ *   artifacts/macos-x86_64/NetraLimbus.app.tar.gz(.sig)
+ *   artifacts/windows-x64/NetraLimbus_<v>_x64-setup.nsis.zip(.sig)
+ *   artifacts/linux-x64/NetraLimbus_<v>_amd64.AppImage.tar.gz(.sig)
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';

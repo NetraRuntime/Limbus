@@ -1,5 +1,5 @@
 {
-  "name": "netrart",
+  "name": "netra-limbus",
   "private": true,
   "version": "0.2.0",
   "type": "module",
@@ -8,15 +8,15 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev:app": "pnpm --filter @netrart/app dev",
+    "dev:app": "pnpm --filter @netra-limbus/app dev",
     "build": "pnpm -r build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
-    "tauri:dev": "pnpm --filter @netrart/app tauri:dev",
-    "tauri:build": "pnpm --filter @netrart/app tauri:build",
+    "tauri:dev": "pnpm --filter @netra-limbus/app tauri:dev",
+    "tauri:build": "pnpm --filter @netra-limbus/app tauri:build",
     "release:prepare": "node scripts/release/bump-version.mjs",
     "stage:pb": "node scripts/stage-pocketbase.mjs",
     "db:start": "node scripts/dev-pocketbase.mjs",

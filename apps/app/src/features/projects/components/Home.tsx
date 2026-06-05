@@ -313,7 +313,7 @@ export function Home() {
         <div className="home-toolbar-left">
           <span className="home-toolbar-brand" aria-hidden>
             <i className="ri-eye-line" />
-            <span>NetraRT</span>
+            <span>Netra Limbus</span>
           </span>
           <div className="home-view-switch" role="tablist" aria-label="Home views">
             <button

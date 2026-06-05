@@ -1,6 +1,6 @@
 # Security Policy
 
-We take the security of NetraRT seriously — it is a desktop application that
+We take the security of Netra Limbus seriously — it is a desktop application that
 handles local data and ships code-signed, auto-updating binaries.
 
 ## Reporting a vulnerability
@@ -44,5 +44,5 @@ Out of scope:
 
 ## Supported versions
 
-NetraRT is pre-1.0 and ships from `main`. Security fixes target the latest
+Netra Limbus is pre-1.0 and ships from `main`. Security fixes target the latest
 released version and `main`.

@@ -22,7 +22,7 @@ export function CanvasTopHud({ glass, project, extra }: Props) {
       <div
         ref={glass.ref}
         className="wordmark is-liquid-glass"
-        aria-label="NetraRT"
+        aria-label="Netra Limbus"
         style={glass.style}
       >
         <button
@@ -33,7 +33,7 @@ export function CanvasTopHud({ glass, project, extra }: Props) {
           onClick={() => void focusHome()}
         >
           <i className="ri-home-2-line wordmark-home-icon" aria-hidden />
-          <span className="wordmark-glyph">NetraRT</span>
+          <span className="wordmark-glyph">Netra Limbus</span>
         </button>
         {project && (
           <>

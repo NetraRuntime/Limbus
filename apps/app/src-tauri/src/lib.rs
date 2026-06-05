@@ -481,7 +481,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building NetraRT")
+        .expect("error while building Netra Limbus")
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 let state: State<PocketBaseProcess> = app.state();

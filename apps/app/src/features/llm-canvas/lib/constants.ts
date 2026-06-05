@@ -1,4 +1,4 @@
-export const LLM_VIEW_STORAGE_KEY = 'netrart:llm-canvas:view:v1';
+export const LLM_VIEW_STORAGE_KEY = 'netra-limbus:llm-canvas:view:v1';
 
 // Visual approximation — step nodes are auto-sized to their text, but
 // for edge anchoring we need a stable midpoint. Matches the CSS:

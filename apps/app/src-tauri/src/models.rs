@@ -134,7 +134,7 @@ pub fn models_list_local(app: AppHandle) -> Result<Vec<LocalModel>, String> {
 pub async fn models_list_remote() -> Result<Vec<RemoteModel>, String> {
     let url = format!("https://huggingface.co/api/models/{HF_REPO}/tree/main");
     let client = reqwest::Client::builder()
-        .user_agent("netrart/0.1")
+        .user_agent("netra-limbus/0.1")
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
     let res = client
@@ -275,7 +275,7 @@ async fn stream_to_file(
     cancel: Arc<AtomicBool>,
 ) -> Result<u64, DownloadError> {
     let client = reqwest::Client::builder()
-        .user_agent("netrart/0.1")
+        .user_agent("netra-limbus/0.1")
         .build()
         .map_err(|e| DownloadError::Other(format!("reqwest client: {e}")))?;
 

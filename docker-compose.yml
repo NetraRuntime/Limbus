@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: docker/pb.Dockerfile
-    container_name: netrart-pb
+    container_name: netra-limbus-pb
     restart: unless-stopped
     volumes:
       # Persisted SQLite db + uploaded files live here. Named volume so
@@ -20,7 +20,7 @@ services:
     build:
       context: .
       dockerfile: docker/app.Dockerfile
-    container_name: netrart-app
+    container_name: netra-limbus-app
     restart: unless-stopped
     depends_on:
       pb:

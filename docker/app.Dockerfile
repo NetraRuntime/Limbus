@@ -17,7 +17,7 @@ COPY packages/design-system/package.json ./packages/design-system/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY apps/app/package.json ./apps/app/
 
-RUN pnpm install --frozen-lockfile --filter @netrart/app...
+RUN pnpm install --frozen-lockfile --filter @netra-limbus/app...
 
 # Copy source for the app build (app + its workspace deps).
 COPY packages/design-system ./packages/design-system
@@ -27,7 +27,7 @@ COPY apps/app ./apps/app
 # Build with a relative API base so the bundle talks to whatever origin
 # serves it — nginx will reverse-proxy /api and /_/ to the PB container.
 ENV VITE_PB_URL=""
-RUN pnpm --filter @netrart/app build
+RUN pnpm --filter @netra-limbus/app build
 
 # Stage 2 — serve static assets + proxy to PocketBase via nginx.
 FROM nginx:1.27-alpine

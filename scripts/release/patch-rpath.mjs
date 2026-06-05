@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Patches RPATH on the staged Linux NetraRT binary so it resolves
+ * Patches RPATH on the staged Linux Netra Limbus binary so it resolves
  * libsam3.so from the bundled location rather than a developer's
  * absolute build path.
  *
@@ -35,7 +35,7 @@ const binPath = resolve(
   projectRoot,
   'apps/app/src-tauri/target',
   triple,
-  'release/netrart',
+  'release/netra-limbus',
 );
 
 if (!existsSync(binPath)) {
@@ -50,7 +50,7 @@ try {
   process.exit(1);
 }
 
-const rpath = '$ORIGIN/../lib/netrart';
+const rpath = '$ORIGIN/../lib/netra-limbus';
 console.log(`[patch-rpath] setting RPATH=${rpath} on ${binPath}`);
 execFileSync('patchelf', ['--set-rpath', rpath, binPath], { stdio: 'inherit' });
 

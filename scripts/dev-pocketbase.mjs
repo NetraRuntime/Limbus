@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
-const IDENTIFIER = 'ai.kolosal.netrart';
+const IDENTIFIER = 'com.netrart.limbus';
 
 const resolveAppDataDir = () => {
   const home = homedir();

@@ -16,31 +16,31 @@ describe('detectInstallKind', () => {
   });
 
   it('returns "macos-app" when resource path lives inside an .app bundle', async () => {
-    vi.mocked(resourceDir).mockResolvedValue('/Applications/NetraRT.app/Contents/Resources');
+    vi.mocked(resourceDir).mockResolvedValue('/Applications/NetraLimbus.app/Contents/Resources');
     const k = await detectInstallKind('darwin');
     expect(k).toBe('macos-app');
   });
 
   it('returns "deb" when resource path lives under /usr/lib', async () => {
-    vi.mocked(resourceDir).mockResolvedValue('/usr/lib/netrart');
+    vi.mocked(resourceDir).mockResolvedValue('/usr/lib/netra-limbus');
     const k = await detectInstallKind('linux');
     expect(k).toBe('deb');
   });
 
   it('returns "appimage" when APPIMAGE env variable is reflected by tauri', async () => {
-    vi.mocked(resourceDir).mockResolvedValue('/tmp/.mount_NetraRABCDEF/usr/lib/netrart');
+    vi.mocked(resourceDir).mockResolvedValue('/tmp/.mount_NetraRABCDEF/usr/lib/netra-limbus');
     const k = await detectInstallKind('linux');
     expect(k).toBe('appimage');
   });
 
   it('returns "windows" on win32 platform', async () => {
-    vi.mocked(resourceDir).mockResolvedValue('C:\\Program Files\\NetraRT\\resources');
+    vi.mocked(resourceDir).mockResolvedValue('C:\\Program Files\\NetraLimbus\\resources');
     const k = await detectInstallKind('win32');
     expect(k).toBe('windows');
   });
 
   it('returns "dev" when path looks like a dev target dir', async () => {
-    vi.mocked(resourceDir).mockResolvedValue('/Users/dev/netrart/apps/app/src-tauri/target/debug/resources');
+    vi.mocked(resourceDir).mockResolvedValue('/Users/dev/netra-limbus/apps/app/src-tauri/target/debug/resources');
     const k = await detectInstallKind('darwin');
     expect(k).toBe('dev');
   });

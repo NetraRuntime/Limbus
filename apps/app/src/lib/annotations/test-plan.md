@@ -1,8 +1,8 @@
 # Annotation Import — Manual Test Plan
 
 ## Setup
-- Run `pnpm --filter @netrart/app tauri:dev`.
-- Start PocketBase: `pnpm --filter @netrart/app stage:pb` then run the binary per README.
+- Run `pnpm --filter @netra-limbus/app tauri:dev`.
+- Start PocketBase: `pnpm --filter @netra-limbus/app stage:pb` then run the binary per README.
 
 ## Fixtures
 Prepare three small datasets (3–5 images each):

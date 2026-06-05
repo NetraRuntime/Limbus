@@ -1,6 +1,6 @@
 # features/projects
 
-Owns NetraRT's multi-project surface: the Home window, project CRUD, the in-canvas `<ProjectChip />`, per-project saved tags, and (eventually) the project thumbnail pipeline.
+Owns Netra Limbus's multi-project surface: the Home window, project CRUD, the in-canvas `<ProjectChip />`, per-project saved tags, and (eventually) the project thumbnail pipeline.
 
 ## Public API (via `index.ts`)
 
@@ -34,4 +34,4 @@ Run `pnpm tauri:dev`, then walk through:
       first canvas open; the legacy key is then cleared. The migration runs once per
       project that has zero existing tags — opening a different empty project later
       will not duplicate them because the localStorage key is gone after first success.
-- [ ] **Web fallback**: `pnpm dev:app` opens Home at `/`; clicking a card navigates to `/?project=<id>`; the wordmark home button (`⌂ NetraRT`) navigates back to `/`.
+- [ ] **Web fallback**: `pnpm dev:app` opens Home at `/`; clicking a card navigates to `/?project=<id>`; the wordmark home button (`⌂ Netra Limbus`) navigates back to `/`.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Bumps the NetraRT version across all manifests in lockstep.
+ * Bumps the Netra Limbus version across all manifests in lockstep.
  *
  * Usage: node scripts/release/bump-version.mjs <new-version>
  *   e.g. node scripts/release/bump-version.mjs 0.2.0

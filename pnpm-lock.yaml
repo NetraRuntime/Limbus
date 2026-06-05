@@ -47,7 +47,7 @@ importers:
       '@chenglou/pretext':
         specifier: ^0.0.6
         version: 0.0.6
-      '@netrart/design-system':
+      '@netra-limbus/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
       '@tauri-apps/api':
@@ -84,7 +84,7 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
-      '@netrart/tsconfig':
+      '@netra-limbus/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig
       '@tauri-apps/cli':

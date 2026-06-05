@@ -38,7 +38,7 @@ const SettingsSchema = z.object({
 
 export type Settings = z.infer<typeof SettingsSchema>;
 
-const STORAGE_KEY = 'netrart:settings:v1';
+const STORAGE_KEY = 'netra-limbus:settings:v1';
 
 const readStored = (): Settings => {
   if (typeof localStorage === 'undefined') return SettingsSchema.parse({});

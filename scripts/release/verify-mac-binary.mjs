@@ -30,7 +30,7 @@ const appPath = resolve(
   projectRoot,
   'apps/app/src-tauri/target',
   triple,
-  'release/bundle/macos/NetraRT.app/Contents/MacOS/NetraRT',
+  'release/bundle/macos/NetraLimbus.app/Contents/MacOS/NetraLimbus',
 );
 
 if (!existsSync(appPath)) {

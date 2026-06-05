@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "NetraRT",
+  "productName": "NetraLimbus",
   "version": "0.2.0",
-  "identifier": "app.netrart.com",
+  "identifier": "com.netrart.limbus",
   "build": {
     "beforeDevCommand": "pnpm stage:pb && pnpm sam3:build && pnpm dev",
     "devUrl": "http://localhost:5174",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "home",
-        "title": "NetraRT",
+        "title": "Netra Limbus",
         "width": 720,
         "height": 560,
         "minWidth": 720,
@@ -76,7 +76,7 @@
     "linux": {
       "deb": {
         "files": {
-          "/usr/lib/netrart/libsam3.so": "../../../vendor/sam3.c/build/libsam3.so"
+          "/usr/lib/netra-limbus/libsam3.so": "../../../vendor/sam3.c/build/libsam3.so"
         }
       }
     },
@@ -87,7 +87,7 @@
       }
     },
     "category": "Productivity",
-    "shortDescription": "NetraRT infinite canvas",
-    "longDescription": "NetraRT — infinite canvas desktop app"
+    "shortDescription": "Netra Limbus infinite canvas",
+    "longDescription": "Netra Limbus — infinite canvas desktop app"
   }
 }

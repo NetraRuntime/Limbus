@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for NetraRT desktop",
+  "description": "Default capability for Netra Limbus desktop",
   "windows": ["home", "canvas:*"],
   "permissions": [
     "core:default",

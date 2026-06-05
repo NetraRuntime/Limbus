@@ -1,10 +1,10 @@
-# Contributing to NetraRT
+# Contributing to Netra Limbus
 
-Thanks for your interest. NetraRT is a small project moving fast, so this guide is short on purpose: get you to your first useful PR without ceremony.
+Thanks for your interest. Netra Limbus is a small project moving fast, so this guide is short on purpose: get you to your first useful PR without ceremony.
 
 ## Before you start
 
-- Read `README.md` for what NetraRT is and how to run it.
+- Read `README.md` for what Netra Limbus is and how to run it.
 - Read `CLAUDE.md` for the React and TypeScript conventions used everywhere in this repo. PRs are reviewed against those rules.
 - Open or comment on a Discord thread for anything non-trivial. We'd rather align on direction before you write code than ask you to rework it after.
 
@@ -98,4 +98,4 @@ If you touched the canvas, exercise the affected interaction in `pnpm tauri:dev`
 
 ## License
 
-NetraRT is proprietary. By contributing, you agree that your contributions are licensed under the same terms. Contact the maintainers if you have questions about usage.
+Netra Limbus is proprietary. By contributing, you agree that your contributions are licensed under the same terms. Contact the maintainers if you have questions about usage.
