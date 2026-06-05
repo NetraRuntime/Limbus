@@ -45,7 +45,7 @@ A feature folder is a black box. Other features import only from its `index.ts`.
 
 ## Picking something to work on
 
-- The roadmap (image annotation, text annotation, fine-tuning, deployment, observation) lives in `README.md`. Anything tagged "in progress" is a good place to look for adjacent work.
+- Netra Limbus is focused on image segmentation annotation (see `README.md`). Improvements to the segmentation, labeling, canvas, and import workflows are the sweet spot.
 - Bug reports and small improvements are always welcome — no thread required.
 - For larger changes, post in Discord first so we can flag conflicts with in-flight work.
 

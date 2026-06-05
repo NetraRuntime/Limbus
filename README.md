@@ -1,14 +1,14 @@
 # Netra Limbus
 
-**Specialized AI for your agent. Starts with a canvas.**
+**Annotate image segmentation data — fast, and on your own machine.**
 
-Netra is a platform for replacing the expensive parts of an agent pipeline with smaller, specialized models that are tuned to the customer's specific workflow. Frontier models are over-qualified, over-priced, and over-slow for the narrow, repetitive steps that make up most production agents. We make it practical to build something better.
+Netra Limbus is a desktop app for building image **segmentation** datasets. Drop images onto an infinite canvas and segment them with [SAM3](https://github.com/rifkybujana/sam3.c) — click a point, drag a box, or type what you want ("zebra") — then label the masks.
 
-Netra Limbus is the user-facing surface of that platform. It's an infinite-canvas desktop app where you label data, fine-tune models, and watch them get faster and cheaper than the API calls they're replacing. Annotation, training, and evaluation all live on the same canvas, so the path from raw data to a deployed specialized model is one continuous workflow instead of five disconnected tools.
+It's **local-first**: your images and annotations never leave your machine, and segmentation runs on-device (Metal/Accelerate on macOS), so it's fast with no per-image cloud cost.
 
-The platform is informed by our work on [**SAM3.c**](https://github.com/rifkybujana/sam3.c) (a pure C port of Segment Anything 3) and [**Kolosal AI**](https://kolosal.ai) (an open-source C++ LLM platform that runs on any GPU). The same obsession with performance and accessibility shows up here: the canvas is local-first, your data stays on your machine, and we care about latency budgets that real teams actually have.
+Built on [**SAM3.c**](https://github.com/rifkybujana/sam3.c) — a pure C port of Segment Anything 3 — by the team behind [**Kolosal AI**](https://kolosal.ai).
 
-This monorepo hosts the canvas app (Tauri desktop and a web debug build) along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com).
+This monorepo hosts the desktop app (plus a web debug build) along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com).
 
 ![Netra Limbus — an infinite canvas of photos with SAM3 segmentation masks and bounding boxes](docs/assets/canvas.png)
 
@@ -16,24 +16,21 @@ Drop images onto the canvas and SAM3 segments them in place. Prompt by text to g
 
 ![Segmenting a zebra by text prompt in Netra Limbus — a precise mask at 1.00 confidence with an inline label](docs/assets/segmentation.png)
 
-## What's in the canvas
+## What you can do
 
-| Feature | Status |
-|---|---|
-| Image Annotation | ✅ Live |
-| Text Annotation | 🟡 In progress |
-| Model Fine-tuning | 🟡 In progress |
-| Model Deployment | ⚪ Planned |
-| Model Observation | ⚪ Planned |
+- **Segment with SAM3** — click a point, drag a box, or type a text prompt to get a mask in place.
+- **Label & refine** — name masks, manage tags, and edit segmentations.
+- **Work at scale** — an infinite, multi-project canvas with undo/redo and level-of-detail rendering for large image sets.
+- **Bring your data** — drag in images, folders, or zips, and import existing annotations (e.g. COCO).
+- **Stay local** — images, masks, and labels live on your machine in an embedded database; nothing is uploaded.
 
-Image annotation is the production path today. Text annotation and fine-tuning are landing next, in that order, and both are usable in development builds. Deployment and observation come after.
+Image segmentation annotation is what Netra Limbus does — there's no training, deployment, or cloud step. It's a focused tool for producing high-quality segmentation labels.
 
 ## Who it's for
 
-- **Teams building agents** who are watching their per-query token costs and know that most of their pipeline doesn't need a frontier model.
-- **ML engineers** who want a single tool for labeling, training, and evaluating instead of stitching together five.
-- **Researchers and students** building task-specific datasets and models without fighting infrastructure.
-- **Anyone** who wants annotation and fine-tuning that runs on their own machine, not in someone else's cloud.
+- **ML engineers & researchers** building computer-vision datasets who need precise segmentation masks, fast.
+- **Teams** labeling proprietary image data that can't be sent to a third-party cloud annotation service.
+- **Anyone** who wants SAM3-quality segmentation annotation that runs entirely on their own machine.
 
 ## Layout
 

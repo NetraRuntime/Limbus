@@ -1,20 +1,12 @@
 # CLAUDE.md — Netra Limbus
 
-## About Netra
-
-Netra is a platform to make vision AI as accessible as text AI has become.
-
-Today, running a vision model or a vision-language model at the edge is still hard: you fight with model formats, inference runtimes, hardware quirks, and latency budgets that never quite fit. Most developers give up and send frames to the cloud, which breaks privacy, costs money, and adds latency that kills real-time use cases.
-
-Netra is built to change that. Born out of **SAM3.c** (a pure C port of Segment Anything 3) and **Kolosal AI** (an open-source C++ LLM platform that runs on any GPU), Netra brings the same obsession with performance and accessibility to the vision world.
-
-The goal is simple: anyone, anywhere, on any device, should be able to run state-of-the-art vision models and vision-LLMs. Not just developers with a few lines of code, but also agentic coding tools that can integrate it natively, ordinary people who want to run it out of the box, and students and scientists who need it to generate synthetic datasets, annotate their data, or build OCR pipelines without fighting infrastructure.
-
-Optimized for the edge from day one, so your camera, your drone, your robot, your phone, and your Raspberry Pi all become places where vision AI just works.
-
 ## About Netra Limbus
 
-Netra Limbus is the user-facing surface of Netra: an infinite-canvas desktop app (Tauri). This monorepo hosts the desktop app along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com). See `README.md` for layout, prerequisites, and run scripts.
+Netra Limbus is a desktop app (Tauri) for annotating image **segmentation** data. You drop images onto an infinite canvas and segment them with SAM3 — point, box, or text prompts — then label the masks. It is local-first: images, masks, and labels stay on the user's machine, and segmentation runs on-device.
+
+That is the whole scope: image segmentation annotation. There is no model training, fine-tuning, deployment, or cloud inference in this app — don't add features or docs that imply otherwise.
+
+Built on **SAM3.c** (a pure C port of Segment Anything 3) by the team behind **Kolosal AI**. This monorepo hosts the desktop app along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com). See `README.md` for layout, prerequisites, and run scripts.
 
 ---
 

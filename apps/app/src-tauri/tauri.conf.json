@@ -87,7 +87,7 @@
       }
     },
     "category": "Productivity",
-    "shortDescription": "Netra Limbus infinite canvas",
-    "longDescription": "Netra Limbus — infinite canvas desktop app"
+    "shortDescription": "Image segmentation annotation",
+    "longDescription": "Netra Limbus — annotate image segmentation data with SAM3, on your own machine"
   }
 }
