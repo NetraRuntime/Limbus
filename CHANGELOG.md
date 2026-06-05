@@ -21,5 +21,5 @@ First tracked release of the Netra Limbus canvas.
   import, and segmentation-mask persistence.
 - macOS code-signed, notarized release pipeline with an auto-updater.
 
-[Unreleased]: https://github.com/rifkybujana/app.netrart.com/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/rifkybujana/app.netrart.com/releases/tag/v0.2.0
+[Unreleased]: https://github.com/NetraRuntime/Limbus/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/NetraRuntime/Limbus/releases/tag/v0.2.0
