@@ -10,6 +10,12 @@ The platform is informed by our work on [**SAM3.c**](https://github.com/rifkybuj
 
 This monorepo hosts the canvas app (Tauri desktop and a web debug build) along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com).
 
+![Netra Limbus — an infinite canvas of photos with SAM3 segmentation masks and bounding boxes](docs/assets/canvas.png)
+
+Drop images onto the canvas and SAM3 segments them in place. Prompt by text to get an instant, high-confidence mask and label:
+
+![Segmenting a zebra by text prompt in Netra Limbus — a precise mask at 1.00 confidence with an inline label](docs/assets/segmentation.png)
+
 ## What's in the canvas
 
 | Feature | Status |
