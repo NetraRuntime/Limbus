@@ -6,9 +6,9 @@ Netra Limbus is a desktop app for building image **segmentation** datasets. Drop
 
 It's **local-first**: your images and annotations never leave your machine, and segmentation runs on-device (Metal/Accelerate on macOS), so it's fast with no per-image cloud cost.
 
-Built on [**SAM3.c**](https://github.com/rifkybujana/sam3.c) — a pure C port of Segment Anything 3 — by the team behind [**Kolosal AI**](https://kolosal.ai).
+Built on [**SAM3.c**](https://github.com/rifkybujana/sam3.c) — a pure C port of Segment Anything 3 — by the **Netra Runtime** team.
 
-This monorepo hosts the desktop app (plus a web debug build) along with shared design-system and tooling packages. The marketing site lives at [netrart.com](https://netrart.com).
+This monorepo hosts the desktop app (plus a web debug build) along with shared design-system and tooling packages.
 
 ![Netra Limbus — an infinite canvas of photos with SAM3 segmentation masks and bounding boxes](docs/assets/canvas.png)
 
